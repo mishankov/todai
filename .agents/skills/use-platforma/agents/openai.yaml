@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Platforma"
+  short_description: "Apply conventions for Platforma Go code"
+  default_prompt: "Use $use-platforma to implement this Go change with the established Platforma conventions."
