@@ -44,6 +44,11 @@
 				class:active={currentPath === '/today'}
 				aria-current={currentPath === '/today' ? 'page' : undefined}>Today</a
 			>
+			<a
+				href={resolve('/projects')}
+				class:active={currentPath.startsWith('/projects')}
+				aria-current={currentPath.startsWith('/projects') ? 'page' : undefined}>Projects</a
+			>
 		</nav>
 
 		<div class="session">

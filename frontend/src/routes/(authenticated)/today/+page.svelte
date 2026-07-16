@@ -33,4 +33,4 @@
 	<title>Today — Todai</title>
 </svelte:head>
 
-<Today initialTasks={data.tasks} {complete} {reopen} {update} {remove} />
+<Today initialTasks={data.tasks} projects={data.projects} {complete} {reopen} {update} {remove} />

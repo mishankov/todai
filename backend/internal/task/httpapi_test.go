@@ -26,6 +26,7 @@ func TestEndpointsRequireSession(t *testing.T) {
 		httptest.NewRequest(http.MethodDelete, "/tasks/task-id", nil),
 		httptest.NewRequest(http.MethodGet, "/views/inbox", nil),
 		httptest.NewRequest(http.MethodGet, "/views/today?timezone=UTC", nil),
+		httptest.NewRequest(http.MethodGet, "/views/projects/project-id", nil),
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -205,9 +206,15 @@ func (s *fakeSessionStorage) DeleteSessionsByUserId(_ context.Context, userID st
 
 type fakeTaskService struct{}
 
-func (fakeTaskService) Create(_ context.Context, userID, title string) (task.Task, error) {
+func (fakeTaskService) Create(
+	_ context.Context,
+	userID string,
+	title string,
+	projectID *string,
+) (task.Task, error) {
 	return task.Task{
 		ID:             "task-id",
+		ProjectID:      projectID,
 		Title:          title,
 		Status:         task.StatusActive,
 		Version:        1,
@@ -220,6 +227,10 @@ func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {
 }
 
 func (fakeTaskService) ListInbox(context.Context, string, bool) ([]task.Task, error) {
+	return []task.Task{}, nil
+}
+
+func (fakeTaskService) ListProject(context.Context, string, string, bool) ([]task.Task, error) {
 	return []task.Task{}, nil
 }
 

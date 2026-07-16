@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
+import type { Project } from '$lib/projects/client';
 import type { Task } from '$lib/tasks/client';
 
-test('supports login, Inbox and Today task flow, and logout', async ({ page }) => {
+test('supports login, Inbox, projects, Today, and logout', async ({ page }) => {
 	let authenticated = false;
 	let tasks: Task[] = [];
+	let projects: Project[] = [];
 
 	await page.route('**/api/auth/me', async (route) => {
 		if (!authenticated) {
@@ -27,6 +29,43 @@ test('supports login, Inbox and Today task flow, and logout', async ({ page }) =
 		authenticated = false;
 		await route.fulfill({ status: 200 });
 	});
+	await page.route('**/api/projects?*', async (route) => {
+		const includeArchived =
+			new URL(route.request().url()).searchParams.get('include_archived') === 'true';
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				projects: includeArchived ? projects : projects.filter((item) => item.archivedAt === null)
+			})
+		});
+	});
+	await page.route('**/api/projects', async (route) => {
+		const request = route.request().postDataJSON();
+		const created = testProject({ id: `project-${projects.length + 1}`, name: request.name });
+		projects = [...projects, created];
+		await route.fulfill({
+			status: 201,
+			contentType: 'application/json',
+			body: JSON.stringify(created)
+		});
+	});
+	await page.route('**/api/projects/*', async (route) => {
+		const projectId = new URL(route.request().url()).pathname.split('/').at(-1);
+		const found = projects.find((item) => item.id === projectId)!;
+		if (route.request().method() === 'PATCH') {
+			const changes = route.request().postDataJSON();
+			Object.assign(found, changes, {
+				version: found.version + 1,
+				archivedAt: changes.archived === true ? new Date().toISOString() : found.archivedAt
+			});
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(found)
+		});
+	});
 	await page.route('**/api/views/inbox?*', async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -41,9 +80,21 @@ test('supports login, Inbox and Today task flow, and logout', async ({ page }) =
 			body: JSON.stringify({ tasks: tasks.filter((item) => item.dueAt !== null) })
 		});
 	});
+	await page.route('**/api/views/projects/*?*', async (route) => {
+		const projectId = new URL(route.request().url()).pathname.split('/').at(-1);
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.projectId === projectId) })
+		});
+	});
 	await page.route('**/api/tasks', async (route) => {
 		const request = route.request().postDataJSON();
-		const created = testTask({ id: `task-${tasks.length + 1}`, title: request.title });
+		const created = testTask({
+			id: `task-${tasks.length + 1}`,
+			title: request.title,
+			projectId: request.projectId ?? null
+		});
 		tasks = [...tasks, created];
 		await route.fulfill({
 			status: 201,
@@ -131,6 +182,22 @@ test('supports login, Inbox and Today task flow, and logout', async ({ page }) =
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 	await expect(page.getByText('High')).toBeVisible();
 
+	await page.getByRole('link', { name: 'Projects' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
+	await page.getByLabel('Project name').fill('Work');
+	await page.getByRole('button', { name: 'Create' }).click();
+	await page.getByRole('link', { name: 'Work' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Work');
+	await page.getByLabel('Task title').fill('Plan sprint');
+	await page.getByRole('button', { name: 'Add task' }).click();
+	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
+	await page.getByLabel('Project').selectOption('');
+	await page.getByRole('button', { name: 'Save changes' }).click();
+	await expect(page.getByText('Plan sprint')).toHaveCount(0);
+
+	await page.getByRole('link', { name: 'Inbox' }).click();
+	await expect(page.getByText('Plan sprint')).toBeVisible();
+
 	await page.getByRole('link', { name: 'Today' }).click();
 	await expect(page).toHaveURL(/\/today$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Today');
@@ -147,6 +214,20 @@ test('supports login, Inbox and Today task flow, and logout', async ({ page }) =
 	await expect(page).toHaveURL(/\/login$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome back.');
 });
+
+function testProject(overrides: Partial<Project> = {}): Project {
+	return {
+		id: 'project-id',
+		name: 'Project',
+		position: 1024,
+		version: 1,
+		archivedAt: null,
+		createdAt: '2026-07-16T10:00:00Z',
+		updatedAt: '2026-07-16T10:00:00Z',
+		lastModifiedBy: 'user-id',
+		...overrides
+	};
+}
 
 function testTask(overrides: Partial<Task> = {}): Task {
 	return {

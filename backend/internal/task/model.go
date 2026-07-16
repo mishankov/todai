@@ -41,6 +41,7 @@ type Update struct {
 	Version     int64
 	Title       *string
 	Description *Nullable[string]
+	ProjectID   *Nullable[string]
 	Priority    *int
 	DueAt       *Nullable[time.Time]
 	DueTimezone *Nullable[string]

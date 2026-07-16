@@ -22,6 +22,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/mishankov/todai/backend/internal/project"
 	"github.com/mishankov/todai/backend/internal/task"
 )
 
@@ -167,8 +168,60 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	}
 	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{reopened, future})
 	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", true, []task.Task{reopened})
+
+	createdProject := createProject(t, client, baseURL, sessionCookie, " Personal ")
+	if createdProject.Name != "Personal" || createdProject.Version != 1 {
+		t.Errorf("created project = %#v", createdProject)
+	}
+	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{createdProject})
+	renamedProject := updateProject(t, client, baseURL, sessionCookie, createdProject.ID, map[string]any{
+		"version": createdProject.Version,
+		"name":    "Home",
+	})
+	if renamedProject.Name != "Home" || renamedProject.Version != 2 {
+		t.Errorf("renamed project = %#v", renamedProject)
+	}
+	assertUpdateTaskStatus(
+		t,
+		client,
+		baseURL,
+		sessionCookie,
+		reopened.ID,
+		map[string]any{"version": reopened.Version, "projectId": "missing-project"},
+		http.StatusNotFound,
+	)
+	projectTask := createTaskInProject(
+		t, client, baseURL, sessionCookie, "Clean kitchen", renamedProject.ID,
+	)
+	if projectTask.ProjectID == nil || *projectTask.ProjectID != renamedProject.ID {
+		t.Errorf("project task = %#v", projectTask)
+	}
+	moved := updateTask(t, client, baseURL, sessionCookie, reopened.ID, map[string]any{
+		"version":   reopened.Version,
+		"projectId": renamedProject.ID,
+	})
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{future})
+	assertProjectTasks(
+		t, client, baseURL, sessionCookie, renamedProject.ID, true, []task.Task{moved, projectTask},
+	)
+	moved = updateTask(t, client, baseURL, sessionCookie, moved.ID, map[string]any{
+		"version":   moved.Version,
+		"projectId": nil,
+	})
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{moved, future})
+	archivedProject := updateProject(
+		t, client, baseURL, sessionCookie, renamedProject.ID,
+		map[string]any{"version": renamedProject.Version, "archived": true},
+	)
+	if archivedProject.ArchivedAt == nil || archivedProject.Version != 3 {
+		t.Errorf("archived project = %#v", archivedProject)
+	}
+	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{})
+	assertProjects(t, client, baseURL, sessionCookie, true, []project.Project{archivedProject})
+
 	deleteTask(t, client, baseURL, sessionCookie, created.ID)
 	deleteTask(t, client, baseURL, sessionCookie, future.ID)
+	deleteTask(t, client, baseURL, sessionCookie, projectTask.ID)
 	assertStatusWithCookie(
 		t,
 		client,
@@ -197,6 +250,183 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	}
 
 	assertCoverageData(t, coverageDir)
+}
+
+func createProject(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	name string,
+) project.Project {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/projects", cookie, map[string]any{"name": name},
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	var created project.Project
+	decodeJSON(t, response, &created)
+	return created
+}
+
+func updateProject(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	update map[string]any,
+) project.Project {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodPatch, baseURL+"/api/projects/"+projectID, cookie, update,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("update project status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var updated project.Project
+	decodeJSON(t, response, &updated)
+	return updated
+}
+
+func assertProjects(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	includeArchived bool,
+	want []project.Project,
+) {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+"/api/projects?include_archived="+strconv.FormatBool(includeArchived),
+		cookie,
+		nil,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("list projects status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Projects []project.Project `json:"projects"`
+	}
+	decodeJSON(t, response, &body)
+	if len(body.Projects) != len(want) {
+		t.Fatalf("projects = %#v, want %#v", body.Projects, want)
+	}
+	for index := range want {
+		if body.Projects[index].ID != want[index].ID {
+			t.Errorf("project %d = %#v, want %#v", index, body.Projects[index], want[index])
+		}
+	}
+}
+
+func createTaskInProject(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	title string,
+	projectID string,
+) task.Task {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/tasks", cookie,
+		map[string]any{"title": title, "projectId": projectID},
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create project task status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	return decodeTask(t, response)
+}
+
+func assertProjectTasks(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	includeCompleted bool,
+	want []task.Task,
+) {
+	t.Helper()
+
+	requestURL := baseURL + "/api/views/projects/" + projectID +
+		"?include_completed=" + strconv.FormatBool(includeCompleted)
+	response := sendJSONRequest(t, client, http.MethodGet, requestURL, cookie, nil)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("list project tasks status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Tasks []task.Task `json:"tasks"`
+	}
+	decodeJSON(t, response, &body)
+	if len(body.Tasks) != len(want) {
+		t.Fatalf("project tasks = %#v, want %#v", body.Tasks, want)
+	}
+	for index := range want {
+		if body.Tasks[index].ID != want[index].ID {
+			t.Errorf("project task %d = %#v, want %#v", index, body.Tasks[index], want[index])
+		}
+	}
+}
+
+func sendJSONRequest(
+	t *testing.T,
+	client *http.Client,
+	method string,
+	requestURL string,
+	cookie *http.Cookie,
+	body any,
+) *http.Response {
+	t.Helper()
+
+	var requestBody io.Reader = http.NoBody
+	if body != nil {
+		var encoded bytes.Buffer
+		if err := json.NewEncoder(&encoded).Encode(body); err != nil {
+			t.Fatalf("encode JSON request: %v", err)
+		}
+		requestBody = &encoded
+	}
+	request, err := http.NewRequest(method, requestURL, requestBody)
+	if err != nil {
+		t.Fatalf("create JSON request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send JSON request: %v", err)
+	}
+
+	return response
+}
+
+func decodeJSON(t *testing.T, response *http.Response, target any) {
+	t.Helper()
+
+	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
+		t.Fatalf("decode JSON response: %v", err)
+	}
 }
 
 func assertUpdateTaskStatus(

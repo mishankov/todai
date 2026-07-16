@@ -22,6 +22,7 @@ export interface TaskUpdate {
 	version: number;
 	title?: string;
 	description?: string | null;
+	projectId?: string | null;
 	priority?: number;
 	dueAt?: string | null;
 	dueTimezone?: string | null;
@@ -58,6 +59,19 @@ export async function getToday(
 	return getTaskView(fetcher, `/api/views/today?${query}`, 'Could not load Today.');
 }
 
+export async function getProjectTasks(
+	fetcher: typeof fetch,
+	projectId: string,
+	includeCompleted = false
+): Promise<Task[]> {
+	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
+	return getTaskView(
+		fetcher,
+		`/api/views/projects/${encodeURIComponent(projectId)}?${query}`,
+		'Could not load project tasks.'
+	);
+}
+
 async function getTaskView(
 	fetcher: typeof fetch,
 	path: string,
@@ -75,8 +89,17 @@ async function getTaskView(
 	return body.tasks;
 }
 
-export async function createTask(fetcher: typeof fetch, title: string): Promise<Task> {
-	return sendTaskRequest(fetcher, '/api/tasks', { title }, 'Could not create the task.');
+export async function createTask(
+	fetcher: typeof fetch,
+	title: string,
+	projectId?: string
+): Promise<Task> {
+	return sendTaskRequest(
+		fetcher,
+		'/api/tasks',
+		{ title, ...(projectId === undefined ? {} : { projectId }) },
+		'Could not create the task.'
+	);
 }
 
 export async function updateTask(

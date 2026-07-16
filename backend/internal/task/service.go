@@ -32,12 +32,15 @@ var (
 	ErrInvalidPriority = errors.New("task priority must be between 0 and 4")
 	// ErrInvalidTimezone indicates that a due timezone is not an IANA timezone.
 	ErrInvalidTimezone = errors.New("task due timezone is invalid")
+	// ErrProjectNotFound indicates that a requested destination project is unavailable to the user.
+	ErrProjectNotFound = errors.New("task project not found")
 )
 
 type repository interface {
-	Create(context.Context, string, string) (Task, error)
+	Create(context.Context, string, string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
+	ListProject(context.Context, string, string, bool) ([]Task, error)
 	ListToday(context.Context, string, time.Time, time.Time, bool) ([]Task, error)
 	Complete(context.Context, string, string) (Task, error)
 	Reopen(context.Context, string, string) (Task, error)
@@ -55,8 +58,8 @@ func NewService(repository repository) *Service {
 	return &Service{repository: repository}
 }
 
-// Create creates an active top-level task in the user's Inbox.
-func (s *Service) Create(ctx context.Context, userID, title string) (Task, error) {
+// Create creates an active top-level task in the user's Inbox or a project.
+func (s *Service) Create(ctx context.Context, userID, title string, projectID *string) (Task, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Task{}, ErrTitleRequired
@@ -65,12 +68,27 @@ func (s *Service) Create(ctx context.Context, userID, title string) (Task, error
 		return Task{}, ErrTitleTooLong
 	}
 
-	created, err := s.repository.Create(ctx, userID, title)
+	created, err := s.repository.Create(ctx, userID, title, projectID)
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
 	}
 
 	return created, nil
+}
+
+// ListProject returns top-level tasks in one project.
+func (s *Service) ListProject(
+	ctx context.Context,
+	userID string,
+	projectID string,
+	includeCompleted bool,
+) ([]Task, error) {
+	tasks, err := s.repository.ListProject(ctx, userID, projectID, includeCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("list project tasks: %w", err)
+	}
+
+	return tasks, nil
 }
 
 // Get returns one user-owned task.
@@ -165,7 +183,7 @@ func validateUpdate(update *Update) error {
 	if update.Version < 1 {
 		return ErrInvalidVersion
 	}
-	if update.Title == nil && update.Description == nil && update.Priority == nil &&
+	if update.Title == nil && update.Description == nil && update.ProjectID == nil && update.Priority == nil &&
 		update.DueAt == nil && update.DueTimezone == nil {
 		return ErrNoChanges
 	}

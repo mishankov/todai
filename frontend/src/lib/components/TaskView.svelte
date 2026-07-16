@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Task, TaskUpdate } from '$lib/tasks/client';
+	import type { Project } from '$lib/projects/client';
 	import TaskEditor from './TaskEditor.svelte';
 
 	interface Props {
@@ -15,6 +16,8 @@
 		emptyTitle: string;
 		emptyMessage: string;
 		listLabel: string;
+		projects?: Project[];
+		currentProjectId?: string | null;
 	}
 
 	let {
@@ -29,7 +32,9 @@
 		countNoun = 'active',
 		emptyTitle,
 		emptyMessage,
-		listLabel
+		listLabel,
+		projects = [],
+		currentProjectId
 	}: Props = $props();
 	let tasks = $derived([...initialTasks]);
 	let title = $state('');
@@ -102,7 +107,10 @@
 
 	async function saveItem(item: Task, changes: TaskUpdate) {
 		const updated = await update(item.id, changes);
-		tasks = tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+		tasks =
+			currentProjectId === undefined || updated.projectId === currentProjectId
+				? tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate))
+				: tasks.filter((candidate) => candidate.id !== updated.id);
 		editingTaskId = null;
 	}
 
@@ -197,6 +205,7 @@
 						<li class="editor-row">
 							<TaskEditor
 								task={item}
+								{projects}
 								save={(changes) => saveItem(item, changes)}
 								cancel={() => (editingTaskId = null)}
 							/>

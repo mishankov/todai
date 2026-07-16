@@ -19,9 +19,10 @@ type taskHandlers struct {
 
 // HTTPService describes the task operations exposed over HTTP.
 type HTTPService interface {
-	Create(context.Context, string, string) (Task, error)
+	Create(context.Context, string, string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
+	ListProject(context.Context, string, string, bool) ([]Task, error)
 	ListToday(context.Context, string, string, bool) ([]Task, error)
 	Complete(context.Context, string, string) (Task, error)
 	Reopen(context.Context, string, string) (Task, error)
@@ -36,13 +37,15 @@ type HTTPModule struct {
 }
 
 type createTaskRequest struct {
-	Title string `json:"title"`
+	Title     string  `json:"title"`
+	ProjectID *string `json:"projectId"`
 }
 
 type updateTaskRequest struct {
 	Version     *int64           `json:"version"`
 	Title       optional[string] `json:"title"`
 	Description nullable[string] `json:"description"`
+	ProjectID   nullable[string] `json:"projectId"`
 	Priority    optional[int]    `json:"priority"`
 	DueAt       nullable[string] `json:"dueAt"`
 	DueTimezone nullable[string] `json:"dueTimezone"`
@@ -105,6 +108,7 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	viewsAPI.Use(m.authDomain.Middleware)
 	viewsAPI.HandleFunc("GET /inbox", handlers.listInbox)
 	viewsAPI.HandleFunc("GET /today", handlers.listToday)
+	viewsAPI.HandleFunc("GET /projects/{id}", handlers.listProject)
 	api.Mount("/views", viewsAPI)
 }
 
@@ -123,13 +127,37 @@ func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.service.Create(r.Context(), user.ID, request.Title)
+	created, err := h.service.Create(r.Context(), user.ID, request.Title, request.ProjectID)
 	if err != nil {
 		writeTaskError(w, r, "create", err)
 		return
 	}
 
 	writeJSON(w, r, http.StatusCreated, created)
+}
+
+func (h taskHandlers) listProject(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	includeCompleted, err := parseIncludeCompleted(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tasks, err := h.service.ListProject(
+		r.Context(), user.ID, r.PathValue("id"), includeCompleted,
+	)
+	if err != nil {
+		writeTaskError(w, r, "list_project", err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
 }
 
 func (h taskHandlers) get(w http.ResponseWriter, r *http.Request) {
@@ -287,6 +315,8 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrTaskNotFound):
 		http.Error(w, ErrTaskNotFound.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrProjectNotFound):
+		http.Error(w, ErrProjectNotFound.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrVersionConflict):
 		http.Error(w, ErrVersionConflict.Error(), http.StatusConflict)
 	default:
@@ -316,6 +346,9 @@ func (r updateTaskRequest) taskUpdate() (Update, error) {
 	}
 	if r.Description.Set {
 		update.Description = &Nullable[string]{Value: r.Description.Value}
+	}
+	if r.ProjectID.Set {
+		update.ProjectID = &Nullable[string]{Value: r.ProjectID.Value}
 	}
 	if r.Priority.Set {
 		update.Priority = &r.Priority.Value

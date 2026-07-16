@@ -1,16 +1,19 @@
 <script lang="ts">
 	import { TaskConflictError, type Task, type TaskUpdate } from '$lib/tasks/client';
+	import type { Project } from '$lib/projects/client';
 
 	interface Props {
 		task: Task;
 		save: (update: TaskUpdate) => Promise<void>;
 		cancel: () => void;
+		projects?: Project[];
 	}
 
-	let { task, save, cancel }: Props = $props();
+	let { task, save, cancel, projects = [] }: Props = $props();
 	let title = $derived(task.title);
 	let description = $derived(task.description ?? '');
 	let priority = $derived(task.priority);
+	let projectId = $derived(task.projectId ?? '');
 	let dueAt = $derived(localDateTime(task.dueAt));
 	let saving = $state(false);
 	let errorMessage = $state('');
@@ -23,6 +26,7 @@
 				version: task.version,
 				title,
 				description: description.trim() || null,
+				projectId: projectId || null,
 				priority,
 				dueAt: dueAt ? new Date(dueAt).toISOString() : null,
 				dueTimezone: dueAt ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
@@ -63,6 +67,16 @@
 	</label>
 
 	<div class="fields">
+		<label>
+			<span>Project</span>
+			<select bind:value={projectId}>
+				<option value="">Inbox</option>
+				{#each projects as project (project.id)}
+					<option value={project.id}>{project.name}</option>
+				{/each}
+			</select>
+		</label>
+
 		<label>
 			<span>Priority</span>
 			<select bind:value={priority}>

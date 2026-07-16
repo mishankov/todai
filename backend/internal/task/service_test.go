@@ -16,7 +16,7 @@ func TestCreateNormalizesTitle(t *testing.T) {
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 
-	created, err := service.Create(context.Background(), "user-id", "  Buy milk  ")
+	created, err := service.Create(context.Background(), "user-id", "  Buy milk  ", nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -45,11 +45,27 @@ func TestCreateRejectsInvalidTitle(t *testing.T) {
 			t.Parallel()
 
 			service := task.NewService(&fakeRepository{})
-			_, err := service.Create(context.Background(), "user-id", test.title)
+			_, err := service.Create(context.Background(), "user-id", test.title, nil)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
 		})
+	}
+}
+
+func TestCreateCanTargetProject(t *testing.T) {
+	t.Parallel()
+
+	projectID := "project-id"
+	repository := &fakeRepository{}
+	created, err := task.NewService(repository).Create(
+		context.Background(), "user-id", "Plan sprint", &projectID,
+	)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if created.ProjectID == nil || *created.ProjectID != projectID {
+		t.Errorf("created project ID = %#v, want %q", created.ProjectID, projectID)
 	}
 }
 
@@ -202,6 +218,7 @@ func TestUpdateRejectsInvalidFields(t *testing.T) {
 
 type fakeRepository struct {
 	createUserID          string
+	createProjectID       *string
 	deleteUserID          string
 	deleteTaskID          string
 	todayUserID           string
@@ -211,9 +228,17 @@ type fakeRepository struct {
 	update                task.Update
 }
 
-func (r *fakeRepository) Create(_ context.Context, userID, title string) (task.Task, error) {
+func (r *fakeRepository) Create(
+	_ context.Context,
+	userID string,
+	title string,
+	projectID *string,
+) (task.Task, error) {
 	r.createUserID = userID
-	return task.Task{ID: "task-id", UserID: userID, Title: title, Status: task.StatusActive}, nil
+	r.createProjectID = projectID
+	return task.Task{
+		ID: "task-id", UserID: userID, ProjectID: projectID, Title: title, Status: task.StatusActive,
+	}, nil
 }
 
 func (*fakeRepository) Get(context.Context, string, string) (task.Task, error) {
@@ -221,6 +246,10 @@ func (*fakeRepository) Get(context.Context, string, string) (task.Task, error) {
 }
 
 func (*fakeRepository) ListInbox(context.Context, string, bool) ([]task.Task, error) {
+	return nil, nil
+}
+
+func (*fakeRepository) ListProject(context.Context, string, string, bool) ([]task.Task, error) {
 	return nil, nil
 }
 
