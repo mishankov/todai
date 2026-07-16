@@ -7,19 +7,21 @@ import (
 	"os"
 
 	"github.com/platforma-dev/platforma/application"
+	"github.com/platforma-dev/platforma/log"
 
 	"github.com/mishankov/todai/backend/internal/app"
 	"github.com/mishankov/todai/backend/internal/config"
 )
 
 func main() {
-	if err := run(context.Background(), os.Args, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	ctx := context.Background()
+	if err := run(ctx, os.Args, os.Stdin, os.Stdout, os.Stderr); err != nil {
+		log.ErrorContext(ctx, "application finished with error", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr *os.File) error {
+func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr *os.File) (runErr error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -33,7 +35,11 @@ func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr *os.
 	if err != nil {
 		return err
 	}
-	defer resources.Database.Connection().Close()
+	defer func() {
+		if err := resources.Database.Connection().Close(); err != nil && runErr == nil {
+			runErr = fmt.Errorf("close database: %w", err)
+		}
+	}()
 
 	if err := productApp.Run(ctx); err != nil {
 		if errors.Is(err, application.ErrUnknownCommand) {

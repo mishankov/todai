@@ -4,8 +4,8 @@
 !.env.example
 
 backend/bin/
+backend/.coverage/
 frontend/node_modules/
 frontend/.svelte-kit/
 frontend/build/
 frontend/test-results/
-

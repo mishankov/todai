@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 tasks:
   dev:
@@ -19,12 +19,17 @@ tasks:
       - go run ./cmd/todai bootstrap-user --username "{{.USERNAME}}"
 
   test:
+    vars:
+      INTEGRATION_COVERAGE_DIR: "{{.TASKFILE_DIR}}/.coverage/integration"
     cmds:
-      - go test ./...
+      - rm -rf "{{.INTEGRATION_COVERAGE_DIR}}"
+      - mkdir -p "{{.INTEGRATION_COVERAGE_DIR}}"
+      - TODAI_INTEGRATION_COVERAGE_DIR="{{.INTEGRATION_COVERAGE_DIR}}" go test -race -cover ./...
+      - go tool covdata percent -i="{{.INTEGRATION_COVERAGE_DIR}}"
 
   lint:
     cmds:
-      - go vet ./...
+      - golangci-lint run
 
   format:
     cmds:
@@ -32,4 +37,3 @@ tasks:
 
   check:
     deps: [test, lint]
-

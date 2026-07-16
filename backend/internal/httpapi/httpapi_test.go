@@ -1,4 +1,4 @@
-package app
+package httpapi_test
 
 import (
 	"context"
@@ -8,39 +8,9 @@ import (
 	"testing"
 
 	"github.com/platforma-dev/platforma/auth"
+
+	"github.com/mishankov/todai/backend/internal/httpapi"
 )
-
-type fakeAuthRepository struct{}
-
-func (fakeAuthRepository) Get(context.Context, string) (*auth.User, error) {
-	return nil, sql.ErrNoRows
-}
-
-func (fakeAuthRepository) GetByUsername(context.Context, string) (*auth.User, error) {
-	return nil, sql.ErrNoRows
-}
-
-func (fakeAuthRepository) Create(context.Context, *auth.User) error { return nil }
-
-func (fakeAuthRepository) UpdatePassword(context.Context, string, string, string) error {
-	return nil
-}
-
-func (fakeAuthRepository) Delete(context.Context, string) error { return nil }
-
-type fakeSessionStorage struct{}
-
-func (fakeSessionStorage) GetUserIdFromSessionId(context.Context, string) (string, error) {
-	return "", nil
-}
-
-func (fakeSessionStorage) CreateSessionForUser(context.Context, string) (string, error) {
-	return "", nil
-}
-
-func (fakeSessionStorage) DeleteSession(context.Context, string) error { return nil }
-
-func (fakeSessionStorage) DeleteSessionsByUserId(context.Context, string) error { return nil }
 
 func TestAPIDoesNotExposeRegistration(t *testing.T) {
 	t.Parallel()
@@ -77,5 +47,37 @@ func testAPI() http.Handler {
 		Middleware: auth.NewAuthenticationMiddleware(service),
 	}
 
-	return newAPI(domain)
+	return httpapi.New(domain)
 }
+
+type fakeAuthRepository struct{}
+
+func (fakeAuthRepository) Get(context.Context, string) (*auth.User, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (fakeAuthRepository) GetByUsername(context.Context, string) (*auth.User, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (fakeAuthRepository) Create(context.Context, *auth.User) error { return nil }
+
+func (fakeAuthRepository) UpdatePassword(context.Context, string, string, string) error {
+	return nil
+}
+
+func (fakeAuthRepository) Delete(context.Context, string) error { return nil }
+
+type fakeSessionStorage struct{}
+
+func (fakeSessionStorage) GetUserIdFromSessionId(context.Context, string) (string, error) {
+	return "", nil
+}
+
+func (fakeSessionStorage) CreateSessionForUser(context.Context, string) (string, error) {
+	return "", nil
+}
+
+func (fakeSessionStorage) DeleteSession(context.Context, string) error { return nil }
+
+func (fakeSessionStorage) DeleteSessionsByUserId(context.Context, string) error { return nil }

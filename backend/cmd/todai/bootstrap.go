@@ -17,7 +17,7 @@ import (
 	"github.com/mishankov/todai/backend/internal/config"
 )
 
-func runBootstrap(ctx context.Context, cfg config.Config, args []string, stdin *os.File, stdout, stderr io.Writer) error {
+func runBootstrap(ctx context.Context, cfg config.Config, args []string, stdin *os.File, stdout, stderr io.Writer) (runErr error) {
 	flags := flag.NewFlagSet("bootstrap-user", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	username := flags.String("username", os.Getenv("TODAI_BOOTSTRAP_USERNAME"), "username for the single user")
@@ -38,7 +38,11 @@ func runBootstrap(ctx context.Context, cfg config.Config, args []string, stdin *
 	if err != nil {
 		return err
 	}
-	defer resources.Database.Connection().Close()
+	defer func() {
+		if err := resources.Database.Connection().Close(); err != nil && runErr == nil {
+			runErr = fmt.Errorf("close database: %w", err)
+		}
+	}()
 
 	service := bootstrap.New(resources.Database.Connection(), resources.Auth.Service)
 	if err := service.CreateUser(ctx, *username, password); err != nil {

@@ -3,7 +3,6 @@ package app
 
 import (
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/platforma-dev/platforma/application"
@@ -13,6 +12,7 @@ import (
 	"github.com/platforma-dev/platforma/session"
 
 	"github.com/mishankov/todai/backend/internal/config"
+	"github.com/mishankov/todai/backend/internal/httpapi"
 )
 
 const databaseName = "main"
@@ -48,34 +48,8 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 
 	server := httpserver.New(cfg.HTTPPort, 5*time.Second)
 	server.Handle("GET /health", application.NewHealthCheckHandler(productApp))
-	server.Mount("/api", newAPI(authDomain))
+	server.Mount("/api", httpapi.New(authDomain))
 	productApp.RegisterService("http", server)
 
 	return productApp, &Resources{Database: db, Auth: authDomain}, nil
-}
-
-func newAPI(authDomain *auth.Domain) http.Handler {
-	api := httpserver.NewHandlerGroup()
-
-	// Mount individual handlers so the personal MVP never exposes public registration.
-	authAPI := httpserver.NewHandlerGroup()
-	authAPI.Handle("POST /login", auth.NewLoginHandler(authDomain.Service))
-	authAPI.Handle("POST /logout", auth.NewLogoutHandler(authDomain.Service))
-	authAPI.Handle("GET /me", auth.NewGetHandler(authDomain.Service))
-	authAPI.Handle(
-		"POST /change-password",
-		authDomain.Middleware.Wrap(auth.NewChangePasswordHandler(authDomain.Service)),
-	)
-	api.Mount("/auth", authAPI)
-
-	protected := httpserver.NewHandlerGroup()
-	protected.Use(authDomain.Middleware)
-	protected.HandleFunc("GET /ping", func(w http.ResponseWriter, _ *http.Request) {
-		if err := httpserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"}); err != nil {
-			http.Error(w, "failed to write response", http.StatusInternalServerError)
-		}
-	})
-	api.Mount("/protected", protected)
-
-	return api
 }
