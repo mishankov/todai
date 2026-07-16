@@ -1,19 +1,54 @@
+<script lang="ts">
+	interface Props {
+		username: string;
+		onLogout: () => Promise<void>;
+	}
+
+	let { username, onLogout }: Props = $props();
+	let signingOut = $state(false);
+	let errorMessage = $state('');
+
+	async function signOut() {
+		signingOut = true;
+		errorMessage = '';
+
+		try {
+			await onLogout();
+		} catch {
+			errorMessage = 'Sign out failed. Please try again.';
+			signingOut = false;
+		}
+	}
+</script>
+
 <main class="shell">
-	<header class="brand">
-		<span class="mark" aria-hidden="true">T</span>
-		<span>Todai</span>
+	<header>
+		<div class="brand">
+			<span class="mark" aria-hidden="true">T</span>
+			<span>Todai</span>
+		</div>
+
+		<div class="session">
+			<span class="username">{username}</span>
+			<button type="button" disabled={signingOut} onclick={() => void signOut()}>
+				{signingOut ? 'Signing out…' : 'Log out'}
+			</button>
+		</div>
 	</header>
 
 	<section class="workspace" aria-labelledby="workspace-heading">
-		<p class="eyebrow">Development skeleton</p>
-		<h1 id="workspace-heading">Your task space is taking shape.</h1>
+		<p class="eyebrow">Authenticated workspace</p>
+		<h1 id="workspace-heading">Welcome back, {username}.</h1>
 		<p class="summary">
-			The application shell is ready. Projects, Inbox and Today arrive in the next vertical slice.
+			Your session is protected and ready. Inbox and task creation arrive in the next slice.
 		</p>
 		<div class="status" role="status">
 			<span class="status-dot" aria-hidden="true"></span>
-			Stage 0 · Backend and frontend foundation
+			Stage 1 · Authentication connected
 		</div>
+		{#if errorMessage}
+			<p class="error" role="alert">{errorMessage}</p>
+		{/if}
 	</section>
 </main>
 
@@ -23,6 +58,13 @@
 		grid-template-rows: auto 1fr;
 		min-height: 100vh;
 		padding: 1.5rem clamp(1.25rem, 4vw, 4rem);
+	}
+
+	header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
 	}
 
 	.brand {
@@ -41,6 +83,39 @@
 		border-radius: 0.65rem;
 		color: #fff;
 		background: #2d6540;
+	}
+
+	.session {
+		display: flex;
+		align-items: center;
+		gap: 0.85rem;
+	}
+
+	.username {
+		color: #58625a;
+		font-size: 0.88rem;
+		font-weight: 650;
+	}
+
+	button {
+		padding: 0.6rem 0.8rem;
+		border: 1px solid #cbd5ca;
+		border-radius: 0.65rem;
+		color: #31523a;
+		background: rgb(255 255 255 / 75%);
+		font-size: 0.82rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	button:hover:not(:disabled) {
+		border-color: #9fb3a0;
+		background: #fff;
+	}
+
+	button:disabled {
+		cursor: wait;
+		opacity: 0.6;
 	}
 
 	.workspace {
@@ -96,5 +171,17 @@
 		border-radius: 50%;
 		background: #47a363;
 		box-shadow: 0 0 0 0.25rem rgb(71 163 99 / 14%);
+	}
+
+	.error {
+		margin: 1rem 0 0;
+		color: #8c2828;
+		font-size: 0.86rem;
+	}
+
+	@media (max-width: 34rem) {
+		.username {
+			display: none;
+		}
 	}
 </style>

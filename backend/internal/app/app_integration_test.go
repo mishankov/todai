@@ -3,6 +3,7 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -36,14 +37,28 @@ func TestApplicationStartsServesAPIAndStops(t *testing.T) {
 	}
 
 	port := availablePort(t)
-	var logs synchronizedBuffer
-	command := exec.Command(binary, "run")
-	command.Env = append(
+	processEnvironment := append(
 		os.Environ(),
 		"GOCOVERDIR="+coverageDir,
 		"TODAI_DATABASE_URL="+databaseURL,
 		"TODAI_HTTP_PORT="+port,
 	)
+	runBinaryCommand(t, ctx, binary, processEnvironment, nil, "migrate")
+	runBinaryCommand(
+		t,
+		ctx,
+		binary,
+		processEnvironment,
+		strings.NewReader("correct horse battery staple\n"),
+		"bootstrap-user",
+		"--username",
+		"owner",
+		"--password-stdin",
+	)
+
+	var logs synchronizedBuffer
+	command := exec.Command(binary, "run")
+	command.Env = processEnvironment
 	command.Stdout = &logs
 	command.Stderr = &logs
 
@@ -72,6 +87,19 @@ func TestApplicationStartsServesAPIAndStops(t *testing.T) {
 	assertStatus(t, client, http.MethodGet, baseURL+"/api/protected/ping", http.StatusUnauthorized)
 	assertStatus(t, client, http.MethodPost, baseURL+"/api/auth/register", http.StatusNotFound)
 	assertStatus(t, client, http.MethodGet, baseURL+"/protected/ping", http.StatusNotFound)
+	assertLoginStatus(t, client, baseURL, "owner", "wrong password", http.StatusUnauthorized)
+	sessionCookie := login(t, client, baseURL, "owner", "correct horse battery staple")
+	assertCurrentUser(t, client, baseURL, sessionCookie, "owner")
+	assertStatusWithCookie(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+"/api/protected/ping",
+		sessionCookie,
+		http.StatusOK,
+	)
+	logout(t, client, baseURL, sessionCookie)
+	assertStatus(t, client, http.MethodGet, baseURL+"/api/protected/ping", http.StatusUnauthorized)
 
 	if err := command.Process.Signal(os.Interrupt); err != nil {
 		t.Fatalf("interrupt application: %v\n%s", err, logs.String())
@@ -88,6 +116,24 @@ func TestApplicationStartsServesAPIAndStops(t *testing.T) {
 	}
 
 	assertCoverageData(t, coverageDir)
+}
+
+func runBinaryCommand(
+	t *testing.T,
+	ctx context.Context,
+	binary string,
+	environment []string,
+	stdin io.Reader,
+	args ...string,
+) {
+	t.Helper()
+
+	command := exec.CommandContext(ctx, binary, args...)
+	command.Env = environment
+	command.Stdin = stdin
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("run %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
 }
 
 func buildBinary(t *testing.T, ctx context.Context) string {
@@ -225,6 +271,166 @@ func assertStatus(t *testing.T, client *http.Client, method, url string, want in
 	}
 	if status != want {
 		t.Fatalf("status for %s = %d, want %d", url, status, want)
+	}
+}
+
+func assertLoginStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	username string,
+	password string,
+	want int,
+) {
+	t.Helper()
+
+	response := sendLogin(t, client, baseURL, username, password)
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("login status = %d, want %d", response.StatusCode, want)
+	}
+}
+
+func login(t *testing.T, client *http.Client, baseURL, username, password string) *http.Cookie {
+	t.Helper()
+
+	response := sendLogin(t, client, baseURL, username, password)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == "todai_session" {
+			if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
+				t.Fatalf("session cookie has insecure attributes: %#v", cookie)
+			}
+			return cookie
+		}
+	}
+
+	t.Fatal("login response did not set the session cookie")
+	return nil
+}
+
+func sendLogin(t *testing.T, client *http.Client, baseURL, username, password string) *http.Response {
+	t.Helper()
+
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]string{
+		"login":    username,
+		"password": password,
+	}); err != nil {
+		t.Fatalf("encode login request: %v", err)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/api/auth/login", &body)
+	if err != nil {
+		t.Fatalf("create login request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send login request: %v", err)
+	}
+
+	return response
+}
+
+func assertCurrentUser(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	wantUsername string,
+) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/auth/me", http.NoBody)
+	if err != nil {
+		t.Fatalf("create current user request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send current user request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("current user status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var currentUser struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&currentUser); err != nil {
+		t.Fatalf("decode current user response: %v", err)
+	}
+	if currentUser.Username != wantUsername {
+		t.Errorf("current username = %q, want %q", currentUser.Username, wantUsername)
+	}
+}
+
+func assertStatusWithCookie(
+	t *testing.T,
+	client *http.Client,
+	method string,
+	url string,
+	cookie *http.Cookie,
+	want int,
+) {
+	t.Helper()
+
+	request, err := http.NewRequest(method, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("status for %s = %d, want %d", url, response.StatusCode, want)
+	}
+}
+
+func logout(t *testing.T, client *http.Client, baseURL string, cookie *http.Cookie) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/api/auth/logout", http.NoBody)
+	if err != nil {
+		t.Fatalf("create logout request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send logout request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	for _, responseCookie := range response.Cookies() {
+		if responseCookie.Name == cookie.Name && responseCookie.Value == "" {
+			return
+		}
+	}
+
+	t.Fatal("logout response did not clear the session cookie")
+}
+
+func closeResponse(t *testing.T, response *http.Response) {
+	t.Helper()
+
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		t.Errorf("read response body: %v", err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Errorf("close response body: %v", err)
 	}
 }
 
