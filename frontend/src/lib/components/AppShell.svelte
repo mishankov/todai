@@ -89,6 +89,18 @@
 				</svg>
 				<span>Today</span>
 			</a>
+			<a
+				href={resolve('/all')}
+				class:active={currentPath === '/all'}
+				aria-current={currentPath === '/all' ? 'page' : undefined}
+				onclick={closeSidebar}
+			>
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<path d="M5 6h14M5 12h14M5 18h14" />
+					<path d="M3 6h.01M3 12h.01M3 18h.01" />
+				</svg>
+				<span>All tasks</span>
+			</a>
 		</nav>
 
 		<section class="project-navigation" aria-labelledby="sidebar-projects">

@@ -6,10 +6,10 @@ import Today from './Today.svelte';
 
 describe('Today', () => {
 	it('shows due time, priority and the number of remaining tasks', async () => {
-		const dueAt = new Date();
-		dueAt.setHours(23, 59, 0, 0);
 		render(Today, {
-			initialTasks: [testTask({ title: 'Ship Today', priority: 4, dueAt: dueAt.toISOString() })],
+			initialTasks: [
+				testTask({ title: 'Ship Today', priority: 4, dueDate: todayDate(), dueTime: '23:59' })
+			],
 			complete: vi.fn(),
 			reopen: vi.fn(),
 			update: vi.fn(),
@@ -33,7 +33,8 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		description: null,
 		status: 'active',
 		priority: 0,
-		dueAt: null,
+		dueDate: null,
+		dueTime: null,
 		dueTimezone: null,
 		position: 1024,
 		version: 1,
@@ -43,4 +44,12 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		lastModifiedBy: 'user-id',
 		...overrides
 	};
+}
+
+function todayDate(): string {
+	const date = new Date();
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
 }

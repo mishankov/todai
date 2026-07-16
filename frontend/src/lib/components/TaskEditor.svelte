@@ -14,7 +14,8 @@
 	let description = $derived(task.description ?? '');
 	let priority = $derived(task.priority);
 	let projectId = $derived(task.projectId ?? '');
-	let dueAt = $derived(localDateTime(task.dueAt));
+	let dueDate = $derived(task.dueDate ?? '');
+	let dueTime = $derived(task.dueTime ?? '');
 	let saving = $state(false);
 	let errorMessage = $state('');
 
@@ -28,8 +29,9 @@
 				description: description.trim() || null,
 				projectId: projectId || null,
 				priority,
-				dueAt: dueAt ? new Date(dueAt).toISOString() : null,
-				dueTimezone: dueAt ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
+				dueDate: dueDate || null,
+				dueTime: dueDate && dueTime ? dueTime : null,
+				dueTimezone: dueDate && dueTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
 			});
 		} catch (error) {
 			errorMessage =
@@ -38,14 +40,6 @@
 					: 'The task could not be saved. Please try again.';
 			saving = false;
 		}
-	}
-
-	function localDateTime(value: string | null): string {
-		if (!value) return '';
-
-		const date = new Date(value);
-		const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-		return local.toISOString().slice(0, 16);
 	}
 </script>
 
@@ -90,7 +84,12 @@
 
 		<label>
 			<span>Due date</span>
-			<input type="datetime-local" bind:value={dueAt} />
+			<input type="date" bind:value={dueDate} />
+		</label>
+
+		<label>
+			<span>Due time <small>optional</small></span>
+			<input type="time" bind:value={dueTime} disabled={!dueDate} />
 		</label>
 	</div>
 
@@ -127,6 +126,12 @@
 		color: #526058;
 		font-size: 0.75rem;
 		font-weight: 700;
+	}
+
+	label small {
+		color: #899087;
+		font-size: inherit;
+		font-weight: 500;
 	}
 
 	input,

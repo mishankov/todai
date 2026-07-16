@@ -21,7 +21,8 @@ type Task struct {
 	Description    *string    `db:"description" json:"description"`
 	Status         Status     `db:"status" json:"status"`
 	Priority       int        `db:"priority" json:"priority"`
-	DueAt          *time.Time `db:"due_at" json:"dueAt"`
+	DueDate        *Date      `db:"due_date" json:"dueDate"`
+	DueTime        *TimeOfDay `db:"due_time" json:"dueTime"`
 	DueTimezone    *string    `db:"due_timezone" json:"dueTimezone"`
 	Position       int64      `db:"position" json:"position"`
 	Version        int64      `db:"version" json:"version"`
@@ -43,6 +44,7 @@ type Update struct {
 	Description *Nullable[string]
 	ProjectID   *Nullable[string]
 	Priority    *int
-	DueAt       *Nullable[time.Time]
+	DueDate     *Nullable[Date]
+	DueTime     *Nullable[TimeOfDay]
 	DueTimezone *Nullable[string]
 }

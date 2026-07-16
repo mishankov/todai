@@ -24,6 +24,7 @@ func TestEndpointsRequireSession(t *testing.T) {
 		httptest.NewRequest(http.MethodPost, "/tasks", nil),
 		httptest.NewRequest(http.MethodPatch, "/tasks/task-id", nil),
 		httptest.NewRequest(http.MethodDelete, "/tasks/task-id", nil),
+		httptest.NewRequest(http.MethodGet, "/views/all", nil),
 		httptest.NewRequest(http.MethodGet, "/views/inbox", nil),
 		httptest.NewRequest(http.MethodGet, "/views/today?timezone=UTC", nil),
 		httptest.NewRequest(http.MethodGet, "/views/projects/project-id", nil),
@@ -227,6 +228,10 @@ func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {
 }
 
 func (fakeTaskService) ListInbox(context.Context, string, bool) ([]task.Task, error) {
+	return []task.Task{}, nil
+}
+
+func (fakeTaskService) ListAll(context.Context, string, bool) ([]task.Task, error) {
 	return []task.Task{}, nil
 }
 

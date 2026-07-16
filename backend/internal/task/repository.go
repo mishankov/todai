@@ -15,7 +15,7 @@ import (
 
 const taskColumns = `
 	id, user_id, project_id, parent_id, title, description, status, priority,
-	due_at, due_timezone, position, version, completed_at, created_at, updated_at,
+	due_date, due_time, due_timezone, position, version, completed_at, created_at, updated_at,
 	last_modified_by
 `
 
@@ -161,11 +161,40 @@ func (r *Repository) ListInbox(
 	return tasks, nil
 }
 
-// ListToday returns active tasks due by the end of the user's local day and
+// ListAll returns all of the user's top-level tasks.
+func (r *Repository) ListAll(
+	ctx context.Context,
+	userID string,
+	includeCompleted bool,
+) ([]Task, error) {
+	tasks := make([]Task, 0)
+	err := r.db.SelectContext(ctx, &tasks, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE user_id = $1
+			AND parent_id IS NULL
+			AND ($2 OR status = 'active')
+		ORDER BY
+			CASE status WHEN 'active' THEN 0 ELSE 1 END,
+			due_date NULLS LAST,
+			due_time NULLS FIRST,
+			priority DESC,
+			position,
+			created_at
+	`, userID, includeCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("select all tasks: %w", err)
+	}
+
+	return tasks, nil
+}
+
+// ListToday returns active tasks due on or before the user's local date and
 // tasks completed during that day when requested.
 func (r *Repository) ListToday(
 	ctx context.Context,
 	userID string,
+	date Date,
 	dayStart time.Time,
 	dayEnd time.Time,
 	includeCompleted bool,
@@ -175,24 +204,25 @@ func (r *Repository) ListToday(
 		SELECT `+taskColumns+`
 		FROM tasks
 		WHERE user_id = $1
-			AND due_at IS NOT NULL
-			AND due_at < $3
+			AND due_date IS NOT NULL
+			AND due_date <= $2::DATE
 			AND (
 				status = 'active'
 				OR (
-					$4
+					$5
 					AND status = 'completed'
-					AND completed_at >= $2
-					AND completed_at < $3
+					AND completed_at >= $3
+					AND completed_at < $4
 				)
 			)
 		ORDER BY
 			CASE status WHEN 'active' THEN 0 ELSE 1 END,
-			due_at,
+			due_date,
+			due_time NULLS FIRST,
 			priority DESC,
 			position,
 			created_at
-	`, userID, dayStart, dayEnd, includeCompleted)
+	`, userID, date, dayStart, dayEnd, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("select Today tasks: %w", err)
 	}
@@ -224,8 +254,9 @@ func (r *Repository) Update(
 			description = CASE WHEN $6::BOOLEAN THEN $7::TEXT ELSE description END,
 			project_id = CASE WHEN $8::BOOLEAN THEN $9::VARCHAR ELSE project_id END,
 			priority = CASE WHEN $10::BOOLEAN THEN $11::SMALLINT ELSE priority END,
-			due_at = CASE WHEN $12::BOOLEAN THEN $13::TIMESTAMPTZ ELSE due_at END,
-			due_timezone = CASE WHEN $14::BOOLEAN THEN $15::TEXT ELSE due_timezone END,
+			due_date = CASE WHEN $12::BOOLEAN THEN $13::DATE ELSE due_date END,
+			due_time = CASE WHEN $14::BOOLEAN THEN $15::TIME ELSE due_time END,
+			due_timezone = CASE WHEN $16::BOOLEAN THEN $17::TEXT ELSE due_timezone END,
 			version = version + 1,
 			updated_at = CURRENT_TIMESTAMP,
 			last_modified_by = $2
@@ -250,8 +281,10 @@ func (r *Repository) Update(
 		nullableValue(update.ProjectID),
 		update.Priority != nil,
 		pointerValue(update.Priority),
-		update.DueAt != nil,
-		nullableValue(update.DueAt),
+		update.DueDate != nil,
+		nullableValue(update.DueDate),
+		update.DueTime != nil,
+		nullableValue(update.DueTime),
 		update.DueTimezone != nil,
 		nullableValue(update.DueTimezone),
 	)

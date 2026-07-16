@@ -33,6 +33,18 @@ describe('AppShell', () => {
 			.toHaveAttribute('aria-current', 'page');
 		await expect.element(page.getByRole('link', { name: 'Inbox' })).toBeVisible();
 	});
+
+	it('marks All tasks as the current section', async () => {
+		render(AppShell, {
+			username: 'owner',
+			onLogout: vi.fn(),
+			currentPath: '/all'
+		});
+
+		await expect
+			.element(page.getByRole('link', { name: 'All tasks' }))
+			.toHaveAttribute('aria-current', 'page');
+	});
 });
 
 function testProject(overrides: Partial<Project> = {}): Project {

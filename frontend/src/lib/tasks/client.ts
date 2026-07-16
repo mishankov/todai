@@ -8,7 +8,8 @@ export interface Task {
 	description: string | null;
 	status: TaskStatus;
 	priority: number;
-	dueAt: string | null;
+	dueDate: string | null;
+	dueTime: string | null;
 	dueTimezone: string | null;
 	position: number;
 	version: number;
@@ -24,7 +25,8 @@ export interface TaskUpdate {
 	description?: string | null;
 	projectId?: string | null;
 	priority?: number;
-	dueAt?: string | null;
+	dueDate?: string | null;
+	dueTime?: string | null;
 	dueTimezone?: string | null;
 }
 
@@ -45,6 +47,14 @@ export class TaskConflictError extends TaskRequestError {
 export async function getInbox(fetcher: typeof fetch, includeCompleted = false): Promise<Task[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
 	return getTaskView(fetcher, `/api/views/inbox?${query}`, 'Could not load Inbox.');
+}
+
+export async function getAllTasks(
+	fetcher: typeof fetch,
+	includeCompleted = false
+): Promise<Task[]> {
+	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
+	return getTaskView(fetcher, `/api/views/all?${query}`, 'Could not load all tasks.');
 }
 
 export async function getToday(

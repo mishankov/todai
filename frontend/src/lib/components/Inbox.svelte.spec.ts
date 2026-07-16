@@ -138,6 +138,7 @@ describe('Inbox', () => {
 		await page.getByLabelText('Title', { exact: true }).fill('Publish plan');
 		await page.getByLabelText('Description').fill('Share with the team');
 		await page.getByLabelText('Priority').selectOptions('3');
+		await page.getByLabelText('Due date').fill('2026-07-20');
 		await page.getByRole('button', { name: 'Save changes' }).click();
 
 		expect(update).toHaveBeenCalledWith(
@@ -146,7 +147,10 @@ describe('Inbox', () => {
 				version: active.version,
 				title: 'Publish plan',
 				description: 'Share with the team',
-				priority: 3
+				priority: 3,
+				dueDate: '2026-07-20',
+				dueTime: null,
+				dueTimezone: null
 			})
 		);
 		await expect.element(page.getByText('Publish plan')).toBeVisible();
@@ -164,9 +168,9 @@ describe('Inbox', () => {
 		});
 		render(Inbox, {
 			initialTasks: [
-				testTask({ id: 'overdue', title: 'Overdue task', dueAt: atNoon(yesterday) }),
-				testTask({ id: 'today', title: 'Today task', dueAt: atNoon(today) }),
-				testTask({ id: 'tomorrow', title: 'Tomorrow task', dueAt: atNoon(tomorrow) }),
+				testTask({ id: 'overdue', title: 'Overdue task', dueDate: dateValue(yesterday) }),
+				testTask({ id: 'today', title: 'Today task', dueDate: dateValue(today) }),
+				testTask({ id: 'tomorrow', title: 'Tomorrow task', dueDate: dateValue(tomorrow) }),
 				testTask({ id: 'undated', title: 'Undated task' }),
 				completed
 			],
@@ -195,10 +199,11 @@ function addDays(value: Date, days: number): Date {
 	return result;
 }
 
-function atNoon(value: Date): string {
-	const result = new Date(value);
-	result.setHours(12, 0, 0, 0);
-	return result.toISOString();
+function dateValue(value: Date): string {
+	const year = value.getFullYear();
+	const month = String(value.getMonth() + 1).padStart(2, '0');
+	const day = String(value.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
 }
 
 function testTask(overrides: Partial<Task> = {}): Task {
@@ -210,7 +215,8 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		description: null,
 		status: 'active',
 		priority: 0,
-		dueAt: null,
+		dueDate: null,
+		dueTime: null,
 		dueTimezone: null,
 		position: 1024,
 		version: 1,

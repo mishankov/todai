@@ -94,6 +94,7 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	baseURL := "http://127.0.0.1:" + port
 	waitForStatus(t, client, http.MethodGet, baseURL+"/health", http.StatusOK, &logs)
 	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/inbox", http.StatusUnauthorized)
+	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/all", http.StatusUnauthorized)
 	assertStatus(t, client, http.MethodPost, baseURL+"/api/auth/register", http.StatusNotFound)
 	assertStatus(t, client, http.MethodGet, baseURL+"/protected/ping", http.StatusNotFound)
 	assertLoginStatus(t, client, baseURL, "owner", "wrong password", http.StatusUnauthorized)
@@ -119,19 +120,22 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		0,
 		moscow,
 	)
-	dueToday := localDayStart.Add(12 * time.Hour)
-	dueTomorrow := localDayStart.AddDate(0, 0, 1).Add(12 * time.Hour)
+	dueToday := localDayStart.Format("2006-01-02")
+	dueTomorrow := localDayStart.AddDate(0, 0, 1).Format("2006-01-02")
 	updated := updateTask(t, client, baseURL, sessionCookie, created.ID, map[string]any{
 		"version":     created.Version,
 		"title":       "Buy oat milk",
 		"description": "For breakfast",
 		"priority":    3,
-		"dueAt":       dueToday.Format(time.RFC3339),
+		"dueDate":     dueToday,
+		"dueTime":     "12:00",
 		"dueTimezone": "Europe/Moscow",
 	})
 	if updated.Title != "Buy oat milk" || updated.Description == nil ||
 		*updated.Description != "For breakfast" || updated.Priority != 3 ||
-		updated.DueAt == nil || updated.DueTimezone == nil || updated.Version != 2 {
+		updated.DueDate == nil || *updated.DueDate != task.Date(dueToday) ||
+		updated.DueTime == nil || *updated.DueTime != task.TimeOfDay("12:00") ||
+		updated.DueTimezone == nil || updated.Version != 2 {
 		t.Errorf("updated task = %#v", updated)
 	}
 	assertUpdateTaskStatus(
@@ -147,9 +151,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{updated})
 	future := createTask(t, client, baseURL, sessionCookie, "Plan tomorrow")
 	future = updateTask(t, client, baseURL, sessionCookie, future.ID, map[string]any{
-		"version":     future.Version,
-		"dueAt":       dueTomorrow.Format(time.RFC3339),
-		"dueTimezone": "Europe/Moscow",
+		"version": future.Version,
+		"dueDate": dueTomorrow,
+		"dueTime": nil,
 	})
 	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{updated})
 
@@ -200,6 +204,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		"version":   reopened.Version,
 		"projectId": renamedProject.ID,
 	})
+	assertAllTasks(
+		t, client, baseURL, sessionCookie, true, []task.Task{moved, future, projectTask},
+	)
 	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{future})
 	assertProjectTasks(
 		t, client, baseURL, sessionCookie, renamedProject.ID, true, []task.Task{moved, projectTask},
@@ -625,6 +632,47 @@ func assertInbox(
 	for index := range want {
 		if body.Tasks[index].ID != want[index].ID || body.Tasks[index].Status != want[index].Status {
 			t.Errorf("Inbox task %d = %#v, want %#v", index, body.Tasks[index], want[index])
+		}
+	}
+}
+
+func assertAllTasks(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	includeCompleted bool,
+	want []task.Task,
+) {
+	t.Helper()
+
+	endpoint := baseURL + "/api/views/all?include_completed=" + strconv.FormatBool(includeCompleted)
+	request, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		t.Fatalf("create all tasks request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send all tasks request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("all tasks status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Tasks []task.Task `json:"tasks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode all tasks: %v", err)
+	}
+	if len(body.Tasks) != len(want) {
+		t.Fatalf("all tasks count = %d, want %d", len(body.Tasks), len(want))
+	}
+	for index := range want {
+		if body.Tasks[index].ID != want[index].ID || body.Tasks[index].Status != want[index].Status {
+			t.Errorf("all task %d = %#v, want %#v", index, body.Tasks[index], want[index])
 		}
 	}
 }

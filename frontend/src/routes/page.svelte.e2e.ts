@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Project } from '$lib/projects/client';
 import type { Task } from '$lib/tasks/client';
 
-test('supports login, Inbox, projects, Today, and logout', async ({ page }) => {
+test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ page }) => {
 	let authenticated = false;
 	let tasks: Task[] = [];
 	let projects: Project[] = [];
@@ -73,11 +73,18 @@ test('supports login, Inbox, projects, Today, and logout', async ({ page }) => {
 			body: JSON.stringify({ tasks })
 		});
 	});
+	await page.route('**/api/views/all?*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ tasks })
+		});
+	});
 	await page.route('**/api/views/today?*', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ tasks: tasks.filter((item) => item.dueAt !== null) })
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.dueDate !== null) })
 		});
 	});
 	await page.route('**/api/views/projects/*?*', async (route) => {
@@ -177,7 +184,8 @@ test('supports login, Inbox, projects, Today, and logout', async ({ page }) => {
 	await page.getByLabel('Title', { exact: true }).fill('Buy oat milk');
 	await page.getByLabel('Description').fill('For breakfast');
 	await page.getByLabel('Priority').selectOption('3');
-	await page.getByLabel('Due date').fill(todayAt(23, 59));
+	await page.getByLabel('Due date').fill(todayDate());
+	await page.getByLabel('Due time').fill('23:59');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 	await expect(page.getByText('High')).toBeVisible();
@@ -190,8 +198,15 @@ test('supports login, Inbox, projects, Today, and logout', async ({ page }) => {
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Work');
 	await page.getByLabel('Task title').fill('Plan sprint');
 	await page.getByRole('button', { name: 'Add task' }).click();
+	await page.getByRole('link', { name: 'All tasks' }).click();
+	await expect(page).toHaveURL(/\/all$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('All tasks');
+	await expect(page.getByText('Buy oat milk')).toBeVisible();
+	await expect(page.getByText('Plan sprint')).toBeVisible();
+
+	await page.getByRole('link', { name: 'Work' }).click();
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
-	await page.getByLabel('Project', { exact: true }).selectOption('');
+	await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Plan sprint')).toHaveCount(0);
 
@@ -238,7 +253,8 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		description: null,
 		status: 'active',
 		priority: 0,
-		dueAt: null,
+		dueDate: null,
+		dueTime: null,
 		dueTimezone: null,
 		position: 1024,
 		version: 1,
@@ -250,9 +266,10 @@ function testTask(overrides: Partial<Task> = {}): Task {
 	};
 }
 
-function todayAt(hours: number, minutes: number): string {
+function todayDate(): string {
 	const date = new Date();
-	date.setHours(hours, minutes, 0, 0);
-	const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-	return local.toISOString().slice(0, 16);
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
 }

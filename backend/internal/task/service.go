@@ -32,6 +32,12 @@ var (
 	ErrInvalidPriority = errors.New("task priority must be between 0 and 4")
 	// ErrInvalidTimezone indicates that a due timezone is not an IANA timezone.
 	ErrInvalidTimezone = errors.New("task due timezone is invalid")
+	// ErrInvalidDueDate indicates that a due date is not a calendar date.
+	ErrInvalidDueDate = errors.New("task due date is invalid")
+	// ErrInvalidDueTime indicates that a due time is not a wall-clock time.
+	ErrInvalidDueTime = errors.New("task due time is invalid")
+	// ErrDueDateRequired indicates that a due time was provided without a due date.
+	ErrDueDateRequired = errors.New("task due date is required when due time is set")
 	// ErrProjectNotFound indicates that a requested destination project is unavailable to the user.
 	ErrProjectNotFound = errors.New("task project not found")
 )
@@ -40,8 +46,9 @@ type repository interface {
 	Create(context.Context, string, string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
+	ListAll(context.Context, string, bool) ([]Task, error)
 	ListProject(context.Context, string, string, bool) ([]Task, error)
-	ListToday(context.Context, string, time.Time, time.Time, bool) ([]Task, error)
+	ListToday(context.Context, string, Date, time.Time, time.Time, bool) ([]Task, error)
 	Complete(context.Context, string, string) (Task, error)
 	Reopen(context.Context, string, string) (Task, error)
 	Update(context.Context, string, string, Update) (Task, error)
@@ -111,7 +118,17 @@ func (s *Service) ListInbox(ctx context.Context, userID string, includeCompleted
 	return tasks, nil
 }
 
-// ListToday returns active tasks due before the end of the user's local day and,
+// ListAll returns all top-level tasks owned by the user.
+func (s *Service) ListAll(ctx context.Context, userID string, includeCompleted bool) ([]Task, error) {
+	tasks, err := s.repository.ListAll(ctx, userID, includeCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("list all tasks: %w", err)
+	}
+
+	return tasks, nil
+}
+
+// ListToday returns active tasks due on or before the user's local date and,
 // when requested, tasks completed during that day.
 func (s *Service) ListToday(
 	ctx context.Context,
@@ -128,7 +145,9 @@ func (s *Service) ListToday(
 	now := time.Now().In(location)
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	end := start.AddDate(0, 0, 1)
-	tasks, err := s.repository.ListToday(ctx, userID, start, end, includeCompleted)
+	tasks, err := s.repository.ListToday(
+		ctx, userID, Date(start.Format(dateLayout)), start, end, includeCompleted,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list Today: %w", err)
 	}
@@ -184,7 +203,7 @@ func validateUpdate(update *Update) error {
 		return ErrInvalidVersion
 	}
 	if update.Title == nil && update.Description == nil && update.ProjectID == nil && update.Priority == nil &&
-		update.DueAt == nil && update.DueTimezone == nil {
+		update.DueDate == nil && update.DueTime == nil && update.DueTimezone == nil {
 		return ErrNoChanges
 	}
 	if update.Title != nil {
@@ -204,6 +223,19 @@ func validateUpdate(update *Update) error {
 	if update.Priority != nil && (*update.Priority < 0 || *update.Priority > 4) {
 		return ErrInvalidPriority
 	}
+	if update.DueDate != nil && update.DueDate.Value != nil {
+		if _, err := ParseDate(string(*update.DueDate.Value)); err != nil {
+			return ErrInvalidDueDate
+		}
+	}
+	if update.DueTime != nil && update.DueTime.Value != nil {
+		if _, err := ParseTimeOfDay(string(*update.DueTime.Value)); err != nil {
+			return ErrInvalidDueTime
+		}
+		if update.DueDate != nil && update.DueDate.Value == nil {
+			return ErrDueDateRequired
+		}
+	}
 	if update.DueTimezone != nil && update.DueTimezone.Value != nil {
 		timezone := strings.TrimSpace(*update.DueTimezone.Value)
 		if timezone == "" {
@@ -214,7 +246,10 @@ func validateUpdate(update *Update) error {
 		}
 		update.DueTimezone.Value = &timezone
 	}
-	if update.DueAt != nil && update.DueAt.Value == nil && update.DueTimezone == nil {
+	if update.DueDate != nil && update.DueDate.Value == nil {
+		update.DueTime = &Nullable[TimeOfDay]{}
+		update.DueTimezone = &Nullable[string]{}
+	} else if update.DueTime != nil && update.DueTime.Value == nil {
 		update.DueTimezone = &Nullable[string]{}
 	}
 

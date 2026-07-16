@@ -89,6 +89,25 @@ func TestDeleteScopesTaskToUser(t *testing.T) {
 	}
 }
 
+func TestListAllScopesTasksToUser(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	_, err := task.NewService(repository).ListAll(context.Background(), "user-id", true)
+	if err != nil {
+		t.Fatalf("list all tasks: %v", err)
+	}
+	if repository.allUserID != "user-id" || !repository.allIncludeCompleted {
+		t.Errorf(
+			"all tasks arguments = (%q, %t), want (%q, %t)",
+			repository.allUserID,
+			repository.allIncludeCompleted,
+			"user-id",
+			true,
+		)
+	}
+}
+
 func TestListTodayUsesUserLocalDay(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +138,9 @@ func TestListTodayUsesUserLocalDay(t *testing.T) {
 			true,
 		)
 	}
+	if repository.todayDate != task.Date(repository.todayStart.In(location).Format("2006-01-02")) {
+		t.Errorf("Today date = %q, want local date", repository.todayDate)
+	}
 }
 
 func TestListTodayRejectsInvalidTimezone(t *testing.T) {
@@ -147,7 +169,7 @@ func TestUpdateNormalizesEditableFields(t *testing.T) {
 		Version:  2,
 		Title:    &title,
 		Priority: &priority,
-		DueAt:    &task.Nullable[time.Time]{},
+		DueDate:  &task.Nullable[task.Date]{},
 	})
 	if err != nil {
 		t.Fatalf("update task: %v", err)
@@ -158,6 +180,9 @@ func TestUpdateNormalizesEditableFields(t *testing.T) {
 	if repository.update.DueTimezone == nil || repository.update.DueTimezone.Value != nil {
 		t.Errorf("due timezone was not cleared with due date: %#v", repository.update.DueTimezone)
 	}
+	if repository.update.DueTime == nil || repository.update.DueTime.Value != nil {
+		t.Errorf("due time was not cleared with due date: %#v", repository.update.DueTime)
+	}
 }
 
 func TestUpdateRejectsInvalidFields(t *testing.T) {
@@ -167,6 +192,9 @@ func TestUpdateRejectsInvalidFields(t *testing.T) {
 	longDescription := strings.Repeat("x", 10_001)
 	invalidPriority := 5
 	invalidTimezone := "Mars/Olympus_Mons"
+	invalidDate := task.Date("2026-02-30")
+	invalidTime := task.TimeOfDay("25:00")
+	validTime := task.TimeOfDay("09:30")
 	validTitle := "Title"
 	tests := []struct {
 		name   string
@@ -188,6 +216,31 @@ func TestUpdateRejectsInvalidFields(t *testing.T) {
 			name:   "priority",
 			update: task.Update{Version: 1, Priority: &invalidPriority},
 			want:   task.ErrInvalidPriority,
+		},
+		{
+			name: "due date",
+			update: task.Update{
+				Version: 1,
+				DueDate: &task.Nullable[task.Date]{Value: &invalidDate},
+			},
+			want: task.ErrInvalidDueDate,
+		},
+		{
+			name: "due time",
+			update: task.Update{
+				Version: 1,
+				DueTime: &task.Nullable[task.TimeOfDay]{Value: &invalidTime},
+			},
+			want: task.ErrInvalidDueTime,
+		},
+		{
+			name: "time without date",
+			update: task.Update{
+				Version: 1,
+				DueDate: &task.Nullable[task.Date]{},
+				DueTime: &task.Nullable[task.TimeOfDay]{Value: &validTime},
+			},
+			want: task.ErrDueDateRequired,
 		},
 		{
 			name: "timezone",
@@ -221,7 +274,10 @@ type fakeRepository struct {
 	createProjectID       *string
 	deleteUserID          string
 	deleteTaskID          string
+	allUserID             string
+	allIncludeCompleted   bool
 	todayUserID           string
+	todayDate             task.Date
 	todayStart            time.Time
 	todayEnd              time.Time
 	todayIncludeCompleted bool
@@ -249,6 +305,16 @@ func (*fakeRepository) ListInbox(context.Context, string, bool) ([]task.Task, er
 	return nil, nil
 }
 
+func (r *fakeRepository) ListAll(
+	_ context.Context,
+	userID string,
+	includeCompleted bool,
+) ([]task.Task, error) {
+	r.allUserID = userID
+	r.allIncludeCompleted = includeCompleted
+	return nil, nil
+}
+
 func (*fakeRepository) ListProject(context.Context, string, string, bool) ([]task.Task, error) {
 	return nil, nil
 }
@@ -256,11 +322,13 @@ func (*fakeRepository) ListProject(context.Context, string, string, bool) ([]tas
 func (r *fakeRepository) ListToday(
 	_ context.Context,
 	userID string,
+	date task.Date,
 	dayStart time.Time,
 	dayEnd time.Time,
 	includeCompleted bool,
 ) ([]task.Task, error) {
 	r.todayUserID = userID
+	r.todayDate = date
 	r.todayStart = dayStart
 	r.todayEnd = dayEnd
 	r.todayIncludeCompleted = includeCompleted

@@ -123,16 +123,26 @@
 	}
 
 	function dueTime(item: Task): string {
-		if (!item.dueAt) return '';
+		if (!item.dueTime) return '';
 
+		const [hours, minutes] = item.dueTime.split(':').map(Number);
 		return new Intl.DateTimeFormat(undefined, {
 			hour: '2-digit',
 			minute: '2-digit'
-		}).format(new Date(item.dueAt));
+		}).format(new Date(2000, 0, 1, hours, minutes));
 	}
 
 	function isOverdue(item: Task): boolean {
-		return item.status === 'active' && item.dueAt !== null && new Date(item.dueAt) < new Date();
+		if (item.status !== 'active' || item.dueDate === null) return false;
+
+		const now = new Date();
+		const dueDate = parseDueDate(item.dueDate);
+		const today = startOfDay(now);
+		if (dueDate.getTime() < today.getTime()) return true;
+		if (dueDate.getTime() > today.getTime() || item.dueTime === null) return false;
+
+		const [hours, minutes] = item.dueTime.split(':').map(Number);
+		return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes) < now;
 	}
 
 	function priorityLabel(priority: number): string {
@@ -151,7 +161,7 @@
 		const groups = new Map<string, TaskGroup>();
 
 		for (const item of active) {
-			if (!item.dueAt) {
+			if (!item.dueDate) {
 				addToGroup(
 					groups,
 					{
@@ -166,8 +176,7 @@
 				continue;
 			}
 
-			const due = new Date(item.dueAt);
-			const dueDay = startOfDay(due);
+			const dueDay = parseDueDate(item.dueDate);
 			const key = localDateKey(dueDay);
 			let label = formatCalendarDate(dueDay, now);
 			let tone: TaskGroup['tone'] = 'upcoming';
@@ -225,16 +234,23 @@
 	}
 
 	function compareTasks(left: Task, right: Task): number {
-		const dueDifference = (dateTime(left.dueAt) ?? 0) - (dateTime(right.dueAt) ?? 0);
-		return dueDifference || right.priority - left.priority || left.position - right.position;
+		const timeDifference = timeOfDayMinutes(left.dueTime) - timeOfDayMinutes(right.dueTime);
+		return timeDifference || right.priority - left.priority || left.position - right.position;
 	}
 
-	function dateTime(value: string | null): number | null {
-		return value === null ? null : new Date(value).getTime();
+	function timeOfDayMinutes(value: string | null): number {
+		if (value === null) return -1;
+		const [hours, minutes] = value.split(':').map(Number);
+		return hours * 60 + minutes;
 	}
 
 	function startOfDay(value: Date): Date {
 		return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+	}
+
+	function parseDueDate(value: string): Date {
+		const [year, month, day] = value.split('-').map(Number);
+		return new Date(year, month - 1, day);
 	}
 
 	function localDateKey(value: Date): string {
@@ -325,9 +341,9 @@
 											{#if item.description}
 												<span class="task-description">{item.description}</span>
 											{/if}
-											{#if item.dueAt || item.priority > 0 || projectName(item.projectId)}
+											{#if item.dueTime || item.priority > 0 || projectName(item.projectId)}
 												<span class="task-metadata">
-													{#if item.dueAt}
+													{#if item.dueTime}
 														<span class:overdue={isOverdue(item)} class="due">{dueTime(item)}</span>
 													{/if}
 													{#if item.priority > 0}

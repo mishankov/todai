@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
@@ -22,6 +21,7 @@ type HTTPService interface {
 	Create(context.Context, string, string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
+	ListAll(context.Context, string, bool) ([]Task, error)
 	ListProject(context.Context, string, string, bool) ([]Task, error)
 	ListToday(context.Context, string, string, bool) ([]Task, error)
 	Complete(context.Context, string, string) (Task, error)
@@ -47,7 +47,8 @@ type updateTaskRequest struct {
 	Description nullable[string] `json:"description"`
 	ProjectID   nullable[string] `json:"projectId"`
 	Priority    optional[int]    `json:"priority"`
-	DueAt       nullable[string] `json:"dueAt"`
+	DueDate     nullable[string] `json:"dueDate"`
+	DueTime     nullable[string] `json:"dueTime"`
 	DueTimezone nullable[string] `json:"dueTimezone"`
 }
 
@@ -106,6 +107,7 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 
 	viewsAPI := httpserver.NewHandlerGroup()
 	viewsAPI.Use(m.authDomain.Middleware)
+	viewsAPI.HandleFunc("GET /all", handlers.listAll)
 	viewsAPI.HandleFunc("GET /inbox", handlers.listInbox)
 	viewsAPI.HandleFunc("GET /today", handlers.listToday)
 	viewsAPI.HandleFunc("GET /projects/{id}", handlers.listProject)
@@ -232,6 +234,28 @@ func (h taskHandlers) listInbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
 }
 
+func (h taskHandlers) listAll(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	includeCompleted, err := parseIncludeCompleted(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tasks, err := h.service.ListAll(r.Context(), user.ID, includeCompleted)
+	if err != nil {
+		writeTaskError(w, r, "list_all", err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
+}
+
 func (h taskHandlers) listToday(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
@@ -309,6 +333,9 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 		errors.Is(err, ErrTitleTooLong),
 		errors.Is(err, ErrDescriptionTooLong),
 		errors.Is(err, ErrInvalidPriority),
+		errors.Is(err, ErrInvalidDueDate),
+		errors.Is(err, ErrInvalidDueTime),
+		errors.Is(err, ErrDueDateRequired),
 		errors.Is(err, ErrInvalidTimezone),
 		errors.Is(err, ErrInvalidVersion),
 		errors.Is(err, ErrNoChanges):
@@ -353,14 +380,24 @@ func (r updateTaskRequest) taskUpdate() (Update, error) {
 	if r.Priority.Set {
 		update.Priority = &r.Priority.Value
 	}
-	if r.DueAt.Set {
-		update.DueAt = &Nullable[time.Time]{}
-		if r.DueAt.Value != nil {
-			dueAt, err := time.Parse(time.RFC3339, *r.DueAt.Value)
+	if r.DueDate.Set {
+		update.DueDate = &Nullable[Date]{}
+		if r.DueDate.Value != nil {
+			dueDate, err := ParseDate(*r.DueDate.Value)
 			if err != nil {
-				return Update{}, errors.New("task due date must use RFC3339")
+				return Update{}, errors.New("task due date must use YYYY-MM-DD")
 			}
-			update.DueAt.Value = &dueAt
+			update.DueDate.Value = &dueDate
+		}
+	}
+	if r.DueTime.Set {
+		update.DueTime = &Nullable[TimeOfDay]{}
+		if r.DueTime.Value != nil {
+			dueTime, err := ParseTimeOfDay(*r.DueTime.Value)
+			if err != nil {
+				return Update{}, errors.New("task due time must use HH:MM")
+			}
+			update.DueTime.Value = &dueTime
 		}
 	}
 	if r.DueTimezone.Set {
