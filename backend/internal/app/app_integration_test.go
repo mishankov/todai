@@ -20,9 +20,11 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/mishankov/todai/backend/internal/task"
 )
 
-func TestApplicationStartsServesAPIAndStops(t *testing.T) {
+func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -57,6 +59,11 @@ func TestApplicationStartsServesAPIAndStops(t *testing.T) {
 	)
 
 	var logs synchronizedBuffer
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("application logs:\n%s", logs.String())
+		}
+	})
 	command := exec.Command(binary, "run")
 	command.Env = processEnvironment
 	command.Stdout = &logs
@@ -98,6 +105,59 @@ func TestApplicationStartsServesAPIAndStops(t *testing.T) {
 		sessionCookie,
 		http.StatusOK,
 	)
+	assertCreateTaskStatus(t, client, baseURL, sessionCookie, "   ", http.StatusBadRequest)
+	created := createTask(t, client, baseURL, sessionCookie, "Buy milk")
+	if created.Title != "Buy milk" || created.Status != task.StatusActive || created.Version != 1 {
+		t.Errorf("created task = %#v", created)
+	}
+	updated := updateTask(t, client, baseURL, sessionCookie, created.ID, map[string]any{
+		"version":     created.Version,
+		"title":       "Buy oat milk",
+		"description": "For breakfast",
+		"priority":    3,
+		"dueAt":       "2026-07-17T07:00:00+03:00",
+		"dueTimezone": "Europe/Moscow",
+	})
+	if updated.Title != "Buy oat milk" || updated.Description == nil ||
+		*updated.Description != "For breakfast" || updated.Priority != 3 ||
+		updated.DueAt == nil || updated.DueTimezone == nil || updated.Version != 2 {
+		t.Errorf("updated task = %#v", updated)
+	}
+	assertUpdateTaskStatus(
+		t,
+		client,
+		baseURL,
+		sessionCookie,
+		created.ID,
+		map[string]any{"version": created.Version, "title": "Stale update"},
+		http.StatusConflict,
+	)
+	assertTask(t, client, baseURL, sessionCookie, created.ID, task.StatusActive)
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{updated})
+
+	completed := changeTaskStatus(t, client, baseURL, sessionCookie, created.ID, "complete")
+	if completed.Status != task.StatusCompleted || completed.CompletedAt == nil || completed.Version != 3 {
+		t.Errorf("completed task = %#v", completed)
+	}
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{})
+	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{completed})
+
+	reopened := changeTaskStatus(t, client, baseURL, sessionCookie, created.ID, "reopen")
+	if reopened.Status != task.StatusActive || reopened.CompletedAt != nil || reopened.Version != 4 {
+		t.Errorf("reopened task = %#v", reopened)
+	}
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{reopened})
+	deleteTask(t, client, baseURL, sessionCookie, created.ID)
+	assertStatusWithCookie(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+"/api/tasks/"+created.ID,
+		sessionCookie,
+		http.StatusNotFound,
+	)
+	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{})
+
 	logout(t, client, baseURL, sessionCookie)
 	assertStatus(t, client, http.MethodGet, baseURL+"/api/protected/ping", http.StatusUnauthorized)
 
@@ -116,6 +176,269 @@ func TestApplicationStartsServesAPIAndStops(t *testing.T) {
 	}
 
 	assertCoverageData(t, coverageDir)
+}
+
+func assertUpdateTaskStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	update map[string]any,
+	want int,
+) {
+	t.Helper()
+
+	response := sendTaskUpdate(t, client, baseURL, cookie, taskID, update)
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("update task status = %d, want %d", response.StatusCode, want)
+	}
+}
+
+func updateTask(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	update map[string]any,
+) task.Task {
+	t.Helper()
+
+	response := sendTaskUpdate(t, client, baseURL, cookie, taskID, update)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("update task status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	return decodeTask(t, response)
+}
+
+func sendTaskUpdate(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	update map[string]any,
+) *http.Response {
+	t.Helper()
+
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(update); err != nil {
+		t.Fatalf("encode task update: %v", err)
+	}
+	request, err := http.NewRequest(http.MethodPatch, baseURL+"/api/tasks/"+taskID, &body)
+	if err != nil {
+		t.Fatalf("create update task request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send update task request: %v", err)
+	}
+
+	return response
+}
+
+func assertCreateTaskStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	title string,
+	want int,
+) {
+	t.Helper()
+
+	response := sendTaskCreate(t, client, baseURL, cookie, title)
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("create task status = %d, want %d", response.StatusCode, want)
+	}
+}
+
+func createTask(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	title string,
+) task.Task {
+	t.Helper()
+
+	response := sendTaskCreate(t, client, baseURL, cookie, title)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create task status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	return decodeTask(t, response)
+}
+
+func sendTaskCreate(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	title string,
+) *http.Response {
+	t.Helper()
+
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]string{"title": title}); err != nil {
+		t.Fatalf("encode task request: %v", err)
+	}
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/api/tasks", &body)
+	if err != nil {
+		t.Fatalf("create task request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(cookie)
+
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send task request: %v", err)
+	}
+
+	return response
+}
+
+func assertTask(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	wantStatus task.Status,
+) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/tasks/"+taskID, http.NoBody)
+	if err != nil {
+		t.Fatalf("create get task request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send get task request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("get task status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	found := decodeTask(t, response)
+	if found.ID != taskID || found.Status != wantStatus {
+		t.Errorf("task = %#v, want ID %q and status %q", found, taskID, wantStatus)
+	}
+}
+
+func assertInbox(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	includeCompleted bool,
+	want []task.Task,
+) {
+	t.Helper()
+
+	url := baseURL + "/api/views/inbox?include_completed=" + strconv.FormatBool(includeCompleted)
+	request, err := http.NewRequest(http.MethodGet, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("create Inbox request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send Inbox request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("Inbox status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Tasks []task.Task `json:"tasks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode Inbox: %v", err)
+	}
+	if len(body.Tasks) != len(want) {
+		t.Fatalf("Inbox task count = %d, want %d", len(body.Tasks), len(want))
+	}
+	for index := range want {
+		if body.Tasks[index].ID != want[index].ID || body.Tasks[index].Status != want[index].Status {
+			t.Errorf("Inbox task %d = %#v, want %#v", index, body.Tasks[index], want[index])
+		}
+	}
+}
+
+func changeTaskStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	operation string,
+) task.Task {
+	t.Helper()
+
+	url := baseURL + "/api/tasks/" + taskID + "/" + operation
+	request, err := http.NewRequest(http.MethodPost, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("create %s task request: %v", operation, err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send %s task request: %v", operation, err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("%s task status = %d, want %d", operation, response.StatusCode, http.StatusOK)
+	}
+
+	return decodeTask(t, response)
+}
+
+func deleteTask(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodDelete, baseURL+"/api/tasks/"+taskID, http.NoBody)
+	if err != nil {
+		t.Fatalf("create delete task request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send delete task request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete task status = %d, want %d", response.StatusCode, http.StatusNoContent)
+	}
+}
+
+func decodeTask(t *testing.T, response *http.Response) task.Task {
+	t.Helper()
+
+	var decoded task.Task
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode task response: %v", err)
+	}
+
+	return decoded
 }
 
 func runBinaryCommand(

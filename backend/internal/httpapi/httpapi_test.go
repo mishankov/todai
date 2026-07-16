@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mishankov/todai/backend/internal/httpapi"
+	"github.com/mishankov/todai/backend/internal/task"
 )
 
 func TestAPIDoesNotExposeRegistration(t *testing.T) {
@@ -42,6 +43,60 @@ func TestProtectedEndpointRequiresSession(t *testing.T) {
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestTaskEndpointsRequireSession(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI()
+
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/tasks", nil),
+		httptest.NewRequest(http.MethodPatch, "/tasks/task-id", nil),
+		httptest.NewRequest(http.MethodDelete, "/tasks/task-id", nil),
+		httptest.NewRequest(http.MethodGet, "/views/inbox", nil),
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s status = %d, want %d", request.Method, request.URL.Path, response.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
+func TestAuthenticatedUserCanCreateInboxTask(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPIWithUser(t, "owner", "correct horse battery staple")
+	loginResponse := serveJSON(
+		t,
+		handler,
+		http.MethodPost,
+		"/auth/login",
+		map[string]string{"login": "owner", "password": "correct horse battery staple"},
+		nil,
+	)
+	sessionCookie := responseCookie(t, loginResponse, "todai_session")
+
+	response := serveJSON(
+		t,
+		handler,
+		http.MethodPost,
+		"/tasks",
+		map[string]string{"title": "Buy milk"},
+		sessionCookie,
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create task status = %d, want %d", response.Code, http.StatusCreated)
+	}
+
+	var created task.Task
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created task: %v", err)
+	}
+	if created.Title != "Buy milk" || created.LastModifiedBy != "user-id" {
+		t.Errorf("created task = %#v", created)
 	}
 }
 
@@ -120,7 +175,7 @@ func testAPI() http.Handler {
 		Middleware: auth.NewAuthenticationMiddleware(service),
 	}
 
-	return httpapi.New(domain)
+	return httpapi.New(domain, fakeTaskService{})
 }
 
 func testAPIWithUser(t *testing.T, username, password string) http.Handler {
@@ -145,7 +200,7 @@ func testAPIWithUser(t *testing.T, username, password string) http.Handler {
 		Middleware: auth.NewAuthenticationMiddleware(service),
 	}
 
-	return httpapi.New(domain)
+	return httpapi.New(domain, fakeTaskService{})
 }
 
 func serveJSON(
@@ -257,4 +312,40 @@ func (s *fakeSessionStorage) DeleteSessionsByUserId(_ context.Context, userID st
 	}
 
 	return nil
+}
+
+type fakeTaskService struct{}
+
+func (fakeTaskService) Create(_ context.Context, userID, title string) (task.Task, error) {
+	return task.Task{
+		ID:             "task-id",
+		Title:          title,
+		Status:         task.StatusActive,
+		Version:        1,
+		LastModifiedBy: userID,
+	}, nil
+}
+
+func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {
+	return task.Task{}, task.ErrTaskNotFound
+}
+
+func (fakeTaskService) ListInbox(context.Context, string, bool) ([]task.Task, error) {
+	return []task.Task{}, nil
+}
+
+func (fakeTaskService) Complete(context.Context, string, string) (task.Task, error) {
+	return task.Task{}, task.ErrTaskNotFound
+}
+
+func (fakeTaskService) Reopen(context.Context, string, string) (task.Task, error) {
+	return task.Task{}, task.ErrTaskNotFound
+}
+
+func (fakeTaskService) Update(context.Context, string, string, task.Update) (task.Task, error) {
+	return task.Task{}, task.ErrTaskNotFound
+}
+
+func (fakeTaskService) Delete(context.Context, string, string) error {
+	return task.ErrTaskNotFound
 }

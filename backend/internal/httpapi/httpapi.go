@@ -2,14 +2,27 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
+
+	"github.com/mishankov/todai/backend/internal/task"
 )
 
+type taskService interface {
+	Create(context.Context, string, string) (task.Task, error)
+	Get(context.Context, string, string) (task.Task, error)
+	ListInbox(context.Context, string, bool) ([]task.Task, error)
+	Complete(context.Context, string, string) (task.Task, error)
+	Reopen(context.Context, string, string) (task.Task, error)
+	Update(context.Context, string, string, task.Update) (task.Task, error)
+	Delete(context.Context, string, string) error
+}
+
 // New constructs the HTTP API handler.
-func New(authDomain *auth.Domain) http.Handler {
+func New(authDomain *auth.Domain, tasks taskService) http.Handler {
 	api := httpserver.NewHandlerGroup()
 
 	// Mount individual handlers so the personal MVP never exposes public registration.
@@ -31,6 +44,7 @@ func New(authDomain *auth.Domain) http.Handler {
 		}
 	})
 	api.Mount("/protected", protected)
+	mountTaskAPI(api, authDomain, tasks)
 
 	return api
 }

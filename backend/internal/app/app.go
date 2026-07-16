@@ -13,6 +13,7 @@ import (
 
 	"github.com/mishankov/todai/backend/internal/config"
 	"github.com/mishankov/todai/backend/internal/httpapi"
+	"github.com/mishankov/todai/backend/internal/task"
 )
 
 const databaseName = "main"
@@ -45,10 +46,12 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 		nil,
 	)
 	productApp.RegisterDomain("auth", databaseName, authDomain)
+	taskDomain := task.New(db.Connection())
+	productApp.RegisterDomain("task", databaseName, taskDomain)
 
 	server := httpserver.New(cfg.HTTPPort, 5*time.Second)
 	server.Handle("GET /health", application.NewHealthCheckHandler(productApp))
-	server.Mount("/api", httpapi.New(authDomain))
+	server.Mount("/api", httpapi.New(authDomain, taskDomain.Service))
 	productApp.RegisterService("http", server)
 
 	return productApp, &Resources{Database: db, Auth: authDomain}, nil

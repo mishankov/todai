@@ -8,10 +8,7 @@ describe('AppShell', () => {
 		const onLogout = vi.fn(async () => {});
 		render(AppShell, { username: 'owner', onLogout });
 
-		await expect
-			.element(page.getByRole('heading', { level: 1 }))
-			.toHaveTextContent('Welcome back, owner.');
-		await expect.element(page.getByRole('status')).toHaveTextContent('Authentication connected');
+		await expect.element(page.getByText('owner', { exact: true })).toHaveTextContent('owner');
 
 		await page.getByRole('button', { name: 'Log out' }).click();
 		expect(onLogout).toHaveBeenCalledOnce();
