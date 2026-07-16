@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 includes:
   backend:
@@ -17,8 +17,21 @@ tasks:
     cmds:
       - task: frontend:install
 
+  setup:test:
+    desc: Install project dependencies and test browsers
+    cmds:
+      - task: frontend:install
+      - task: frontend:browsers
+
   dev:
-    desc: Run backend and frontend development servers
+    desc: Start local infrastructure and run development servers
+    cmds:
+      - task: infrastructure:up
+      - task: backend:migrate
+      - task: dev:servers
+
+  dev:servers:
+    internal: true
     deps:
       - backend:dev
       - frontend:dev
@@ -28,4 +41,3 @@ tasks:
     deps:
       - backend:check
       - frontend:check
-

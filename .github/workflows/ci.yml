@@ -8,6 +8,20 @@ permissions:
   contents: read
 
 jobs:
+  backend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: backend
+
   backend:
     runs-on: ubuntu-latest
     services:
@@ -37,8 +51,6 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Unit tests
         run: go test ./...
-      - name: Static analysis
-        run: go vet ./...
       - name: Apply migrations
         run: go run ./cmd/todai migrate
       - name: Bootstrap user
@@ -78,10 +90,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium chromium-headless-shell
       - run: pnpm run lint
       - run: pnpm run check
       - run: pnpm run test:unit -- --run
       - run: pnpm run build
       - run: pnpm run test:e2e
-

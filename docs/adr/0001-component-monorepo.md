@@ -17,4 +17,3 @@ Taskfile, README and product requirements.
 - Each component owns its dependencies, build configuration and tests.
 - Root commands aggregate component commands without hiding how a component works.
 - Empty placeholder components are not committed.
-

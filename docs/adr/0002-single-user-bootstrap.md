@@ -19,4 +19,3 @@ https://github.com/platforma-dev/platforma/issues/93.
 - There is no first-run registration screen in the MVP.
 - Operators need database and process access to initialize an installation.
 - The temporary selective handler wiring can be removed after the Platforma issue is resolved.
-
