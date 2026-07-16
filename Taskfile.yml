@@ -1,0 +1,31 @@
+version: '3'
+
+includes:
+  backend:
+    taskfile: ./backend/Taskfile.yml
+    dir: ./backend
+  frontend:
+    taskfile: ./frontend/Taskfile.yml
+    dir: ./frontend
+  infrastructure:
+    taskfile: ./infrastructure/Taskfile.yml
+    dir: ./infrastructure
+
+tasks:
+  setup:
+    desc: Install project dependencies
+    cmds:
+      - task: frontend:install
+
+  dev:
+    desc: Run backend and frontend development servers
+    deps:
+      - backend:dev
+      - frontend:dev
+
+  check:
+    desc: Run all checks that do not require external services
+    deps:
+      - backend:check
+      - frontend:check
+

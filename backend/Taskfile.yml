@@ -1,0 +1,35 @@
+version: '3'
+
+tasks:
+  dev:
+    desc: Run the Go backend
+    cmds:
+      - go run ./cmd/todai run
+
+  migrate:
+    desc: Apply all registered PostgreSQL migrations
+    cmds:
+      - go run ./cmd/todai migrate
+
+  bootstrap-user:
+    desc: Create the single MVP user (task backend:bootstrap-user USERNAME=admin)
+    requires:
+      vars: [USERNAME]
+    cmds:
+      - go run ./cmd/todai bootstrap-user --username "{{.USERNAME}}"
+
+  test:
+    cmds:
+      - go test ./...
+
+  lint:
+    cmds:
+      - go vet ./...
+
+  format:
+    cmds:
+      - gofmt -w .
+
+  check:
+    deps: [test, lint]
+

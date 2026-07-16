@@ -1,0 +1,23 @@
+version: '3'
+
+tasks:
+  up:
+    desc: Start local infrastructure
+    cmds:
+      - docker compose up --detach --wait
+
+  down:
+    desc: Stop local infrastructure
+    cmds:
+      - docker compose down
+
+  reset:
+    desc: Remove local infrastructure and its data
+    prompt: This removes the local Todai database. Continue?
+    cmds:
+      - docker compose down --volumes
+
+  logs:
+    cmds:
+      - docker compose logs --follow postgres
+

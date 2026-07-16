@@ -1,0 +1,42 @@
+version: '3'
+
+tasks:
+  install:
+    cmds:
+      - pnpm install --frozen-lockfile
+
+  dev:
+    desc: Run the SvelteKit development server
+    cmds:
+      - pnpm run dev
+
+  lint:
+    cmds:
+      - pnpm run lint
+
+  types:
+    cmds:
+      - pnpm run check
+
+  test:
+    cmds:
+      - pnpm run test:unit -- --run
+
+  test:e2e:
+    cmds:
+      - pnpm run test:e2e
+
+  build:
+    cmds:
+      - pnpm run build
+
+  format:
+    cmds:
+      - pnpm run format
+
+  check:
+    cmds:
+      - pnpm run lint
+      - pnpm run check
+      - pnpm run test:unit -- --run
+      - pnpm run build
