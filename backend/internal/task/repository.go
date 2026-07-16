@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -102,6 +103,45 @@ func (r *Repository) ListInbox(
 	`, userID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("select Inbox tasks: %w", err)
+	}
+
+	return tasks, nil
+}
+
+// ListToday returns active tasks due by the end of the user's local day and
+// tasks completed during that day when requested.
+func (r *Repository) ListToday(
+	ctx context.Context,
+	userID string,
+	dayStart time.Time,
+	dayEnd time.Time,
+	includeCompleted bool,
+) ([]Task, error) {
+	tasks := make([]Task, 0)
+	err := r.db.SelectContext(ctx, &tasks, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE user_id = $1
+			AND due_at IS NOT NULL
+			AND due_at < $3
+			AND (
+				status = 'active'
+				OR (
+					$4
+					AND status = 'completed'
+					AND completed_at >= $2
+					AND completed_at < $3
+				)
+			)
+		ORDER BY
+			CASE status WHEN 'active' THEN 0 ELSE 1 END,
+			due_at,
+			priority DESC,
+			position,
+			created_at
+	`, userID, dayStart, dayEnd, includeCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("select Today tasks: %w", err)
 	}
 
 	return tasks, nil

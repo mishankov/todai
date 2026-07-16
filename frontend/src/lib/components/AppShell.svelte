@@ -1,13 +1,15 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
 		username: string;
 		onLogout: () => Promise<void>;
+		currentPath?: string;
 		children?: Snippet;
 	}
 
-	let { username, onLogout, children }: Props = $props();
+	let { username, onLogout, currentPath = '/', children }: Props = $props();
 	let signingOut = $state(false);
 	let errorMessage = $state('');
 
@@ -30,6 +32,19 @@
 			<span class="mark" aria-hidden="true">T</span>
 			<span>Todai</span>
 		</div>
+
+		<nav aria-label="Primary navigation">
+			<a
+				href={resolve('/')}
+				class:active={currentPath === '/'}
+				aria-current={currentPath === '/' ? 'page' : undefined}>Inbox</a
+			>
+			<a
+				href={resolve('/today')}
+				class:active={currentPath === '/today'}
+				aria-current={currentPath === '/today' ? 'page' : undefined}>Today</a
+			>
+		</nav>
 
 		<div class="session">
 			<span class="username">{username}</span>
@@ -70,6 +85,31 @@
 		gap: 0.7rem;
 		font-weight: 700;
 		letter-spacing: -0.02em;
+	}
+
+	nav {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.3rem;
+		border: 1px solid #dfe5dc;
+		border-radius: 0.8rem;
+		background: rgb(255 255 255 / 48%);
+	}
+
+	nav a {
+		padding: 0.5rem 0.7rem;
+		border-radius: 0.55rem;
+		color: #637068;
+		font-size: 0.8rem;
+		font-weight: 700;
+		text-decoration: none;
+	}
+
+	nav a:hover,
+	nav a.active {
+		color: #2d6540;
+		background: #fff;
 	}
 
 	.mark {
@@ -126,6 +166,20 @@
 	}
 
 	@media (max-width: 34rem) {
+		header {
+			flex-wrap: wrap;
+		}
+
+		nav {
+			order: 3;
+			width: 100%;
+		}
+
+		nav a {
+			flex: 1;
+			text-align: center;
+		}
+
 		.username {
 			display: none;
 		}

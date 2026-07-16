@@ -4,26 +4,30 @@
 
 	interface Props {
 		initialTasks: Task[];
-		create: (title: string) => Promise<Task>;
 		complete: (taskId: string) => Promise<Task>;
 		reopen: (taskId: string) => Promise<Task>;
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 		remove: (taskId: string) => Promise<void>;
 	}
 
-	let { initialTasks, create, complete, reopen, update, remove }: Props = $props();
+	let { initialTasks, complete, reopen, update, remove }: Props = $props();
+	const date = new Intl.DateTimeFormat(undefined, {
+		weekday: 'long',
+		month: 'long',
+		day: 'numeric'
+	}).format(new Date());
 </script>
 
 <TaskView
 	{initialTasks}
-	{create}
 	{complete}
 	{reopen}
 	{update}
 	{remove}
-	eyebrow="My tasks"
-	heading="Inbox"
-	emptyTitle="Inbox clear."
-	emptyMessage="Add something above when it needs your attention."
-	listLabel="Inbox tasks"
+	eyebrow={date}
+	heading="Today"
+	countNoun="remaining"
+	emptyTitle="Nothing due today."
+	emptyMessage="Enjoy the space, or add a due date to a task in Inbox."
+	listLabel="Today tasks"
 />

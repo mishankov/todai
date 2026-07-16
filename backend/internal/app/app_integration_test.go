@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,31 +92,40 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	client := &http.Client{Timeout: time.Second}
 	baseURL := "http://127.0.0.1:" + port
 	waitForStatus(t, client, http.MethodGet, baseURL+"/health", http.StatusOK, &logs)
-	assertStatus(t, client, http.MethodGet, baseURL+"/api/protected/ping", http.StatusUnauthorized)
+	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/inbox", http.StatusUnauthorized)
 	assertStatus(t, client, http.MethodPost, baseURL+"/api/auth/register", http.StatusNotFound)
 	assertStatus(t, client, http.MethodGet, baseURL+"/protected/ping", http.StatusNotFound)
 	assertLoginStatus(t, client, baseURL, "owner", "wrong password", http.StatusUnauthorized)
 	sessionCookie := login(t, client, baseURL, "owner", "correct horse battery staple")
 	assertCurrentUser(t, client, baseURL, sessionCookie, "owner")
-	assertStatusWithCookie(
-		t,
-		client,
-		http.MethodGet,
-		baseURL+"/api/protected/ping",
-		sessionCookie,
-		http.StatusOK,
-	)
 	assertCreateTaskStatus(t, client, baseURL, sessionCookie, "   ", http.StatusBadRequest)
 	created := createTask(t, client, baseURL, sessionCookie, "Buy milk")
 	if created.Title != "Buy milk" || created.Status != task.StatusActive || created.Version != 1 {
 		t.Errorf("created task = %#v", created)
 	}
+	moscow, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		t.Fatalf("load Moscow timezone: %v", err)
+	}
+	localNow := time.Now().In(moscow)
+	localDayStart := time.Date(
+		localNow.Year(),
+		localNow.Month(),
+		localNow.Day(),
+		0,
+		0,
+		0,
+		0,
+		moscow,
+	)
+	dueToday := localDayStart.Add(12 * time.Hour)
+	dueTomorrow := localDayStart.AddDate(0, 0, 1).Add(12 * time.Hour)
 	updated := updateTask(t, client, baseURL, sessionCookie, created.ID, map[string]any{
 		"version":     created.Version,
 		"title":       "Buy oat milk",
 		"description": "For breakfast",
 		"priority":    3,
-		"dueAt":       "2026-07-17T07:00:00+03:00",
+		"dueAt":       dueToday.Format(time.RFC3339),
 		"dueTimezone": "Europe/Moscow",
 	})
 	if updated.Title != "Buy oat milk" || updated.Description == nil ||
@@ -134,20 +144,31 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	)
 	assertTask(t, client, baseURL, sessionCookie, created.ID, task.StatusActive)
 	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{updated})
+	future := createTask(t, client, baseURL, sessionCookie, "Plan tomorrow")
+	future = updateTask(t, client, baseURL, sessionCookie, future.ID, map[string]any{
+		"version":     future.Version,
+		"dueAt":       dueTomorrow.Format(time.RFC3339),
+		"dueTimezone": "Europe/Moscow",
+	})
+	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{updated})
 
 	completed := changeTaskStatus(t, client, baseURL, sessionCookie, created.ID, "complete")
 	if completed.Status != task.StatusCompleted || completed.CompletedAt == nil || completed.Version != 3 {
 		t.Errorf("completed task = %#v", completed)
 	}
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{})
-	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{completed})
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{future})
+	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{future, completed})
+	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{})
+	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", true, []task.Task{completed})
 
 	reopened := changeTaskStatus(t, client, baseURL, sessionCookie, created.ID, "reopen")
 	if reopened.Status != task.StatusActive || reopened.CompletedAt != nil || reopened.Version != 4 {
 		t.Errorf("reopened task = %#v", reopened)
 	}
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{reopened})
+	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{reopened, future})
+	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", true, []task.Task{reopened})
 	deleteTask(t, client, baseURL, sessionCookie, created.ID)
+	deleteTask(t, client, baseURL, sessionCookie, future.ID)
 	assertStatusWithCookie(
 		t,
 		client,
@@ -159,7 +180,7 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{})
 
 	logout(t, client, baseURL, sessionCookie)
-	assertStatus(t, client, http.MethodGet, baseURL+"/api/protected/ping", http.StatusUnauthorized)
+	assertStatus(t, client, http.MethodGet, baseURL+"/api/auth/me", http.StatusUnauthorized)
 
 	if err := command.Process.Signal(os.Interrupt); err != nil {
 		t.Fatalf("interrupt application: %v\n%s", err, logs.String())
@@ -374,6 +395,49 @@ func assertInbox(
 	for index := range want {
 		if body.Tasks[index].ID != want[index].ID || body.Tasks[index].Status != want[index].Status {
 			t.Errorf("Inbox task %d = %#v, want %#v", index, body.Tasks[index], want[index])
+		}
+	}
+}
+
+func assertToday(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	timezone string,
+	includeCompleted bool,
+	want []task.Task,
+) {
+	t.Helper()
+
+	endpoint := baseURL + "/api/views/today?timezone=" + url.QueryEscape(timezone) +
+		"&include_completed=" + strconv.FormatBool(includeCompleted)
+	request, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		t.Fatalf("create Today request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send Today request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("Today status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Tasks []task.Task `json:"tasks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode Today: %v", err)
+	}
+	if len(body.Tasks) != len(want) {
+		t.Fatalf("Today task count = %d, want %d", len(body.Tasks), len(want))
+	}
+	for index := range want {
+		if body.Tasks[index].ID != want[index].ID || body.Tasks[index].Status != want[index].Status {
+			t.Errorf("Today task %d = %#v, want %#v", index, body.Tasks[index], want[index])
 		}
 	}
 }

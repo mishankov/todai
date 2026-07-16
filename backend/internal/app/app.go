@@ -51,7 +51,10 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 
 	server := httpserver.New(cfg.HTTPPort, 5*time.Second)
 	server.Handle("GET /health", application.NewHealthCheckHandler(productApp))
-	server.Mount("/api", httpapi.New(authDomain, taskDomain.Service))
+	server.Mount(
+		"/api",
+		httpapi.New(authDomain, task.NewHTTPModule(authDomain, taskDomain.Service)),
+	)
 	productApp.RegisterService("http", server)
 
 	return productApp, &Resources{Database: db, Auth: authDomain}, nil

@@ -43,12 +43,32 @@ export class TaskConflictError extends TaskRequestError {
 
 export async function getInbox(fetcher: typeof fetch, includeCompleted = false): Promise<Task[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
-	const response = await fetcher(`/api/views/inbox?${query}`, {
+	return getTaskView(fetcher, `/api/views/inbox?${query}`, 'Could not load Inbox.');
+}
+
+export async function getToday(
+	fetcher: typeof fetch,
+	timezone: string,
+	includeCompleted = false
+): Promise<Task[]> {
+	const query = new URLSearchParams({
+		timezone,
+		include_completed: String(includeCompleted)
+	});
+	return getTaskView(fetcher, `/api/views/today?${query}`, 'Could not load Today.');
+}
+
+async function getTaskView(
+	fetcher: typeof fetch,
+	path: string,
+	errorMessage: string
+): Promise<Task[]> {
+	const response = await fetcher(path, {
 		credentials: 'same-origin',
 		headers: { Accept: 'application/json' }
 	});
 	if (!response.ok) {
-		throw new TaskRequestError('Could not load Inbox.');
+		throw new TaskRequestError(errorMessage);
 	}
 
 	const body = (await response.json()) as { tasks: Task[] };

@@ -73,6 +73,52 @@ func TestDeleteScopesTaskToUser(t *testing.T) {
 	}
 }
 
+func TestListTodayUsesUserLocalDay(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	service := task.NewService(repository)
+
+	_, err := service.ListToday(context.Background(), "user-id", "Europe/Moscow", true)
+	if err != nil {
+		t.Fatalf("list Today: %v", err)
+	}
+	location, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		t.Fatalf("load timezone: %v", err)
+	}
+	start := repository.todayStart.In(location)
+	if start.Hour() != 0 || start.Minute() != 0 || start.Second() != 0 || start.Nanosecond() != 0 {
+		t.Errorf("day start = %v, want local midnight", start)
+	}
+	if !repository.todayEnd.Equal(repository.todayStart.AddDate(0, 0, 1)) {
+		t.Errorf("day end = %v, want day after %v", repository.todayEnd, repository.todayStart)
+	}
+	if repository.todayUserID != "user-id" || !repository.todayIncludeCompleted {
+		t.Errorf(
+			"Today arguments = (%q, %t), want (%q, %t)",
+			repository.todayUserID,
+			repository.todayIncludeCompleted,
+			"user-id",
+			true,
+		)
+	}
+}
+
+func TestListTodayRejectsInvalidTimezone(t *testing.T) {
+	t.Parallel()
+
+	_, err := task.NewService(&fakeRepository{}).ListToday(
+		context.Background(),
+		"user-id",
+		"Mars/Olympus_Mons",
+		false,
+	)
+	if !errors.Is(err, task.ErrInvalidTimezone) {
+		t.Fatalf("error = %v, want %v", err, task.ErrInvalidTimezone)
+	}
+}
+
 func TestUpdateNormalizesEditableFields(t *testing.T) {
 	t.Parallel()
 
@@ -155,10 +201,14 @@ func TestUpdateRejectsInvalidFields(t *testing.T) {
 }
 
 type fakeRepository struct {
-	createUserID string
-	deleteUserID string
-	deleteTaskID string
-	update       task.Update
+	createUserID          string
+	deleteUserID          string
+	deleteTaskID          string
+	todayUserID           string
+	todayStart            time.Time
+	todayEnd              time.Time
+	todayIncludeCompleted bool
+	update                task.Update
 }
 
 func (r *fakeRepository) Create(_ context.Context, userID, title string) (task.Task, error) {
@@ -171,6 +221,20 @@ func (*fakeRepository) Get(context.Context, string, string) (task.Task, error) {
 }
 
 func (*fakeRepository) ListInbox(context.Context, string, bool) ([]task.Task, error) {
+	return nil, nil
+}
+
+func (r *fakeRepository) ListToday(
+	_ context.Context,
+	userID string,
+	dayStart time.Time,
+	dayEnd time.Time,
+	includeCompleted bool,
+) ([]task.Task, error) {
+	r.todayUserID = userID
+	r.todayStart = dayStart
+	r.todayEnd = dayEnd
+	r.todayIncludeCompleted = includeCompleted
 	return nil, nil
 }
 

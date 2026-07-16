@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Task } from '$lib/tasks/client';
 
-test('supports login, Inbox task flow and logout', async ({ page }) => {
+test('supports login, Inbox and Today task flow, and logout', async ({ page }) => {
 	let authenticated = false;
 	let tasks: Task[] = [];
 
@@ -34,6 +34,13 @@ test('supports login, Inbox task flow and logout', async ({ page }) => {
 			body: JSON.stringify({ tasks })
 		});
 	});
+	await page.route('**/api/views/today?*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.dueAt !== null) })
+		});
+	});
 	await page.route('**/api/tasks', async (route) => {
 		const request = route.request().postDataJSON();
 		const created = testTask({ id: `task-${tasks.length + 1}`, title: request.title });
@@ -50,7 +57,7 @@ test('supports login, Inbox task flow and logout', async ({ page }) => {
 		Object.assign(updated, {
 			status: 'completed',
 			version: updated.version + 1,
-			completedAt: '2026-07-16T12:00:00Z'
+			completedAt: new Date().toISOString()
 		});
 		await route.fulfill({
 			status: 200,
@@ -119,7 +126,14 @@ test('supports login, Inbox task flow and logout', async ({ page }) => {
 	await page.getByLabel('Title', { exact: true }).fill('Buy oat milk');
 	await page.getByLabel('Description').fill('For breakfast');
 	await page.getByLabel('Priority').selectOption('3');
+	await page.getByLabel('Due date').fill(todayAt(23, 59));
 	await page.getByRole('button', { name: 'Save changes' }).click();
+	await expect(page.getByText('Buy oat milk')).toBeVisible();
+	await expect(page.getByText('High')).toBeVisible();
+
+	await page.getByRole('link', { name: 'Today' }).click();
+	await expect(page).toHaveURL(/\/today$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Today');
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Complete Buy oat milk' }).click();
@@ -153,4 +167,11 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		lastModifiedBy: 'user-id',
 		...overrides
 	};
+}
+
+function todayAt(hours: number, minutes: number): string {
+	const date = new Date();
+	date.setHours(hours, minutes, 0, 0);
+	const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+	return local.toISOString().slice(0, 16);
 }

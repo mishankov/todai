@@ -1,21 +1,16 @@
 <script lang="ts">
+	import Today from '$lib/components/Today.svelte';
 	import {
 		completeTask,
-		createTask,
 		deleteTask,
 		reopenTask,
 		type Task,
 		type TaskUpdate,
 		updateTask
 	} from '$lib/tasks/client';
-	import Inbox from '$lib/components/Inbox.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
-
-	function create(title: string): Promise<Task> {
-		return createTask(fetch, title);
-	}
 
 	function complete(taskId: string): Promise<Task> {
 		return completeTask(fetch, taskId);
@@ -35,7 +30,7 @@
 </script>
 
 <svelte:head>
-	<title>Inbox — Todai</title>
+	<title>Today — Todai</title>
 </svelte:head>
 
-<Inbox initialTasks={data.tasks} {create} {complete} {reopen} {update} {remove} />
+<Today initialTasks={data.tasks} {complete} {reopen} {update} {remove} />

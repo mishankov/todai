@@ -13,6 +13,12 @@ description: Apply conventions when implementing, reviewing, or refactoring Go c
 - Do not use `fmt.Fprintln(os.Stderr, err)`, ad hoc printing, or the standard `log` package for diagnostics.
 - Use `fmt` only for intentional CLI output, prompts, or protocol payloads.
 
+## HTTP
+
+- Keep routes, handlers, transport DTOs, and error mapping in their owning domain package.
+- Use the root HTTP package only to assemble and mount domain modules.
+- Keep handler tests in the same domain test package.
+
 ## Testing
 
 - Test only behavior observable through the package's exported API.

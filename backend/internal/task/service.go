@@ -38,6 +38,7 @@ type repository interface {
 	Create(context.Context, string, string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
+	ListToday(context.Context, string, time.Time, time.Time, bool) ([]Task, error)
 	Complete(context.Context, string, string) (Task, error)
 	Reopen(context.Context, string, string) (Task, error)
 	Update(context.Context, string, string, Update) (Task, error)
@@ -87,6 +88,31 @@ func (s *Service) ListInbox(ctx context.Context, userID string, includeCompleted
 	tasks, err := s.repository.ListInbox(ctx, userID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("list Inbox: %w", err)
+	}
+
+	return tasks, nil
+}
+
+// ListToday returns active tasks due before the end of the user's local day and,
+// when requested, tasks completed during that day.
+func (s *Service) ListToday(
+	ctx context.Context,
+	userID string,
+	timezone string,
+	includeCompleted bool,
+) ([]Task, error) {
+	timezone = strings.TrimSpace(timezone)
+	location, err := time.LoadLocation(timezone)
+	if timezone == "" || err != nil {
+		return nil, ErrInvalidTimezone
+	}
+
+	now := time.Now().In(location)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	end := start.AddDate(0, 0, 1)
+	tasks, err := s.repository.ListToday(ctx, userID, start, end, includeCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("list Today: %w", err)
 	}
 
 	return tasks, nil

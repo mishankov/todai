@@ -1,4 +1,4 @@
-package httpapi
+package task
 
 import (
 	"context"
@@ -11,12 +11,28 @@ import (
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
 	"github.com/platforma-dev/platforma/log"
-
-	"github.com/mishankov/todai/backend/internal/task"
 )
 
 type taskHandlers struct {
-	service taskService
+	service HTTPService
+}
+
+// HTTPService describes the task operations exposed over HTTP.
+type HTTPService interface {
+	Create(context.Context, string, string) (Task, error)
+	Get(context.Context, string, string) (Task, error)
+	ListInbox(context.Context, string, bool) ([]Task, error)
+	ListToday(context.Context, string, string, bool) ([]Task, error)
+	Complete(context.Context, string, string) (Task, error)
+	Reopen(context.Context, string, string) (Task, error)
+	Update(context.Context, string, string, Update) (Task, error)
+	Delete(context.Context, string, string) error
+}
+
+// HTTPModule owns the task domain's routes and handlers.
+type HTTPModule struct {
+	authDomain *auth.Domain
+	service    HTTPService
 }
 
 type createTaskRequest struct {
@@ -62,15 +78,21 @@ func (n *nullable[T]) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type inboxResponse struct {
-	Tasks []task.Task `json:"tasks"`
+type taskListResponse struct {
+	Tasks []Task `json:"tasks"`
 }
 
-func mountTaskAPI(api *httpserver.HandlerGroup, authDomain *auth.Domain, service taskService) {
-	handlers := taskHandlers{service: service}
+// NewHTTPModule constructs the task HTTP module.
+func NewHTTPModule(authDomain *auth.Domain, service HTTPService) *HTTPModule {
+	return &HTTPModule{authDomain: authDomain, service: service}
+}
+
+// Mount registers all task-owned routes on the product API.
+func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
+	handlers := taskHandlers{service: m.service}
 
 	tasksAPI := httpserver.NewHandlerGroup()
-	tasksAPI.Use(authDomain.Middleware)
+	tasksAPI.Use(m.authDomain.Middleware)
 	tasksAPI.HandleFunc("POST /", handlers.create)
 	tasksAPI.HandleFunc("GET /{id}", handlers.get)
 	tasksAPI.HandleFunc("PATCH /{id}", handlers.update)
@@ -80,8 +102,9 @@ func mountTaskAPI(api *httpserver.HandlerGroup, authDomain *auth.Domain, service
 	api.Mount("/tasks", tasksAPI)
 
 	viewsAPI := httpserver.NewHandlerGroup()
-	viewsAPI.Use(authDomain.Middleware)
+	viewsAPI.Use(m.authDomain.Middleware)
 	viewsAPI.HandleFunc("GET /inbox", handlers.listInbox)
+	viewsAPI.HandleFunc("GET /today", handlers.listToday)
 	api.Mount("/views", viewsAPI)
 }
 
@@ -166,14 +189,10 @@ func (h taskHandlers) listInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeCompleted := false
-	if value := r.URL.Query().Get("include_completed"); value != "" {
-		parsed, err := strconv.ParseBool(value)
-		if err != nil {
-			http.Error(w, "invalid include_completed value", http.StatusBadRequest)
-			return
-		}
-		includeCompleted = parsed
+	includeCompleted, err := parseIncludeCompleted(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	tasks, err := h.service.ListInbox(r.Context(), user.ID, includeCompleted)
@@ -182,7 +201,34 @@ func (h taskHandlers) listInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, inboxResponse{Tasks: tasks})
+	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
+}
+
+func (h taskHandlers) listToday(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	timezone := r.URL.Query().Get("timezone")
+	if timezone == "" {
+		http.Error(w, "timezone is required", http.StatusBadRequest)
+		return
+	}
+	includeCompleted, err := parseIncludeCompleted(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tasks, err := h.service.ListToday(r.Context(), user.ID, timezone, includeCompleted)
+	if err != nil {
+		writeTaskError(w, r, "list_today", err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
 }
 
 func (h taskHandlers) complete(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +258,7 @@ func (h taskHandlers) changeStatus(
 	w http.ResponseWriter,
 	r *http.Request,
 	operation string,
-	change func(context.Context, string, string) (task.Task, error),
+	change func(context.Context, string, string) (Task, error),
 ) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
@@ -231,47 +277,61 @@ func (h taskHandlers) changeStatus(
 
 func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, err error) {
 	switch {
-	case errors.Is(err, task.ErrTitleRequired),
-		errors.Is(err, task.ErrTitleTooLong),
-		errors.Is(err, task.ErrDescriptionTooLong),
-		errors.Is(err, task.ErrInvalidPriority),
-		errors.Is(err, task.ErrInvalidTimezone),
-		errors.Is(err, task.ErrInvalidVersion),
-		errors.Is(err, task.ErrNoChanges):
+	case errors.Is(err, ErrTitleRequired),
+		errors.Is(err, ErrTitleTooLong),
+		errors.Is(err, ErrDescriptionTooLong),
+		errors.Is(err, ErrInvalidPriority),
+		errors.Is(err, ErrInvalidTimezone),
+		errors.Is(err, ErrInvalidVersion),
+		errors.Is(err, ErrNoChanges):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, task.ErrTaskNotFound):
-		http.Error(w, task.ErrTaskNotFound.Error(), http.StatusNotFound)
-	case errors.Is(err, task.ErrVersionConflict):
-		http.Error(w, task.ErrVersionConflict.Error(), http.StatusConflict)
+	case errors.Is(err, ErrTaskNotFound):
+		http.Error(w, ErrTaskNotFound.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrVersionConflict):
+		http.Error(w, ErrVersionConflict.Error(), http.StatusConflict)
 	default:
 		log.ErrorContext(r.Context(), "task request failed", "operation", operation, "error", err)
 		http.Error(w, "task request failed", http.StatusInternalServerError)
 	}
 }
 
-func (r updateTaskRequest) taskUpdate() (task.Update, error) {
-	update := task.Update{Version: *r.Version}
+func parseIncludeCompleted(r *http.Request) (bool, error) {
+	value := r.URL.Query().Get("include_completed")
+	if value == "" {
+		return false, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, errors.New("invalid include_completed value")
+	}
+
+	return parsed, nil
+}
+
+func (r updateTaskRequest) taskUpdate() (Update, error) {
+	update := Update{Version: *r.Version}
 	if r.Title.Set {
 		update.Title = &r.Title.Value
 	}
 	if r.Description.Set {
-		update.Description = &task.Nullable[string]{Value: r.Description.Value}
+		update.Description = &Nullable[string]{Value: r.Description.Value}
 	}
 	if r.Priority.Set {
 		update.Priority = &r.Priority.Value
 	}
 	if r.DueAt.Set {
-		update.DueAt = &task.Nullable[time.Time]{}
+		update.DueAt = &Nullable[time.Time]{}
 		if r.DueAt.Value != nil {
 			dueAt, err := time.Parse(time.RFC3339, *r.DueAt.Value)
 			if err != nil {
-				return task.Update{}, errors.New("task due date must use RFC3339")
+				return Update{}, errors.New("task due date must use RFC3339")
 			}
 			update.DueAt.Value = &dueAt
 		}
 	}
 	if r.DueTimezone.Set {
-		update.DueTimezone = &task.Nullable[string]{Value: r.DueTimezone.Value}
+		update.DueTimezone = &Nullable[string]{Value: r.DueTimezone.Value}
 	}
 
 	return update, nil
