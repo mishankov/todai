@@ -7,7 +7,7 @@ import Today from './Today.svelte';
 describe('Today', () => {
 	it('shows due time, priority and the number of remaining tasks', async () => {
 		const dueAt = new Date();
-		dueAt.setHours(0, 0, 0, 0);
+		dueAt.setHours(23, 59, 0, 0);
 		render(Today, {
 			initialTasks: [testTask({ title: 'Ship Today', priority: 4, dueAt: dueAt.toISOString() })],
 			complete: vi.fn(),
@@ -16,9 +16,10 @@ describe('Today', () => {
 			remove: vi.fn()
 		});
 
-		await expect.element(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+		await expect.element(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+		await expect.element(page.getByRole('heading', { name: 'Today', level: 2 })).toBeVisible();
 		await expect.element(page.getByText('1 remaining')).toBeVisible();
-		await expect.element(page.getByText(/^Overdue ·/)).toBeVisible();
+		await expect.element(page.getByText(/23:59|11:59/)).toBeVisible();
 		await expect.element(page.getByText('Urgent')).toBeVisible();
 	});
 });

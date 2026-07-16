@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
 	import type { Project } from '$lib/projects/client';
+	import type { Task, TaskUpdate } from '$lib/tasks/client';
 	import TaskEditor from './TaskEditor.svelte';
 
 	interface Props {
@@ -18,6 +18,14 @@
 		listLabel: string;
 		projects?: Project[];
 		currentProjectId?: string | null;
+	}
+
+	interface TaskGroup {
+		key: string;
+		label: string;
+		tone: 'overdue' | 'today' | 'upcoming' | 'undated' | 'completed';
+		sortTime: number;
+		tasks: Task[];
 	}
 
 	let {
@@ -44,7 +52,7 @@
 	let editingTaskId = $state<string | null>(null);
 	let activeTasks = $derived(tasks.filter((item) => item.status === 'active'));
 	let completedTasks = $derived(tasks.filter((item) => item.status === 'completed'));
-	let orderedTasks = $derived([...activeTasks, ...completedTasks]);
+	let taskGroups = $derived(buildTaskGroups(activeTasks, completedTasks));
 
 	async function addTask() {
 		if (!title.trim() || !create) return;
@@ -114,52 +122,140 @@
 		editingTaskId = null;
 	}
 
-	function dueLabel(item: Task): string {
+	function dueTime(item: Task): string {
 		if (!item.dueAt) return '';
 
-		const due = new Date(item.dueAt);
-		const now = new Date();
-		const time = new Intl.DateTimeFormat(undefined, {
+		return new Intl.DateTimeFormat(undefined, {
 			hour: '2-digit',
 			minute: '2-digit'
-		}).format(due);
-		const date = sameLocalDay(due, now)
-			? time
-			: new Intl.DateTimeFormat(undefined, {
-					month: 'short',
-					day: 'numeric',
-					hour: '2-digit',
-					minute: '2-digit'
-				}).format(due);
-		if (item.status === 'active' && due.getTime() < now.getTime()) {
-			return `Overdue · ${date}`;
-		}
-
-		return sameLocalDay(due, now) ? `Today · ${time}` : date;
+		}).format(new Date(item.dueAt));
 	}
 
 	function isOverdue(item: Task): boolean {
 		return item.status === 'active' && item.dueAt !== null && new Date(item.dueAt) < new Date();
 	}
 
-	function sameLocalDay(left: Date, right: Date): boolean {
-		return (
-			left.getFullYear() === right.getFullYear() &&
-			left.getMonth() === right.getMonth() &&
-			left.getDate() === right.getDate()
-		);
-	}
-
 	function priorityLabel(priority: number): string {
 		return ['', 'Low', 'Medium', 'High', 'Urgent'][priority] ?? '';
 	}
+
+	function projectName(projectId: string | null): string {
+		if (!projectId) return '';
+		return projects.find((project) => project.id === projectId)?.name ?? '';
+	}
+
+	function buildTaskGroups(active: Task[], completed: Task[]): TaskGroup[] {
+		const now = new Date();
+		const today = startOfDay(now);
+		const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+		const groups = new Map<string, TaskGroup>();
+
+		for (const item of active) {
+			if (!item.dueAt) {
+				addToGroup(
+					groups,
+					{
+						key: 'no-date',
+						label: 'No date',
+						tone: 'undated',
+						sortTime: Number.POSITIVE_INFINITY,
+						tasks: []
+					},
+					item
+				);
+				continue;
+			}
+
+			const due = new Date(item.dueAt);
+			const dueDay = startOfDay(due);
+			const key = localDateKey(dueDay);
+			let label = formatCalendarDate(dueDay, now);
+			let tone: TaskGroup['tone'] = 'upcoming';
+			if (dueDay.getTime() < today.getTime()) {
+				label = `Overdue · ${label}`;
+				tone = 'overdue';
+			} else if (dueDay.getTime() === today.getTime()) {
+				label = 'Today';
+				tone = 'today';
+			} else if (dueDay.getTime() === tomorrow.getTime()) {
+				label = 'Tomorrow';
+			}
+
+			addToGroup(
+				groups,
+				{
+					key,
+					label,
+					tone,
+					sortTime: dueDay.getTime(),
+					tasks: []
+				},
+				item
+			);
+		}
+
+		const result = [...groups.values()].sort((left, right) => left.sortTime - right.sortTime);
+		for (const group of result) {
+			group.tasks.sort(compareTasks);
+		}
+		if (completed.length > 0) {
+			result.push({
+				key: 'completed',
+				label: 'Completed',
+				tone: 'completed',
+				sortTime: Number.POSITIVE_INFINITY,
+				tasks: [...completed].sort((left, right) =>
+					(right.completedAt ?? '').localeCompare(left.completedAt ?? '')
+				)
+			});
+		}
+
+		return result;
+	}
+
+	function addToGroup(groups: Map<string, TaskGroup>, group: TaskGroup, item: Task) {
+		const existing = groups.get(group.key);
+		if (existing) {
+			existing.tasks.push(item);
+			return;
+		}
+
+		group.tasks.push(item);
+		groups.set(group.key, group);
+	}
+
+	function compareTasks(left: Task, right: Task): number {
+		const dueDifference = (dateTime(left.dueAt) ?? 0) - (dateTime(right.dueAt) ?? 0);
+		return dueDifference || right.priority - left.priority || left.position - right.position;
+	}
+
+	function dateTime(value: string | null): number | null {
+		return value === null ? null : new Date(value).getTime();
+	}
+
+	function startOfDay(value: Date): Date {
+		return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+	}
+
+	function localDateKey(value: Date): string {
+		return `${value.getFullYear()}-${value.getMonth() + 1}-${value.getDate()}`;
+	}
+
+	function formatCalendarDate(value: Date, now: Date): string {
+		return new Intl.DateTimeFormat(undefined, {
+			weekday: 'long',
+			month: 'long',
+			day: 'numeric',
+			...(value.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' })
+		}).format(value);
+	}
 </script>
 
-<section class="inbox" aria-labelledby="inbox-heading">
-	<header class="inbox-header">
+<section class="task-view" aria-labelledby="task-view-heading">
+	<header class="view-header">
 		<div>
 			<p class="eyebrow">{eyebrow}</p>
-			<h1 id="inbox-heading">{heading}</h1>
+			<h1 id="task-view-heading">{heading}</h1>
 		</div>
 		<span class="count">{activeTasks.length} {countNoun}</span>
 	</header>
@@ -176,14 +272,14 @@
 			<input
 				id="new-task"
 				name="title"
-				placeholder="Add a task…"
+				placeholder="Add task"
 				autocomplete="off"
 				maxlength="500"
 				bind:value={title}
 				disabled={creating}
 			/>
-			<button type="submit" disabled={creating || !title.trim()}>
-				{creating ? 'Adding…' : 'Add task'}
+			<button type="submit" aria-label="Add task" disabled={creating || !title.trim()}>
+				{creating ? 'Adding…' : 'Add'}
 			</button>
 		</form>
 	{/if}
@@ -193,67 +289,80 @@
 	{/if}
 
 	<div class="task-space">
-		{#if orderedTasks.length > 0}
-			<ul class="task-list" aria-label={listLabel}>
-				{#each orderedTasks as item, index (item.id)}
-					{#if item.status === 'completed' && index === activeTasks.length}
-						<li class="section-heading" role="presentation">
-							<span>Completed · {completedTasks.length}</span>
-						</li>
-					{/if}
-					{#if editingTaskId === item.id}
-						<li class="editor-row">
-							<TaskEditor
-								task={item}
-								{projects}
-								save={(changes) => saveItem(item, changes)}
-								cancel={() => (editingTaskId = null)}
-							/>
-						</li>
-					{:else}
-						<li class:completed-task={item.status === 'completed'}>
-							<button
-								class:checked={item.status === 'completed'}
-								class="task-toggle"
-								type="button"
-								aria-label={`${item.status === 'active' ? 'Complete' : 'Reopen'} ${item.title}`}
-								disabled={busyTaskIds.includes(item.id)}
-								onclick={() => void changeStatus(item)}
-							>
-								{item.status === 'completed' ? '✓' : ''}
-							</button>
-							<span class="task-copy">
-								<span class="task-title">{item.title}</span>
-								{#if item.dueAt || item.priority > 0}
-									<span class="task-metadata">
-										{#if item.dueAt}
-											<span class:overdue={isOverdue(item)} class="due">{dueLabel(item)}</span>
-										{/if}
-										{#if item.priority > 0}
-											<span class={`priority priority-${item.priority}`}>
-												{priorityLabel(item.priority)}
-											</span>
-										{/if}
-									</span>
+		{#if taskGroups.length > 0}
+			<div class="task-groups" aria-label={listLabel}>
+				{#each taskGroups as group (group.key)}
+					<section class={`task-group ${group.tone}`} aria-labelledby={`group-${group.key}`}>
+						<header class="group-header">
+							<h2 id={`group-${group.key}`}>{group.label}</h2>
+							<span>{group.tasks.length}</span>
+						</header>
+						<ul aria-label={`${group.label} tasks`}>
+							{#each group.tasks as item (item.id)}
+								{#if editingTaskId === item.id}
+									<li class="editor-row">
+										<TaskEditor
+											task={item}
+											{projects}
+											save={(changes) => saveItem(item, changes)}
+											cancel={() => (editingTaskId = null)}
+										/>
+									</li>
+								{:else}
+									<li class:completed-task={item.status === 'completed'}>
+										<button
+											class:checked={item.status === 'completed'}
+											class="task-toggle"
+											type="button"
+											aria-label={`${item.status === 'active' ? 'Complete' : 'Reopen'} ${item.title}`}
+											disabled={busyTaskIds.includes(item.id)}
+											onclick={() => void changeStatus(item)}
+										>
+											{item.status === 'completed' ? '✓' : ''}
+										</button>
+										<span class="task-copy">
+											<span class="task-title">{item.title}</span>
+											{#if item.description}
+												<span class="task-description">{item.description}</span>
+											{/if}
+											{#if item.dueAt || item.priority > 0 || projectName(item.projectId)}
+												<span class="task-metadata">
+													{#if item.dueAt}
+														<span class:overdue={isOverdue(item)} class="due">{dueTime(item)}</span>
+													{/if}
+													{#if item.priority > 0}
+														<span class={`priority priority-${item.priority}`}>
+															{priorityLabel(item.priority)}
+														</span>
+													{/if}
+													{#if projectName(item.projectId)}
+														<span class="task-project">{projectName(item.projectId)}</span>
+													{/if}
+												</span>
+											{/if}
+										</span>
+										<div class="task-actions">
+											<button
+												class="edit-task"
+												type="button"
+												aria-label={`Edit ${item.title}`}
+												onclick={() => (editingTaskId = item.id)}>Edit</button
+											>
+											<button
+												class="delete-task"
+												type="button"
+												aria-label={`Delete ${item.title}`}
+												disabled={busyTaskIds.includes(item.id)}
+												onclick={() => void deleteItem(item)}>Delete</button
+											>
+										</div>
+									</li>
 								{/if}
-							</span>
-							<button
-								class="edit-task"
-								type="button"
-								aria-label={`Edit ${item.title}`}
-								onclick={() => (editingTaskId = item.id)}>Edit</button
-							>
-							<button
-								class="delete-task"
-								type="button"
-								aria-label={`Delete ${item.title}`}
-								disabled={busyTaskIds.includes(item.id)}
-								onclick={() => void deleteItem(item)}>Delete</button
-							>
-						</li>
-					{/if}
+							{/each}
+						</ul>
+					</section>
 				{/each}
-			</ul>
+			</div>
 		{:else}
 			<div class="empty-state">
 				<p>{emptyTitle}</p>
@@ -264,136 +373,171 @@
 </section>
 
 <style>
-	.inbox {
-		width: min(46rem, 100%);
+	.task-view {
+		width: min(52rem, 100%);
 		margin: 0 auto;
 	}
 
-	.inbox-header {
+	.view-header {
 		display: flex;
 		align-items: end;
 		justify-content: space-between;
 		gap: 1rem;
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
 	}
 
 	.eyebrow {
-		margin: 0 0 0.4rem;
-		color: #52705a;
-		font-size: 0.72rem;
-		font-weight: 750;
-		letter-spacing: 0.12em;
+		margin: 0 0 0.3rem;
+		color: #8a8984;
+		font-size: 0.68rem;
+		font-weight: 720;
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
 	}
 
 	h1 {
 		margin: 0;
-		font-size: clamp(2.25rem, 7vw, 3.5rem);
-		line-height: 1;
-		letter-spacing: -0.055em;
+		font-size: clamp(1.75rem, 5vw, 2.25rem);
+		line-height: 1.1;
+		letter-spacing: -0.04em;
 	}
 
 	.count {
-		padding: 0.45rem 0.65rem;
-		border-radius: 999px;
-		color: #52705a;
-		background: #edf3ec;
-		font-size: 0.76rem;
-		font-weight: 700;
+		color: #8a8984;
+		font-size: 0.75rem;
+		font-weight: 650;
 	}
 
 	.quick-add {
 		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 0.65rem;
-		padding: 0.6rem;
-		border: 1px solid #d8e0d6;
-		border-radius: 1rem;
-		background: #fff;
-		box-shadow: 0 0.75rem 2.5rem rgb(24 56 34 / 6%);
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.25rem 0 0.7rem;
+		border-bottom: 1px solid #e7e7e4;
 	}
 
 	.quick-add input {
 		min-width: 0;
-		padding: 0.7rem;
+		padding: 0.55rem 0.2rem;
 		border: 0;
-		color: #17211a;
+		color: #292927;
 		background: transparent;
 		outline: none;
 	}
 
+	.quick-add input::placeholder {
+		color: #85847f;
+	}
+
+	.quick-add:focus-within input::placeholder {
+		color: #2d6540;
+	}
+
 	.quick-add button {
-		padding: 0.7rem 0.9rem;
+		padding: 0.5rem 0.75rem;
 		border: 0;
-		border-radius: 0.7rem;
+		border-radius: 0.35rem;
 		color: #fff;
 		background: #2d6540;
-		font-size: 0.82rem;
-		font-weight: 750;
+		font-size: 0.76rem;
+		font-weight: 720;
 		cursor: pointer;
 	}
 
 	.quick-add button:disabled {
+		color: #aaa7a1;
+		background: #efefec;
 		cursor: default;
-		opacity: 0.45;
-	}
-
-	.task-list {
-		margin: 1.5rem 0 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.task-list li {
-		display: flex;
-		align-items: center;
-		gap: 0.85rem;
-		min-height: 3.4rem;
-		border-bottom: 1px solid #e1e6df;
-	}
-
-	.task-list .editor-row {
-		padding: 0.85rem 0;
-		border-bottom: 0;
 	}
 
 	.task-space {
 		min-height: 12rem;
 	}
 
-	.task-list .section-heading {
-		min-height: auto;
-		padding: 1.75rem 0 0.55rem;
+	.task-groups {
+		display: grid;
+		gap: 2.1rem;
+		margin-top: 2rem;
+	}
+
+	.task-group ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.group-header {
+		display: flex;
+		align-items: baseline;
+		gap: 0.45rem;
+		padding-bottom: 0.55rem;
+		border-bottom: 1px solid #d9d9d5;
+	}
+
+	.group-header h2 {
+		margin: 0;
+		font-size: 0.87rem;
+		font-weight: 760;
+		letter-spacing: -0.01em;
+	}
+
+	.group-header span {
+		color: #999792;
+		font-size: 0.7rem;
+	}
+
+	.task-group.overdue .group-header h2 {
+		color: #c13d33;
+	}
+
+	.task-group.today .group-header h2 {
+		color: #32885e;
+	}
+
+	.task-group.completed .group-header h2,
+	.task-group.undated .group-header h2 {
+		color: #686762;
+	}
+
+	.task-group li {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		min-height: 3.25rem;
+		padding: 0.72rem 0;
+		border-bottom: 1px solid #ecece9;
+	}
+
+	.task-group .editor-row {
+		padding: 0.85rem 0;
 		border-bottom: 0;
-		color: #657168;
-		font-size: 0.78rem;
-		font-weight: 750;
-		letter-spacing: 0.04em;
 	}
 
 	.task-toggle {
 		display: grid;
 		flex: 0 0 auto;
-		width: 1.35rem;
-		height: 1.35rem;
+		width: 1.25rem;
+		height: 1.25rem;
+		margin-top: 0.08rem;
 		place-items: center;
 		padding: 0;
-		border: 1.5px solid #8ea092;
+		border: 1.5px solid #8f8e89;
 		border-radius: 50%;
 		color: #fff;
 		background: transparent;
-		font-size: 0.72rem;
+		font-size: 0.66rem;
 		cursor: pointer;
 	}
 
 	.task-toggle:hover:not(:disabled) {
-		border-color: #2d6540;
-		box-shadow: inset 0 0 0 0.25rem #edf5ed;
+		border-color: #555550;
+		background: #f1f1ee;
 	}
 
 	.task-toggle.checked {
-		border-color: #5b8165;
-		background: #5b8165;
+		border-color: #8f8e89;
+		background: #8f8e89;
 	}
 
 	.task-toggle:disabled {
@@ -404,24 +548,43 @@
 	.task-copy {
 		display: grid;
 		flex: 1;
-		gap: 0.2rem;
+		gap: 0.22rem;
 		min-width: 0;
 	}
 
 	.task-title {
+		color: #31312e;
+		font-size: 0.9rem;
+		line-height: 1.35;
 		overflow-wrap: anywhere;
+	}
+
+	.task-description {
+		display: -webkit-box;
+		overflow: hidden;
+		color: #777671;
+		font-size: 0.75rem;
+		line-height: 1.35;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 
 	.task-metadata {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.55rem;
-		color: #718076;
-		font-size: 0.72rem;
+		gap: 0.6rem;
+		color: #777671;
+		font-size: 0.7rem;
+	}
+
+	.due {
+		color: #32885e;
 	}
 
 	.due.overdue {
-		color: #a13f38;
+		color: #c13d33;
 		font-weight: 700;
 	}
 
@@ -430,43 +593,50 @@
 	}
 
 	.priority-3 {
-		color: #a35d23;
+		color: #c67424;
 	}
 
 	.priority-4 {
-		color: #a13f38;
+		color: #c13d33;
+	}
+
+	.task-project {
+		color: #52705a;
+	}
+
+	.task-actions {
+		display: flex;
+		flex: 0 0 auto;
+		gap: 0.1rem;
+		opacity: 0;
+		transition: opacity 100ms ease;
+	}
+
+	.task-group li:hover .task-actions,
+	.task-actions:focus-within {
+		opacity: 1;
 	}
 
 	.edit-task,
 	.delete-task {
-		padding: 0.4rem 0.5rem;
+		padding: 0.3rem 0.4rem;
 		border: 0;
-		border-radius: 0.45rem;
+		border-radius: 0.3rem;
+		color: #6b6a65;
 		background: transparent;
-		font-size: 0.74rem;
+		font-size: 0.68rem;
 		font-weight: 650;
 		cursor: pointer;
-		opacity: 0.7;
-	}
-
-	.edit-task {
-		color: #526b58;
 	}
 
 	.edit-task:hover {
-		color: #2d6540;
-		background: #edf5ed;
-		opacity: 1;
-	}
-
-	.delete-task {
-		color: #8a514f;
+		color: #292927;
+		background: #efefec;
 	}
 
 	.delete-task:hover:not(:disabled) {
-		color: #8c2828;
-		background: #fff0ef;
-		opacity: 1;
+		color: #b83f34;
+		background: #feeae7;
 	}
 
 	.delete-task:disabled {
@@ -475,7 +645,7 @@
 	}
 
 	.empty-state {
-		padding: 4rem 1rem;
+		padding: 5rem 1rem;
 		text-align: center;
 	}
 
@@ -485,19 +655,20 @@
 	}
 
 	.empty-state span {
-		color: #718076;
-		font-size: 0.9rem;
+		color: #777671;
+		font-size: 0.86rem;
 	}
 
-	.completed-task .task-title {
+	.completed-task .task-title,
+	.completed-task .task-description {
 		text-decoration: line-through;
-		opacity: 0.75;
+		opacity: 0.62;
 	}
 
 	.error {
 		margin: 0.85rem 0 0;
-		color: #8c2828;
-		font-size: 0.86rem;
+		color: #b83f34;
+		font-size: 0.8rem;
 	}
 
 	.sr-only {
@@ -512,9 +683,44 @@
 		border: 0;
 	}
 
-	@media (max-width: 34rem) {
-		.quick-add {
-			grid-template-columns: 1fr;
+	@media (max-width: 40rem) {
+		.view-header {
+			align-items: start;
+		}
+
+		.count {
+			padding-top: 0.45rem;
+		}
+
+		.task-groups {
+			gap: 1.8rem;
+		}
+
+		.task-actions {
+			opacity: 1;
+		}
+
+		.task-group li {
+			gap: 0.6rem;
+		}
+
+		.edit-task,
+		.delete-task {
+			font-size: 0;
+		}
+
+		.edit-task::after,
+		.delete-task::after {
+			font-size: 0.8rem;
+		}
+
+		.edit-task::after {
+			content: 'Edit';
+		}
+
+		.delete-task::after {
+			content: '×';
+			font-size: 1rem;
 		}
 	}
 </style>

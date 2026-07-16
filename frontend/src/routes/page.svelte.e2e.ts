@@ -182,16 +182,16 @@ test('supports login, Inbox, projects, Today, and logout', async ({ page }) => {
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 	await expect(page.getByText('High')).toBeVisible();
 
-	await page.getByRole('link', { name: 'Projects' }).click();
+	await page.getByRole('link', { name: 'Projects', exact: true }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
 	await page.getByLabel('Project name').fill('Work');
 	await page.getByRole('button', { name: 'Create' }).click();
-	await page.getByRole('link', { name: 'Work' }).click();
+	await page.locator('.workspace').getByRole('link', { name: 'Work' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Work');
 	await page.getByLabel('Task title').fill('Plan sprint');
 	await page.getByRole('button', { name: 'Add task' }).click();
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
-	await page.getByLabel('Project').selectOption('');
+	await page.getByLabel('Project', { exact: true }).selectOption('');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Plan sprint')).toHaveCount(0);
 

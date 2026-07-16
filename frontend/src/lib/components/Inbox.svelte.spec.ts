@@ -151,7 +151,55 @@ describe('Inbox', () => {
 		);
 		await expect.element(page.getByText('Publish plan')).toBeVisible();
 	});
+
+	it('groups tasks by their planned date', async () => {
+		const today = startOfDay(new Date());
+		const yesterday = addDays(today, -1);
+		const tomorrow = addDays(today, 1);
+		const completed = testTask({
+			id: 'completed',
+			title: 'Already done',
+			status: 'completed',
+			completedAt: new Date().toISOString()
+		});
+		render(Inbox, {
+			initialTasks: [
+				testTask({ id: 'overdue', title: 'Overdue task', dueAt: atNoon(yesterday) }),
+				testTask({ id: 'today', title: 'Today task', dueAt: atNoon(today) }),
+				testTask({ id: 'tomorrow', title: 'Tomorrow task', dueAt: atNoon(tomorrow) }),
+				testTask({ id: 'undated', title: 'Undated task' }),
+				completed
+			],
+			create: vi.fn(),
+			complete: vi.fn(),
+			reopen: vi.fn(),
+			update: vi.fn(),
+			remove: vi.fn()
+		});
+
+		await expect.element(page.getByRole('heading', { name: /Overdue/ })).toBeVisible();
+		await expect.element(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+		await expect.element(page.getByRole('heading', { name: 'Tomorrow' })).toBeVisible();
+		await expect.element(page.getByRole('heading', { name: 'No date' })).toBeVisible();
+		await expect.element(page.getByRole('heading', { name: 'Completed' })).toBeVisible();
+	});
 });
+
+function startOfDay(value: Date): Date {
+	return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function addDays(value: Date, days: number): Date {
+	const result = new Date(value);
+	result.setDate(result.getDate() + days);
+	return result;
+}
+
+function atNoon(value: Date): string {
+	const result = new Date(value);
+	result.setHours(12, 0, 0, 0);
+	return result.toISOString();
+}
 
 function testTask(overrides: Partial<Task> = {}): Task {
 	return {

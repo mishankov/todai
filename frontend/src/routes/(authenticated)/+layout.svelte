@@ -21,6 +21,11 @@
 	/>
 </svelte:head>
 
-<AppShell username={data.user.username} onLogout={signOut} currentPath={page.url.pathname}>
+<AppShell
+	username={data.user.username}
+	projects={data.projects}
+	onLogout={signOut}
+	currentPath={page.url.pathname}
+>
 	{@render children()}
 </AppShell>
