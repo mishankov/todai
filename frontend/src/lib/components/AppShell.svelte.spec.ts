@@ -45,6 +45,18 @@ describe('AppShell', () => {
 			.element(page.getByRole('link', { name: 'All tasks' }))
 			.toHaveAttribute('aria-current', 'page');
 	});
+
+	it('links to activity and marks it as the current section', async () => {
+		render(AppShell, {
+			username: 'owner',
+			onLogout: vi.fn(),
+			currentPath: '/activity'
+		});
+
+		await expect
+			.element(page.getByRole('link', { name: 'Activity' }))
+			.toHaveAttribute('aria-current', 'page');
+	});
 });
 
 function testProject(overrides: Partial<Project> = {}): Project {

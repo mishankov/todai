@@ -19,9 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/platforma-dev/platforma/database"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/mishankov/todai/backend/internal/activity"
+	"github.com/mishankov/todai/backend/internal/agentauth"
+	"github.com/mishankov/todai/backend/internal/fakeagent"
 	"github.com/mishankov/todai/backend/internal/project"
 	"github.com/mishankov/todai/backend/internal/task"
 )
@@ -157,7 +161,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	})
 	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{updated})
 
-	completed := changeTaskStatus(t, client, baseURL, sessionCookie, created.ID, "complete")
+	completed := changeTaskStatus(
+		t, client, baseURL, sessionCookie, created.ID, "complete", updated.Version,
+	)
 	if completed.Status != task.StatusCompleted || completed.CompletedAt == nil || completed.Version != 3 {
 		t.Errorf("completed task = %#v", completed)
 	}
@@ -166,7 +172,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{})
 	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", true, []task.Task{completed})
 
-	reopened := changeTaskStatus(t, client, baseURL, sessionCookie, created.ID, "reopen")
+	reopened := changeTaskStatus(
+		t, client, baseURL, sessionCookie, created.ID, "reopen", completed.Version,
+	)
 	if reopened.Status != task.StatusActive || reopened.CompletedAt != nil || reopened.Version != 4 {
 		t.Errorf("reopened task = %#v", reopened)
 	}
@@ -263,9 +271,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		t.Errorf("task after section deletion = %#v", plannedFirstAfterDelete)
 	}
 	assertSections(t, client, baseURL, sessionCookie, boardProject.ID, []project.Section{doing})
-	deleteTask(t, client, baseURL, sessionCookie, plannedFirst.ID)
-	deleteTask(t, client, baseURL, sessionCookie, plannedSecond.ID)
-	deleteTask(t, client, baseURL, sessionCookie, doingTask.ID)
+	deleteTask(t, client, baseURL, sessionCookie, plannedFirst.ID, plannedFirstAfterDelete.Version)
+	deleteTask(t, client, baseURL, sessionCookie, plannedSecond.ID, plannedSecond.Version)
+	deleteTask(t, client, baseURL, sessionCookie, doingTask.ID, doingTask.Version)
 
 	assertUpdateTaskStatus(
 		t,
@@ -308,9 +316,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{})
 	assertProjects(t, client, baseURL, sessionCookie, true, []project.Project{archivedProject})
 
-	deleteTask(t, client, baseURL, sessionCookie, created.ID)
-	deleteTask(t, client, baseURL, sessionCookie, future.ID)
-	deleteTask(t, client, baseURL, sessionCookie, projectTask.ID)
+	deleteTask(t, client, baseURL, sessionCookie, moved.ID, moved.Version)
+	deleteTask(t, client, baseURL, sessionCookie, future.ID, future.Version)
+	deleteTask(t, client, baseURL, sessionCookie, projectTask.ID, projectTask.Version)
 	assertStatusWithCookie(
 		t,
 		client,
@@ -320,6 +328,23 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		http.StatusNotFound,
 	)
 	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{})
+	assertActivityTypes(t, client, baseURL, sessionCookie, map[string]int{
+		"task.created":      6,
+		"task.updated":      2,
+		"task.moved":        2,
+		"task.completed":    1,
+		"task.reopened":     1,
+		"task.reordered":    2,
+		"task.deleted":      6,
+		"project.created":   1,
+		"project.updated":   2,
+		"project.archived":  1,
+		"section.created":   2,
+		"section.updated":   1,
+		"section.reordered": 1,
+		"section.deleted":   1,
+	})
+	runFakeAgentFlow(t, ctx, client, baseURL, databaseURL, "owner", sessionCookie)
 
 	logout(t, client, baseURL, sessionCookie)
 	assertStatus(t, client, http.MethodGet, baseURL+"/api/auth/me", http.StatusUnauthorized)
@@ -1098,15 +1123,21 @@ func changeTaskStatus(
 	cookie *http.Cookie,
 	taskID string,
 	operation string,
+	version int64,
 ) task.Task {
 	t.Helper()
 
 	url := baseURL + "/api/tasks/" + taskID + "/" + operation
-	request, err := http.NewRequest(http.MethodPost, url, http.NoBody)
+	body, err := json.Marshal(map[string]any{"version": version})
+	if err != nil {
+		t.Fatalf("encode %s task request: %v", operation, err)
+	}
+	request, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("create %s task request: %v", operation, err)
 	}
 	request.AddCookie(cookie)
+	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("send %s task request: %v", operation, err)
@@ -1125,14 +1156,24 @@ func deleteTask(
 	baseURL string,
 	cookie *http.Cookie,
 	taskID string,
+	version int64,
 ) {
 	t.Helper()
 
-	request, err := http.NewRequest(http.MethodDelete, baseURL+"/api/tasks/"+taskID, http.NoBody)
+	body, err := json.Marshal(map[string]any{"version": version})
+	if err != nil {
+		t.Fatalf("encode delete task request: %v", err)
+	}
+	request, err := http.NewRequest(
+		http.MethodDelete,
+		baseURL+"/api/tasks/"+taskID,
+		bytes.NewReader(body),
+	)
 	if err != nil {
 		t.Fatalf("create delete task request: %v", err)
 	}
 	request.AddCookie(cookie)
+	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("send delete task request: %v", err)
@@ -1152,6 +1193,252 @@ func decodeTask(t *testing.T, response *http.Response) task.Task {
 	}
 
 	return decoded
+}
+
+func assertActivityTypes(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	want map[string]int,
+) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/activity/?limit=200", http.NoBody)
+	if err != nil {
+		t.Fatalf("create activity request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send activity request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("activity status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if response.Header.Get("Platforma-Trace-Id") == "" {
+		t.Error("activity response has no Platforma-Trace-Id header")
+	}
+
+	var body struct {
+		Events []activity.Event `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode activity response: %v", err)
+	}
+	got := make(map[string]int)
+	for _, event := range body.Events {
+		got[event.Type]++
+		if event.ActorType != "user" || event.Source != "web" || event.ActorID == nil ||
+			*event.ActorID == "" || event.CorrelationID == "" {
+			t.Errorf("incomplete activity attribution: %#v", event)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Errorf("decode %s payload: %v", event.Type, err)
+			continue
+		}
+		if payload["schemaVersion"] != float64(1) {
+			t.Errorf("%s schemaVersion = %#v, want 1", event.Type, payload["schemaVersion"])
+		}
+		if activityEntityName(payload) == "" {
+			t.Errorf("%s payload has no entity name: %#v", event.Type, payload)
+		}
+	}
+	if !mapsEqual(got, want) {
+		t.Errorf("activity type counts = %#v, want %#v", got, want)
+	}
+}
+
+func activityEntityName(payload map[string]any) string {
+	for _, key := range []string{"task", "after", "before"} {
+		nested, ok := payload[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		if title, ok := nested["title"].(string); ok {
+			return title
+		}
+	}
+	if name, ok := payload["name"].(string); ok {
+		return name
+	}
+	if title, ok := payload["title"].(string); ok {
+		return title
+	}
+
+	return ""
+}
+
+func runFakeAgentFlow(
+	t *testing.T,
+	ctx context.Context,
+	client *http.Client,
+	baseURL string,
+	databaseURL string,
+	username string,
+	cookie *http.Cookie,
+) {
+	t.Helper()
+
+	tokenDatabase, err := database.New(databaseURL)
+	if err != nil {
+		t.Fatalf("open agent token database: %v", err)
+	}
+	t.Cleanup(func() { _ = tokenDatabase.Connection().Close() })
+	var userID string
+	if err := tokenDatabase.Connection().GetContext(
+		ctx, &userID, "SELECT id FROM users WHERE username = $1", username,
+	); err != nil {
+		t.Fatalf("get fake agent user: %v", err)
+	}
+	issued, err := agentauth.NewService(agentauth.NewRepository(tokenDatabase.Connection())).Issue(
+		ctx,
+		agentauth.IssueRequest{
+			UserID:         userID,
+			AgentSessionID: "fake-session",
+			AgentRunID:     "fake-run",
+			AllowedTools: []agentauth.Tool{
+				agentauth.ToolTaskCreate,
+				agentauth.ToolTaskUpdate,
+				agentauth.ToolTaskGet,
+				agentauth.ToolTaskSearch,
+				agentauth.ToolTaskComplete,
+			},
+			TTL: 5 * time.Minute,
+		},
+	)
+	if err != nil {
+		t.Fatalf("issue fake agent token: %v", err)
+	}
+
+	agent := fakeagent.New(baseURL, issued.Token, client)
+	var created task.Task
+	if err := agent.Call(
+		ctx,
+		agentauth.ToolTaskCreate,
+		map[string]any{"title": "Plan with fake agent"},
+		&created,
+	); err != nil {
+		t.Fatalf("fake agent create: %v", err)
+	}
+	var updated task.Task
+	if err := agent.Call(
+		ctx,
+		agentauth.ToolTaskUpdate,
+		map[string]any{
+			"taskId": created.ID, "version": created.Version,
+			"title": "Plan with deterministic agent", "priority": 4,
+		},
+		&updated,
+	); err != nil {
+		t.Fatalf("fake agent update: %v", err)
+	}
+	var search struct {
+		Tasks []task.Task `json:"tasks"`
+	}
+	var found task.Task
+	if err := agent.Run(ctx, []fakeagent.Step{
+		{
+			Tool: agentauth.ToolTaskSearch,
+			Input: map[string]any{
+				"query": "deterministic agent", "status": task.StatusActive,
+			},
+			Output: &search,
+		},
+		{
+			Tool:  agentauth.ToolTaskGet,
+			Input: map[string]any{"taskId": created.ID}, Output: &found,
+		},
+	}); err != nil {
+		t.Fatalf("fake agent read plan: %v", err)
+	}
+	if len(search.Tasks) != 1 || search.Tasks[0].ID != created.ID || found.ID != created.ID {
+		t.Errorf("fake agent reads = (%#v, %#v)", search.Tasks, found)
+	}
+	var completed task.Task
+	if err := agent.Call(
+		ctx,
+		agentauth.ToolTaskComplete,
+		map[string]any{"taskId": created.ID, "version": updated.Version},
+		&completed,
+	); err != nil {
+		t.Fatalf("fake agent complete: %v", err)
+	}
+	if completed.Status != task.StatusCompleted || completed.Version != updated.Version+1 {
+		t.Errorf("fake agent completed task = %#v", completed)
+	}
+
+	assertAgentActivity(t, client, baseURL, cookie, "fake-session", "fake-run", created.ID)
+}
+
+func assertAgentActivity(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	sessionID string,
+	runID string,
+	taskID string,
+) {
+	t.Helper()
+
+	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/activity/?limit=10", http.NoBody)
+	if err != nil {
+		t.Fatalf("create agent activity request: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("send agent activity request: %v", err)
+	}
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("agent activity status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		Events []activity.Event `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode agent activity: %v", err)
+	}
+	wantTypes := map[string]int{
+		"task.created": 1, "task.updated": 1, "task.completed": 1,
+	}
+	gotTypes := make(map[string]int)
+	correlations := make(map[string]struct{})
+	for _, event := range body.Events {
+		if event.AggregateID == nil || *event.AggregateID != taskID {
+			continue
+		}
+		gotTypes[event.Type]++
+		if event.ActorType != "built_in_agent" || event.Source != "internal_api" ||
+			event.ActorID == nil || *event.ActorID != sessionID || event.AgentRunID == nil ||
+			*event.AgentRunID != runID || event.CorrelationID == "" {
+			t.Errorf("incorrect fake agent attribution: %#v", event)
+		}
+		correlations[event.CorrelationID] = struct{}{}
+	}
+	if !mapsEqual(gotTypes, wantTypes) {
+		t.Errorf("fake agent activity types = %#v, want %#v", gotTypes, wantTypes)
+	}
+	if len(correlations) != 3 {
+		t.Errorf("fake agent correlation count = %d, want 3", len(correlations))
+	}
+}
+
+func mapsEqual(left, right map[string]int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if right[key] != value {
+			return false
+		}
+	}
+
+	return true
 }
 
 func runBinaryCommand(

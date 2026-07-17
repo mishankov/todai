@@ -11,6 +11,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/mishankov/todai/backend/internal/activity"
+	"github.com/mishankov/todai/backend/internal/execution"
 )
 
 const taskColumns = `
@@ -24,12 +27,22 @@ var migrations embed.FS
 
 // Repository stores tasks in PostgreSQL.
 type Repository struct {
-	db *sqlx.DB
+	db     *sqlx.DB
+	events activityAppender
+}
+
+type activityAppender interface {
+	Append(
+		context.Context,
+		sqlx.ExtContext,
+		execution.Scope,
+		activity.NewEvent,
+	) (activity.Event, error)
 }
 
 // NewRepository constructs a PostgreSQL task repository.
-func NewRepository(db *sqlx.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(db *sqlx.DB, events activityAppender) *Repository {
+	return &Repository{db: db, events: events}
 }
 
 // Migrations exposes task migrations to Platforma.
@@ -41,13 +54,19 @@ func (r *Repository) Migrations() fs.FS {
 // Create inserts an active top-level Inbox or project task.
 func (r *Repository) Create(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	title string,
 	projectID *string,
 	sectionID *string,
 ) (Task, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return Task{}, fmt.Errorf("begin task creation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var created Task
-	err := r.db.GetContext(ctx, &created, `
+	err = tx.GetContext(ctx, &created, `
 		INSERT INTO tasks (
 			id, user_id, project_id, section_id, title, status, priority, position, version,
 			created_at, updated_at, last_modified_by
@@ -55,7 +74,7 @@ func (r *Repository) Create(
 		SELECT
 			$1::VARCHAR, $2::VARCHAR, $4::VARCHAR, $5::VARCHAR, $3::TEXT, 'active', 0,
 			COALESCE(MAX(position), 0) + 1024, 1,
-			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $2::VARCHAR
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $6::VARCHAR
 		FROM tasks
 		WHERE user_id = $2::VARCHAR
 			AND project_id IS NOT DISTINCT FROM $4::VARCHAR
@@ -71,17 +90,17 @@ func (r *Repository) Create(
 				WHERE id = $5::VARCHAR AND user_id = $2::VARCHAR AND project_id = $4::VARCHAR
 			))
 		RETURNING `+taskColumns,
-		uuid.NewString(), userID, title, projectID, sectionID,
+		uuid.NewString(), scope.UserID, title, projectID, sectionID, scope.ModifiedBy(),
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		if projectID != nil {
 			var projectExists bool
-			if getErr := r.db.GetContext(ctx, &projectExists, `
+			if getErr := tx.GetContext(ctx, &projectExists, `
 				SELECT EXISTS (
 					SELECT 1 FROM projects
 					WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
 				)
-			`, *projectID, userID); getErr != nil {
+			`, *projectID, scope.UserID); getErr != nil {
 				return Task{}, fmt.Errorf("check task project: %w", getErr)
 			}
 			if !projectExists {
@@ -92,6 +111,15 @@ func (r *Repository) Create(
 	}
 	if err != nil {
 		return Task{}, fmt.Errorf("insert task: %w", err)
+	}
+	if err := r.appendTaskEvent(ctx, tx, scope, "task.created", created, map[string]any{
+		"schemaVersion": 1,
+		"task":          taskEventSnapshot(created),
+	}); err != nil {
+		return Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Task{}, fmt.Errorf("commit task creation: %w", err)
 	}
 
 	return created, nil
@@ -251,25 +279,115 @@ func (r *Repository) ListToday(
 	return tasks, nil
 }
 
+// Search returns top-level user tasks matching text and optional project/status filters.
+func (r *Repository) Search(
+	ctx context.Context,
+	userID string,
+	query SearchQuery,
+) ([]Task, error) {
+	tasks := make([]Task, 0)
+	if err := r.db.SelectContext(ctx, &tasks, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE user_id = $1
+			AND parent_id IS NULL
+			AND (
+				$2::TEXT = ''
+				OR title ILIKE '%' || $2::TEXT || '%'
+				OR COALESCE(description, '') ILIKE '%' || $2::TEXT || '%'
+			)
+			AND ($3::VARCHAR IS NULL OR project_id = $3::VARCHAR)
+			AND ($4::VARCHAR IS NULL OR status = $4::VARCHAR)
+		ORDER BY
+			CASE status WHEN 'active' THEN 0 ELSE 1 END,
+			due_date NULLS LAST,
+			priority DESC,
+			updated_at DESC
+		LIMIT $5
+	`, userID, query.Query, query.ProjectID, query.Status, query.Limit); err != nil {
+		return nil, fmt.Errorf("search tasks: %w", err)
+	}
+
+	return tasks, nil
+}
+
 // Complete marks a task completed and returns its current representation.
-func (r *Repository) Complete(ctx context.Context, userID, taskID string) (Task, error) {
-	return r.setStatus(ctx, userID, taskID, StatusCompleted)
+func (r *Repository) Complete(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) (Task, error) {
+	return r.setStatus(ctx, scope, taskID, version, StatusCompleted)
 }
 
 // Reopen marks a task active and returns its current representation.
-func (r *Repository) Reopen(ctx context.Context, userID, taskID string) (Task, error) {
-	return r.setStatus(ctx, userID, taskID, StatusActive)
+func (r *Repository) Reopen(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) (Task, error) {
+	return r.setStatus(ctx, scope, taskID, version, StatusActive)
 }
 
 // Update changes editable task fields using optimistic concurrency.
 func (r *Repository) Update(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	taskID string,
 	update Update,
 ) (Task, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return Task{}, fmt.Errorf("begin task update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	previous, err := getTaskForUpdate(ctx, tx, scope.UserID, taskID)
+	if err != nil {
+		return Task{}, err
+	}
+	if previous.Version != update.Version {
+		return Task{}, ErrVersionConflict
+	}
+	if update.ProjectID != nil && update.ProjectID.Value != nil {
+		var exists bool
+		if err := tx.GetContext(ctx, &exists, `
+			SELECT EXISTS (
+				SELECT 1 FROM projects WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
+			)
+		`, *update.ProjectID.Value, scope.UserID); err != nil {
+			return Task{}, fmt.Errorf("check destination project: %w", err)
+		}
+		if !exists {
+			return Task{}, ErrProjectNotFound
+		}
+	}
+	if update.SectionID != nil && update.SectionID.Value != nil {
+		projectID := previous.ProjectID
+		if update.ProjectID != nil {
+			projectID = update.ProjectID.Value
+		}
+		if projectID == nil {
+			return Task{}, ErrSectionNotFound
+		}
+		var exists bool
+		if err := tx.GetContext(ctx, &exists, `
+			SELECT EXISTS (
+				SELECT 1 FROM project_sections
+				WHERE id = $1 AND user_id = $2 AND project_id = $3
+			)
+		`, *update.SectionID.Value, scope.UserID, *projectID); err != nil {
+			return Task{}, fmt.Errorf("check destination section: %w", err)
+		}
+		if !exists {
+			return Task{}, ErrSectionNotFound
+		}
+	}
+
 	var updated Task
-	err := r.db.GetContext(ctx, &updated, `
+	err = tx.GetContext(ctx, &updated, `
 		UPDATE tasks
 		SET title = CASE WHEN $4::BOOLEAN THEN $5::TEXT ELSE title END,
 			description = CASE WHEN $6::BOOLEAN THEN $7::TEXT ELSE description END,
@@ -281,7 +399,7 @@ func (r *Repository) Update(
 			due_timezone = CASE WHEN $18::BOOLEAN THEN $19::TEXT ELSE due_timezone END,
 			version = version + 1,
 			updated_at = CURRENT_TIMESTAMP,
-			last_modified_by = $2
+			last_modified_by = $20
 		WHERE id = $1 AND user_id = $2 AND version = $3
 			AND (
 				NOT $8::BOOLEAN
@@ -306,7 +424,7 @@ func (r *Repository) Update(
 			)
 		RETURNING `+taskColumns,
 		taskID,
-		userID,
+		scope.UserID,
 		update.Version,
 		update.Title != nil,
 		pointerValue(update.Title),
@@ -324,60 +442,38 @@ func (r *Repository) Update(
 		nullableValue(update.DueTime),
 		update.DueTimezone != nil,
 		nullableValue(update.DueTimezone),
+		scope.ModifiedBy(),
 	)
-	if err == nil {
-		return updated, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return Task{}, ErrVersionConflict
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if err != nil {
 		return Task{}, fmt.Errorf("update task: %w", err)
 	}
 
-	found, getErr := r.Get(ctx, userID, taskID)
-	if getErr != nil {
-		return Task{}, getErr
+	eventType := "task.updated"
+	if !stringPointersEqual(previous.ProjectID, updated.ProjectID) ||
+		!stringPointersEqual(previous.SectionID, updated.SectionID) {
+		eventType = "task.moved"
 	}
-	if update.ProjectID != nil && update.ProjectID.Value != nil {
-		var exists bool
-		if existsErr := r.db.GetContext(ctx, &exists, `
-			SELECT EXISTS (
-				SELECT 1 FROM projects WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
-			)
-		`, *update.ProjectID.Value, userID); existsErr != nil {
-			return Task{}, fmt.Errorf("check destination project: %w", existsErr)
-		}
-		if !exists {
-			return Task{}, ErrProjectNotFound
-		}
+	if err := r.appendTaskEvent(ctx, tx, scope, eventType, updated, map[string]any{
+		"schemaVersion": 1,
+		"before":        taskEventSnapshot(previous),
+		"after":         taskEventSnapshot(updated),
+	}); err != nil {
+		return Task{}, err
 	}
-	if update.SectionID != nil && update.SectionID.Value != nil {
-		projectID := found.ProjectID
-		if update.ProjectID != nil {
-			projectID = update.ProjectID.Value
-		}
-		if projectID == nil {
-			return Task{}, ErrSectionNotFound
-		}
-		var exists bool
-		if existsErr := r.db.GetContext(ctx, &exists, `
-			SELECT EXISTS (
-				SELECT 1 FROM project_sections
-				WHERE id = $1 AND user_id = $2 AND project_id = $3
-			)
-		`, *update.SectionID.Value, userID, *projectID); existsErr != nil {
-			return Task{}, fmt.Errorf("check destination section: %w", existsErr)
-		}
-		if !exists {
-			return Task{}, ErrSectionNotFound
-		}
+	if err := tx.Commit(); err != nil {
+		return Task{}, fmt.Errorf("commit task update: %w", err)
 	}
 
-	return Task{}, ErrVersionConflict
+	return updated, nil
 }
 
 // Reorder places an active top-level project task before another task or at the end.
 func (r *Repository) Reorder(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	taskID string,
 	reorder Reorder,
 ) ([]Task, error) {
@@ -393,7 +489,7 @@ func (r *Repository) Reorder(
 		FROM tasks
 		WHERE id = $1 AND user_id = $2
 		FOR UPDATE
-	`, taskID, userID)
+	`, taskID, scope.UserID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTaskNotFound
 	}
@@ -413,7 +509,7 @@ func (r *Repository) Reorder(
 			SELECT 1 FROM projects
 			WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
 		)
-	`, *moved.ProjectID, userID); err != nil {
+	`, *moved.ProjectID, scope.UserID); err != nil {
 		return nil, fmt.Errorf("check reordered task project: %w", err)
 	}
 	if !projectActive {
@@ -426,7 +522,7 @@ func (r *Repository) Reorder(
 				SELECT 1 FROM project_sections
 				WHERE id = $1 AND user_id = $2 AND project_id = $3
 			)
-		`, *reorder.SectionID, userID, *moved.ProjectID); err != nil {
+		`, *reorder.SectionID, scope.UserID, *moved.ProjectID); err != nil {
 			return nil, fmt.Errorf("check reordered task section: %w", err)
 		}
 		if !sectionExists {
@@ -436,9 +532,10 @@ func (r *Repository) Reorder(
 
 	if reorder.BeforeTaskID != nil && *reorder.BeforeTaskID == taskID &&
 		stringPointersEqual(moved.SectionID, reorder.SectionID) {
-		return commitProjectTasks(ctx, tx, userID, *moved.ProjectID)
+		return commitProjectTasks(ctx, tx, scope.UserID, *moved.ProjectID)
 	}
 	sourceSectionID := moved.SectionID
+	sourcePosition := moved.Position
 
 	targetTasks := make([]Task, 0)
 	if err := tx.SelectContext(ctx, &targetTasks, `
@@ -449,7 +546,7 @@ func (r *Repository) Reorder(
 			AND section_id IS NOT DISTINCT FROM $4::VARCHAR
 		ORDER BY position, created_at
 		FOR UPDATE
-	`, userID, *moved.ProjectID, taskID, reorder.SectionID); err != nil {
+	`, scope.UserID, *moved.ProjectID, taskID, reorder.SectionID); err != nil {
 		return nil, fmt.Errorf("lock destination task order: %w", err)
 	}
 
@@ -465,6 +562,7 @@ func (r *Repository) Reorder(
 	copy(targetTasks[insertIndex+1:], targetTasks[insertIndex:])
 	targetTasks[insertIndex] = moved
 
+	changed := false
 	for index := range targetTasks {
 		position := int64(index+1) * 1024
 		sectionChanged := targetTasks[index].ID == taskID &&
@@ -472,18 +570,42 @@ func (r *Repository) Reorder(
 		if targetTasks[index].Position == position && !sectionChanged {
 			continue
 		}
+		changed = true
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE tasks
 			SET section_id = CASE WHEN id = $1 THEN $2::VARCHAR ELSE section_id END,
 				position = $3, version = version + 1,
 				updated_at = CURRENT_TIMESTAMP, last_modified_by = $4
 			WHERE id = $5
-		`, taskID, reorder.SectionID, position, userID, targetTasks[index].ID); err != nil {
+		`, taskID, reorder.SectionID, position, scope.ModifiedBy(), targetTasks[index].ID); err != nil {
 			return nil, fmt.Errorf("reposition task: %w", err)
 		}
 	}
+	if !changed {
+		return commitProjectTasks(ctx, tx, scope.UserID, *moved.ProjectID)
+	}
+	reordered, err := getTaskForUpdate(ctx, tx, scope.UserID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.appendTaskEvent(ctx, tx, scope, "task.reordered", reordered, map[string]any{
+		"schemaVersion": 1,
+		"task":          taskEventSnapshot(reordered),
+		"version":       reordered.Version,
+		"before": map[string]any{
+			"sectionId": sourceSectionID,
+			"position":  sourcePosition,
+		},
+		"after": map[string]any{
+			"sectionId":    reorder.SectionID,
+			"position":     reordered.Position,
+			"beforeTaskId": reorder.BeforeTaskID,
+		},
+	}); err != nil {
+		return nil, err
+	}
 
-	return commitProjectTasks(ctx, tx, userID, *moved.ProjectID)
+	return commitProjectTasks(ctx, tx, scope.UserID, *moved.ProjectID)
 }
 
 func commitProjectTasks(
@@ -527,18 +649,42 @@ func stringPointersEqual(left, right *string) bool {
 }
 
 // Delete permanently removes a task scoped to its owner.
-func (r *Repository) Delete(ctx context.Context, userID, taskID string) error {
-	result, err := r.db.ExecContext(ctx, "DELETE FROM tasks WHERE id = $1 AND user_id = $2", taskID, userID)
+func (r *Repository) Delete(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin task deletion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	deleted, err := getTaskForUpdate(ctx, tx, scope.UserID, taskID)
+	if err != nil {
+		return err
+	}
+	if deleted.Version != version {
+		return ErrVersionConflict
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		"DELETE FROM tasks WHERE id = $1 AND user_id = $2 AND version = $3",
+		taskID,
+		scope.UserID,
+		version,
+	); err != nil {
 		return fmt.Errorf("delete task: %w", err)
 	}
-
-	deleted, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("get deleted task count: %w", err)
+	if err := r.appendTaskEvent(ctx, tx, scope, "task.deleted", deleted, map[string]any{
+		"schemaVersion": 1,
+		"task":          taskEventSnapshot(deleted),
+	}); err != nil {
+		return err
 	}
-	if deleted == 0 {
-		return ErrTaskNotFound
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit task deletion: %w", err)
 	}
 
 	return nil
@@ -546,30 +692,125 @@ func (r *Repository) Delete(ctx context.Context, userID, taskID string) error {
 
 func (r *Repository) setStatus(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	taskID string,
+	version int64,
 	status Status,
 ) (Task, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return Task{}, fmt.Errorf("begin task status update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	current, err := getTaskForUpdate(ctx, tx, scope.UserID, taskID)
+	if err != nil {
+		return Task{}, err
+	}
+	if current.Version != version {
+		return Task{}, ErrVersionConflict
+	}
+	if current.Status == status {
+		return current, nil
+	}
+
 	var updated Task
-	err := r.db.GetContext(ctx, &updated, `
+	err = tx.GetContext(ctx, &updated, `
 		UPDATE tasks
 		SET status = $3::VARCHAR,
 			completed_at = CASE WHEN $3::VARCHAR = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
 			version = version + 1,
 			updated_at = CURRENT_TIMESTAMP,
-			last_modified_by = $2
-		WHERE id = $1 AND user_id = $2 AND status <> $3::VARCHAR
+			last_modified_by = $5
+		WHERE id = $1 AND user_id = $2 AND version = $4
 		RETURNING `+taskColumns,
-		taskID, userID, status,
+		taskID, scope.UserID, status, version, scope.ModifiedBy(),
 	)
-	if err == nil {
-		return updated, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return Task{}, ErrVersionConflict
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if err != nil {
 		return Task{}, fmt.Errorf("update task status: %w", err)
 	}
+	eventType := "task.reopened"
+	if status == StatusCompleted {
+		eventType = "task.completed"
+	}
+	if err := r.appendTaskEvent(ctx, tx, scope, eventType, updated, map[string]any{
+		"schemaVersion": 1,
+		"task":          taskEventSnapshot(updated),
+		"version":       updated.Version,
+		"status":        updated.Status,
+	}); err != nil {
+		return Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Task{}, fmt.Errorf("commit task status update: %w", err)
+	}
 
-	return r.Get(ctx, userID, taskID)
+	return updated, nil
+}
+
+func getTaskForUpdate(
+	ctx context.Context,
+	executor sqlx.ExtContext,
+	userID string,
+	taskID string,
+) (Task, error) {
+	var found Task
+	err := sqlx.GetContext(ctx, executor, &found, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE id = $1 AND user_id = $2
+		FOR UPDATE
+	`, taskID, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Task{}, ErrTaskNotFound
+	}
+	if err != nil {
+		return Task{}, fmt.Errorf("lock task: %w", err)
+	}
+
+	return found, nil
+}
+
+func (r *Repository) appendTaskEvent(
+	ctx context.Context,
+	executor sqlx.ExtContext,
+	scope execution.Scope,
+	eventType string,
+	task Task,
+	payload map[string]any,
+) error {
+	aggregateType := "task"
+	aggregateID := task.ID
+	if _, err := r.events.Append(ctx, executor, scope, activity.NewEvent{
+		Type:          eventType,
+		AggregateType: &aggregateType,
+		AggregateID:   &aggregateID,
+		Payload:       payload,
+	}); err != nil {
+		return fmt.Errorf("append %s event: %w", eventType, err)
+	}
+
+	return nil
+}
+
+func taskEventSnapshot(task Task) map[string]any {
+	return map[string]any{
+		"id":          task.ID,
+		"title":       task.Title,
+		"status":      task.Status,
+		"projectId":   task.ProjectID,
+		"sectionId":   task.SectionID,
+		"parentId":    task.ParentID,
+		"priority":    task.Priority,
+		"dueDate":     task.DueDate,
+		"dueTime":     task.DueTime,
+		"dueTimezone": task.DueTimezone,
+		"position":    task.Position,
+		"version":     task.Version,
+	}
 }
 
 func pointerValue[T any](value *T) any {

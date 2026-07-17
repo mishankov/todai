@@ -5,10 +5,10 @@
 
 	interface Props {
 		initialTasks: Task[];
-		complete: (taskId: string) => Promise<Task>;
-		reopen: (taskId: string) => Promise<Task>;
+		complete: (taskId: string, version: number) => Promise<Task>;
+		reopen: (taskId: string, version: number) => Promise<Task>;
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
-		remove: (taskId: string) => Promise<void>;
+		remove: (taskId: string, version: number) => Promise<void>;
 		projects?: Project[];
 	}
 

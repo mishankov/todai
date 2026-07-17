@@ -12,7 +12,9 @@ import (
 
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
+	platformalog "github.com/platforma-dev/platforma/log"
 
+	"github.com/mishankov/todai/backend/internal/execution"
 	"github.com/mishankov/todai/backend/internal/task"
 )
 
@@ -69,6 +71,43 @@ func TestAuthenticatedUserCanCreateInboxTask(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedMutationReceivesTrustedWebExecutionScope(t *testing.T) {
+	t.Parallel()
+
+	service := &scopeRecordingTaskService{scopes: make(chan execution.Scope, 1)}
+	handler := testAPIWithService(
+		&auth.User{ID: "user-id", Username: "owner"},
+		service,
+	)
+	request := jsonRequest(t, http.MethodPost, "/tasks", map[string]string{"title": "Buy milk"})
+	request.AddCookie(authenticatedCookie())
+	request.Header.Set("Platforma-Trace-Id", "caller-controlled")
+	request.Header.Set("X-Actor-Type", "system")
+	request.Header.Set("X-Execution-Source", "internal_api")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create task status = %d, want %d", response.Code, http.StatusCreated)
+	}
+	scope := <-service.scopes
+	if err := scope.Validate(); err != nil {
+		t.Fatalf("validate execution scope: %v", err)
+	}
+	if scope.UserID != "user-id" || scope.ActorType != execution.ActorUser ||
+		scope.ActorID == nil || *scope.ActorID != "user-id" || scope.Source != execution.SourceWeb {
+		t.Errorf("execution scope = %#v", scope)
+	}
+	traceID := response.Header().Get("Platforma-Trace-Id")
+	if traceID == "" || traceID == "caller-controlled" {
+		t.Errorf("Platforma-Trace-Id = %q", traceID)
+	}
+	if scope.CorrelationID != traceID {
+		t.Errorf("correlation ID = %q, want response trace ID %q", scope.CorrelationID, traceID)
+	}
+}
+
 func TestTodayRequiresValidTimezone(t *testing.T) {
 	t.Parallel()
 
@@ -109,7 +148,77 @@ func TestReorderRequiresExplicitDestinationSection(t *testing.T) {
 	}
 }
 
+func TestStatusChangesAndDeleteRequireTaskVersion(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
+	for _, request := range []*http.Request{
+		jsonRequest(t, http.MethodPost, "/tasks/task-id/complete", map[string]any{}),
+		jsonRequest(t, http.MethodPost, "/tasks/task-id/reopen", map[string]any{}),
+		jsonRequest(t, http.MethodDelete, "/tasks/task-id", map[string]any{}),
+	} {
+		request.AddCookie(authenticatedCookie())
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusBadRequest {
+			t.Errorf(
+				"%s %s status = %d, want %d",
+				request.Method,
+				request.URL.Path,
+				response.Code,
+				http.StatusBadRequest,
+			)
+		}
+	}
+}
+
+func TestStatusChangesAndDeletePassObservedVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+	}{
+		{name: "complete", method: http.MethodPost, path: "/tasks/task-id/complete", wantStatus: http.StatusOK},
+		{name: "reopen", method: http.MethodPost, path: "/tasks/task-id/reopen", wantStatus: http.StatusOK},
+		{name: "delete", method: http.MethodDelete, path: "/tasks/task-id", wantStatus: http.StatusNoContent},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := &versionRecordingTaskService{versions: make(chan int64, 1)}
+			handler := testAPIWithService(
+				&auth.User{ID: "user-id", Username: "owner"},
+				service,
+			)
+			response := serveJSON(
+				t,
+				handler,
+				test.method,
+				test.path,
+				map[string]any{"version": 7},
+				authenticatedCookie(),
+			)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", response.Code, test.wantStatus)
+			}
+			if version := <-service.versions; version != 7 {
+				t.Errorf("version = %d, want 7", version)
+			}
+		})
+	}
+}
+
 func testAPI(user *auth.User) http.Handler {
+	return testAPIWithService(user, fakeTaskService{})
+}
+
+func testAPIWithService(user *auth.User, taskService task.HTTPService) http.Handler {
 	repository := fakeAuthRepository{user: user}
 	storage := &fakeSessionStorage{sessions: make(map[string]string)}
 	if user != nil {
@@ -121,9 +230,22 @@ func testAPI(user *auth.User) http.Handler {
 		Middleware: auth.NewAuthenticationMiddleware(service),
 	}
 	api := httpserver.NewHandlerGroup()
-	task.NewHTTPModule(domain, fakeTaskService{}).Mount(api)
+	api.Use(platformalog.NewTraceIDMiddleware(nil, ""))
+	task.NewHTTPModule(domain, taskService).Mount(api)
 
 	return api
+}
+
+func jsonRequest(t *testing.T, method, path string, body any) *http.Request {
+	t.Helper()
+
+	var requestBody bytes.Buffer
+	if err := json.NewEncoder(&requestBody).Encode(body); err != nil {
+		t.Fatalf("encode request body: %v", err)
+	}
+	request := httptest.NewRequest(method, path, &requestBody)
+	request.Header.Set("Content-Type", "application/json")
+	return request
 }
 
 func serveJSON(
@@ -231,7 +353,7 @@ type fakeTaskService struct{}
 
 func (fakeTaskService) Create(
 	_ context.Context,
-	userID string,
+	scope execution.Scope,
 	title string,
 	projectID *string,
 	sectionID *string,
@@ -243,7 +365,7 @@ func (fakeTaskService) Create(
 		Title:          title,
 		Status:         task.StatusActive,
 		Version:        1,
-		LastModifiedBy: userID,
+		LastModifiedBy: scope.ModifiedBy(),
 	}, nil
 }
 
@@ -271,22 +393,73 @@ func (fakeTaskService) ListToday(_ context.Context, _, timezone string, _ bool) 
 	return []task.Task{}, nil
 }
 
-func (fakeTaskService) Complete(context.Context, string, string) (task.Task, error) {
+func (fakeTaskService) Complete(context.Context, execution.Scope, string, int64) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
 }
 
-func (fakeTaskService) Reopen(context.Context, string, string) (task.Task, error) {
+func (fakeTaskService) Reopen(context.Context, execution.Scope, string, int64) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
 }
 
-func (fakeTaskService) Update(context.Context, string, string, task.Update) (task.Task, error) {
+func (fakeTaskService) Update(context.Context, execution.Scope, string, task.Update) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
 }
 
-func (fakeTaskService) Reorder(context.Context, string, string, task.Reorder) ([]task.Task, error) {
+func (fakeTaskService) Reorder(context.Context, execution.Scope, string, task.Reorder) ([]task.Task, error) {
 	return []task.Task{}, nil
 }
 
-func (fakeTaskService) Delete(context.Context, string, string) error {
+func (fakeTaskService) Delete(context.Context, execution.Scope, string, int64) error {
 	return task.ErrTaskNotFound
+}
+
+type scopeRecordingTaskService struct {
+	fakeTaskService
+	scopes chan execution.Scope
+}
+
+func (s *scopeRecordingTaskService) Create(
+	ctx context.Context,
+	scope execution.Scope,
+	title string,
+	projectID *string,
+	sectionID *string,
+) (task.Task, error) {
+	s.scopes <- scope
+	return s.fakeTaskService.Create(ctx, scope, title, projectID, sectionID)
+}
+
+type versionRecordingTaskService struct {
+	fakeTaskService
+	versions chan int64
+}
+
+func (s *versionRecordingTaskService) Complete(
+	_ context.Context,
+	_ execution.Scope,
+	_ string,
+	version int64,
+) (task.Task, error) {
+	s.versions <- version
+	return task.Task{ID: "task-id", Status: task.StatusCompleted, Version: version + 1}, nil
+}
+
+func (s *versionRecordingTaskService) Reopen(
+	_ context.Context,
+	_ execution.Scope,
+	_ string,
+	version int64,
+) (task.Task, error) {
+	s.versions <- version
+	return task.Task{ID: "task-id", Status: task.StatusActive, Version: version + 1}, nil
+}
+
+func (s *versionRecordingTaskService) Delete(
+	_ context.Context,
+	_ execution.Scope,
+	_ string,
+	version int64,
+) error {
+	s.versions <- version
+	return nil
 }

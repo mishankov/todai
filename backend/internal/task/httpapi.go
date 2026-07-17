@@ -10,6 +10,8 @@ import (
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
 	"github.com/platforma-dev/platforma/log"
+
+	"github.com/mishankov/todai/backend/internal/execution"
 )
 
 type taskHandlers struct {
@@ -18,17 +20,17 @@ type taskHandlers struct {
 
 // HTTPService describes the task operations exposed over HTTP.
 type HTTPService interface {
-	Create(context.Context, string, string, *string, *string) (Task, error)
+	Create(context.Context, execution.Scope, string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
 	ListAll(context.Context, string, bool) ([]Task, error)
 	ListProject(context.Context, string, string, bool) ([]Task, error)
 	ListToday(context.Context, string, string, bool) ([]Task, error)
-	Complete(context.Context, string, string) (Task, error)
-	Reopen(context.Context, string, string) (Task, error)
-	Update(context.Context, string, string, Update) (Task, error)
-	Reorder(context.Context, string, string, Reorder) ([]Task, error)
-	Delete(context.Context, string, string) error
+	Complete(context.Context, execution.Scope, string, int64) (Task, error)
+	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
+	Update(context.Context, execution.Scope, string, Update) (Task, error)
+	Reorder(context.Context, execution.Scope, string, Reorder) ([]Task, error)
+	Delete(context.Context, execution.Scope, string, int64) error
 }
 
 // HTTPModule owns the task domain's routes and handlers.
@@ -59,6 +61,10 @@ type reorderTaskRequest struct {
 	Version      *int64           `json:"version"`
 	SectionID    nullable[string] `json:"sectionId"`
 	BeforeTaskID *string          `json:"beforeTaskId"`
+}
+
+type taskVersionRequest struct {
+	Version *int64 `json:"version"`
 }
 
 type optional[T any] struct {
@@ -133,14 +139,13 @@ func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := webUserScope(w, r)
+	if !ok {
 		return
 	}
 
 	created, err := h.service.Create(
-		r.Context(), user.ID, request.Title, request.ProjectID, request.SectionID,
+		r.Context(), scope, request.Title, request.ProjectID, request.SectionID,
 	)
 	if err != nil {
 		writeTaskError(w, r, "create", err)
@@ -209,13 +214,12 @@ func (h taskHandlers) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := webUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	updated, err := h.service.Update(r.Context(), user.ID, r.PathValue("id"), update)
+	updated, err := h.service.Update(r.Context(), scope, r.PathValue("id"), update)
 	if err != nil {
 		writeTaskError(w, r, "update", err)
 		return
@@ -319,13 +323,12 @@ func (h taskHandlers) reorder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "task section is required", http.StatusBadRequest)
 		return
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := webUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	tasks, err := h.service.Reorder(r.Context(), user.ID, r.PathValue("id"), Reorder{
+	tasks, err := h.service.Reorder(r.Context(), scope, r.PathValue("id"), Reorder{
 		Version:      *request.Version,
 		SectionID:    request.SectionID.Value,
 		BeforeTaskID: request.BeforeTaskID,
@@ -339,13 +342,16 @@ func (h taskHandlers) reorder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h taskHandlers) delete(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	request, ok := decodeTaskVersion(w, r)
+	if !ok {
+		return
+	}
+	scope, ok := webUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	if err := h.service.Delete(r.Context(), user.ID, r.PathValue("id")); err != nil {
+	if err := h.service.Delete(r.Context(), scope, r.PathValue("id"), *request.Version); err != nil {
 		writeTaskError(w, r, "delete", err)
 		return
 	}
@@ -357,21 +363,57 @@ func (h taskHandlers) changeStatus(
 	w http.ResponseWriter,
 	r *http.Request,
 	operation string,
-	change func(context.Context, string, string) (Task, error),
+	change func(context.Context, execution.Scope, string, int64) (Task, error),
 ) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	request, ok := decodeTaskVersion(w, r)
+	if !ok {
+		return
+	}
+	scope, ok := webUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	updated, err := change(r.Context(), user.ID, r.PathValue("id"))
+	updated, err := change(r.Context(), scope, r.PathValue("id"), *request.Version)
 	if err != nil {
 		writeTaskError(w, r, operation, err)
 		return
 	}
 
 	writeJSON(w, r, http.StatusOK, updated)
+}
+
+func decodeTaskVersion(w http.ResponseWriter, r *http.Request) (taskVersionRequest, bool) {
+	var request taskVersionRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		return taskVersionRequest{}, false
+	}
+	if request.Version == nil {
+		http.Error(w, "task version is required", http.StatusBadRequest)
+		return taskVersionRequest{}, false
+	}
+
+	return request, true
+}
+
+func webUserScope(w http.ResponseWriter, r *http.Request) (execution.Scope, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return execution.Scope{}, false
+	}
+	correlationID, _ := r.Context().Value(log.TraceIDKey).(string)
+	scope := execution.UserScope(user.ID, correlationID)
+	if err := scope.Validate(); err != nil {
+		log.ErrorContext(r.Context(), "invalid web execution scope", "error", err)
+		http.Error(w, "request execution context unavailable", http.StatusInternalServerError)
+		return execution.Scope{}, false
+	}
+
+	return scope, true
 }
 
 func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, err error) {

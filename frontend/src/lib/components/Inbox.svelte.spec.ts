@@ -46,13 +46,13 @@ describe('Inbox', () => {
 		});
 
 		await page.getByRole('button', { name: 'Complete Write a plan' }).click();
-		expect(complete).toHaveBeenCalledWith(active.id);
+		expect(complete).toHaveBeenCalledWith(active.id, active.version);
 		await page.getByRole('button', { name: 'Reopen Write a plan' }).click();
-		expect(reopen).toHaveBeenCalledWith(active.id);
+		expect(reopen).toHaveBeenCalledWith(completed.id, completed.version);
 		await expect.element(page.getByRole('button', { name: 'Complete Write a plan' })).toBeVisible();
 
 		await page.getByRole('button', { name: 'Delete Write a plan' }).click();
-		expect(remove).toHaveBeenCalledWith(active.id);
+		expect(remove).toHaveBeenCalledWith(reopened.id, reopened.version);
 		await expect.element(page.getByText('Inbox clear.')).toBeVisible();
 	});
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mishankov/todai/backend/internal/execution"
 	"github.com/mishankov/todai/backend/internal/project"
 )
 
@@ -14,7 +15,7 @@ func TestCreateNormalizesName(t *testing.T) {
 
 	repository := &fakeRepository{}
 	created, err := project.NewService(repository).Create(
-		context.Background(), "user-id", "  Personal  ",
+		context.Background(), projectTestScope(), "  Personal  ",
 	)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
@@ -22,8 +23,8 @@ func TestCreateNormalizesName(t *testing.T) {
 	if created.Name != "Personal" {
 		t.Errorf("name = %q, want %q", created.Name, "Personal")
 	}
-	if repository.createUserID != "user-id" {
-		t.Errorf("user ID = %q, want %q", repository.createUserID, "user-id")
+	if repository.createScope.UserID != "user-id" {
+		t.Errorf("scope = %#v", repository.createScope)
 	}
 }
 
@@ -44,7 +45,7 @@ func TestCreateRejectsInvalidName(t *testing.T) {
 			t.Parallel()
 
 			_, err := project.NewService(&fakeRepository{}).Create(
-				context.Background(), "user-id", test.value,
+				context.Background(), projectTestScope(), test.value,
 			)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
@@ -59,7 +60,7 @@ func TestUpdateNormalizesNameAndPreservesVersion(t *testing.T) {
 	name := "  Work  "
 	repository := &fakeRepository{}
 	_, err := project.NewService(repository).Update(
-		context.Background(), "user-id", "project-id", project.Update{Version: 3, Name: &name},
+		context.Background(), projectTestScope(), "project-id", project.Update{Version: 3, Name: &name},
 	)
 	if err != nil {
 		t.Fatalf("update project: %v", err)
@@ -87,7 +88,7 @@ func TestUpdateRejectsInvalidRequest(t *testing.T) {
 			t.Parallel()
 
 			_, err := project.NewService(&fakeRepository{}).Update(
-				context.Background(), "user-id", "project-id", test.update,
+				context.Background(), projectTestScope(), "project-id", test.update,
 			)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
@@ -101,7 +102,7 @@ func TestCreateSectionNormalizesName(t *testing.T) {
 
 	repository := &fakeRepository{}
 	created, err := project.NewService(repository).CreateSection(
-		context.Background(), "user-id", "project-id", "  Next steps  ",
+		context.Background(), projectTestScope(), "project-id", "  Next steps  ",
 	)
 	if err != nil {
 		t.Fatalf("create section: %v", err)
@@ -116,7 +117,7 @@ func TestUpdateRejectsInvalidLayout(t *testing.T) {
 
 	layout := project.Layout("calendar")
 	_, err := project.NewService(&fakeRepository{}).Update(
-		context.Background(), "user-id", "project-id",
+		context.Background(), projectTestScope(), "project-id",
 		project.Update{Version: 1, Layout: &layout},
 	)
 	if !errors.Is(err, project.ErrInvalidLayout) {
@@ -130,7 +131,7 @@ func TestUpdateAcceptsBoardLayout(t *testing.T) {
 	layout := project.LayoutBoard
 	repository := &fakeRepository{}
 	updated, err := project.NewService(repository).Update(
-		context.Background(), "user-id", "project-id",
+		context.Background(), projectTestScope(), "project-id",
 		project.Update{Version: 4, Layout: &layout},
 	)
 	if err != nil {
@@ -154,7 +155,7 @@ func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
 		{
 			name: "create blank name",
 			run: func(service *project.Service) error {
-				_, err := service.CreateSection(context.Background(), "user-id", "project-id", "  ")
+				_, err := service.CreateSection(context.Background(), projectTestScope(), "project-id", "  ")
 				return err
 			},
 			want: project.ErrSectionNameRequired,
@@ -163,7 +164,7 @@ func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
 			name: "create long name",
 			run: func(service *project.Service) error {
 				_, err := service.CreateSection(
-					context.Background(), "user-id", "project-id", strings.Repeat("я", 201),
+					context.Background(), projectTestScope(), "project-id", strings.Repeat("я", 201),
 				)
 				return err
 			},
@@ -173,7 +174,7 @@ func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
 			name: "update version",
 			run: func(service *project.Service) error {
 				_, err := service.UpdateSection(
-					context.Background(), "user-id", "project-id", "section-id",
+					context.Background(), projectTestScope(), "project-id", "section-id",
 					project.SectionUpdate{Name: &validName},
 				)
 				return err
@@ -184,7 +185,7 @@ func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
 			name: "update without changes",
 			run: func(service *project.Service) error {
 				_, err := service.UpdateSection(
-					context.Background(), "user-id", "project-id", "section-id",
+					context.Background(), projectTestScope(), "project-id", "section-id",
 					project.SectionUpdate{Version: 1},
 				)
 				return err
@@ -195,7 +196,7 @@ func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
 			name: "delete version",
 			run: func(service *project.Service) error {
 				return service.DeleteSection(
-					context.Background(), "user-id", "project-id", "section-id", 0,
+					context.Background(), projectTestScope(), "project-id", "section-id", 0,
 				)
 			},
 			want: project.ErrInvalidVersion,
@@ -204,7 +205,7 @@ func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
 			name: "reorder version",
 			run: func(service *project.Service) error {
 				_, err := service.ReorderSection(
-					context.Background(), "user-id", "project-id", "section-id", 0, nil,
+					context.Background(), projectTestScope(), "project-id", "section-id", 0, nil,
 				)
 				return err
 			},
@@ -229,7 +230,7 @@ func TestUpdateSectionNormalizesNameAndPreservesVersion(t *testing.T) {
 	name := "  In progress  "
 	repository := &fakeRepository{}
 	updated, err := project.NewService(repository).UpdateSection(
-		context.Background(), "user-id", "project-id", "section-id",
+		context.Background(), projectTestScope(), "project-id", "section-id",
 		project.SectionUpdate{Version: 3, Name: &name},
 	)
 	if err != nil {
@@ -241,16 +242,90 @@ func TestUpdateSectionNormalizesNameAndPreservesVersion(t *testing.T) {
 	}
 }
 
+func TestMutationsRejectInvalidExecutionScope(t *testing.T) {
+	t.Parallel()
+
+	name := "Name"
+	service := project.NewService(&fakeRepository{})
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "create project",
+			run: func() error {
+				_, err := service.Create(context.Background(), execution.Scope{}, name)
+				return err
+			},
+		},
+		{
+			name: "update project",
+			run: func() error {
+				_, err := service.Update(
+					context.Background(), execution.Scope{}, "project-id",
+					project.Update{Version: 1, Name: &name},
+				)
+				return err
+			},
+		},
+		{
+			name: "create section",
+			run: func() error {
+				_, err := service.CreateSection(
+					context.Background(), execution.Scope{}, "project-id", name,
+				)
+				return err
+			},
+		},
+		{
+			name: "update section",
+			run: func() error {
+				_, err := service.UpdateSection(
+					context.Background(), execution.Scope{}, "project-id", "section-id",
+					project.SectionUpdate{Version: 1, Name: &name},
+				)
+				return err
+			},
+		},
+		{
+			name: "delete section",
+			run: func() error {
+				return service.DeleteSection(
+					context.Background(), execution.Scope{}, "project-id", "section-id", 1,
+				)
+			},
+		},
+		{
+			name: "reorder section",
+			run: func() error {
+				_, err := service.ReorderSection(
+					context.Background(), execution.Scope{}, "project-id", "section-id", 1, nil,
+				)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if err := test.run(); !errors.Is(err, execution.ErrUserIDRequired) {
+				t.Errorf("error = %v, want %v", err, execution.ErrUserIDRequired)
+			}
+		})
+	}
+}
+
 type fakeRepository struct {
-	createUserID  string
+	createScope   execution.Scope
 	update        project.Update
 	sectionName   string
 	sectionUpdate project.SectionUpdate
 }
 
-func (r *fakeRepository) Create(_ context.Context, userID, name string) (project.Project, error) {
-	r.createUserID = userID
-	return project.Project{ID: "project-id", UserID: userID, Name: name, Version: 1}, nil
+func (r *fakeRepository) Create(_ context.Context, scope execution.Scope, name string) (project.Project, error) {
+	r.createScope = scope
+	return project.Project{ID: "project-id", UserID: scope.UserID, Name: name, Version: 1}, nil
 }
 
 func (*fakeRepository) Get(context.Context, string, string) (project.Project, error) {
@@ -263,7 +338,7 @@ func (*fakeRepository) List(context.Context, string, bool) ([]project.Project, e
 
 func (r *fakeRepository) Update(
 	_ context.Context,
-	_ string,
+	_ execution.Scope,
 	_ string,
 	update project.Update,
 ) (project.Project, error) {
@@ -280,13 +355,13 @@ func (r *fakeRepository) Update(
 
 func (r *fakeRepository) CreateSection(
 	_ context.Context,
-	userID string,
+	scope execution.Scope,
 	projectID string,
 	name string,
 ) (project.Section, error) {
 	r.sectionName = name
 	return project.Section{
-		ID: "section-id", UserID: userID, ProjectID: projectID, Name: name, Version: 1,
+		ID: "section-id", UserID: scope.UserID, ProjectID: projectID, Name: name, Version: 1,
 	}, nil
 }
 
@@ -296,7 +371,7 @@ func (*fakeRepository) ListSections(context.Context, string, string) ([]project.
 
 func (r *fakeRepository) UpdateSection(
 	_ context.Context,
-	_ string,
+	_ execution.Scope,
 	_ string,
 	_ string,
 	update project.SectionUpdate,
@@ -305,17 +380,21 @@ func (r *fakeRepository) UpdateSection(
 	return project.Section{Name: *update.Name, Version: update.Version + 1}, nil
 }
 
-func (*fakeRepository) DeleteSection(context.Context, string, string, string, int64) error {
+func (*fakeRepository) DeleteSection(context.Context, execution.Scope, string, string, int64) error {
 	return nil
 }
 
 func (*fakeRepository) ReorderSection(
 	context.Context,
-	string,
+	execution.Scope,
 	string,
 	string,
 	int64,
 	*string,
 ) ([]project.Section, error) {
 	return nil, nil
+}
+
+func projectTestScope() execution.Scope {
+	return execution.UserScope("user-id", "correlation-id")
 }

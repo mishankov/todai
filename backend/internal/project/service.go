@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/mishankov/todai/backend/internal/execution"
 )
 
 const maxNameLength = 200
@@ -36,15 +38,15 @@ var (
 )
 
 type repository interface {
-	Create(context.Context, string, string) (Project, error)
+	Create(context.Context, execution.Scope, string) (Project, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
-	Update(context.Context, string, string, Update) (Project, error)
-	CreateSection(context.Context, string, string, string) (Section, error)
+	Update(context.Context, execution.Scope, string, Update) (Project, error)
+	CreateSection(context.Context, execution.Scope, string, string) (Section, error)
 	ListSections(context.Context, string, string) ([]Section, error)
-	UpdateSection(context.Context, string, string, string, SectionUpdate) (Section, error)
-	DeleteSection(context.Context, string, string, string, int64) error
-	ReorderSection(context.Context, string, string, string, int64, *string) ([]Section, error)
+	UpdateSection(context.Context, execution.Scope, string, string, SectionUpdate) (Section, error)
+	DeleteSection(context.Context, execution.Scope, string, string, int64) error
+	ReorderSection(context.Context, execution.Scope, string, string, int64, *string) ([]Section, error)
 }
 
 // Service provides user-scoped project application operations.
@@ -58,13 +60,16 @@ func NewService(repository repository) *Service {
 }
 
 // Create creates an active project for the user.
-func (s *Service) Create(ctx context.Context, userID, name string) (Project, error) {
+func (s *Service) Create(ctx context.Context, scope execution.Scope, name string) (Project, error) {
+	if err := scope.Validate(); err != nil {
+		return Project{}, err
+	}
 	name, err := normalizeName(name)
 	if err != nil {
 		return Project{}, err
 	}
 
-	created, err := s.repository.Create(ctx, userID, name)
+	created, err := s.repository.Create(ctx, scope, name)
 	if err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
@@ -93,7 +98,15 @@ func (s *Service) List(ctx context.Context, userID string, includeArchived bool)
 }
 
 // Update changes editable fields when the caller's version is current.
-func (s *Service) Update(ctx context.Context, userID, projectID string, update Update) (Project, error) {
+func (s *Service) Update(
+	ctx context.Context,
+	scope execution.Scope,
+	projectID string,
+	update Update,
+) (Project, error) {
+	if err := scope.Validate(); err != nil {
+		return Project{}, err
+	}
 	if update.Version < 1 {
 		return Project{}, ErrInvalidVersion
 	}
@@ -111,7 +124,7 @@ func (s *Service) Update(ctx context.Context, userID, projectID string, update U
 		return Project{}, ErrInvalidLayout
 	}
 
-	updated, err := s.repository.Update(ctx, userID, projectID, update)
+	updated, err := s.repository.Update(ctx, scope, projectID, update)
 	if err != nil {
 		return Project{}, fmt.Errorf("update project: %w", err)
 	}
@@ -122,16 +135,19 @@ func (s *Service) Update(ctx context.Context, userID, projectID string, update U
 // CreateSection creates a section at the end of a project.
 func (s *Service) CreateSection(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	projectID string,
 	name string,
 ) (Section, error) {
+	if err := scope.Validate(); err != nil {
+		return Section{}, err
+	}
 	name, err := normalizeSectionName(name)
 	if err != nil {
 		return Section{}, err
 	}
 
-	created, err := s.repository.CreateSection(ctx, userID, projectID, name)
+	created, err := s.repository.CreateSection(ctx, scope, projectID, name)
 	if err != nil {
 		return Section{}, fmt.Errorf("create project section: %w", err)
 	}
@@ -156,11 +172,14 @@ func (s *Service) ListSections(
 // UpdateSection changes a section name using optimistic concurrency.
 func (s *Service) UpdateSection(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	projectID string,
 	sectionID string,
 	update SectionUpdate,
 ) (Section, error) {
+	if err := scope.Validate(); err != nil {
+		return Section{}, err
+	}
 	if update.Version < 1 {
 		return Section{}, ErrInvalidVersion
 	}
@@ -173,7 +192,7 @@ func (s *Service) UpdateSection(
 	}
 	update.Name = &name
 
-	updated, err := s.repository.UpdateSection(ctx, userID, projectID, sectionID, update)
+	updated, err := s.repository.UpdateSection(ctx, scope, projectID, sectionID, update)
 	if err != nil {
 		return Section{}, fmt.Errorf("update project section: %w", err)
 	}
@@ -184,15 +203,18 @@ func (s *Service) UpdateSection(
 // DeleteSection removes a section without deleting its tasks.
 func (s *Service) DeleteSection(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	projectID string,
 	sectionID string,
 	version int64,
 ) error {
+	if err := scope.Validate(); err != nil {
+		return err
+	}
 	if version < 1 {
 		return ErrInvalidVersion
 	}
-	if err := s.repository.DeleteSection(ctx, userID, projectID, sectionID, version); err != nil {
+	if err := s.repository.DeleteSection(ctx, scope, projectID, sectionID, version); err != nil {
 		return fmt.Errorf("delete project section: %w", err)
 	}
 
@@ -202,17 +224,20 @@ func (s *Service) DeleteSection(
 // ReorderSection moves a section before another section or to the end.
 func (s *Service) ReorderSection(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	projectID string,
 	sectionID string,
 	version int64,
 	beforeSectionID *string,
 ) ([]Section, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
 	if version < 1 {
 		return nil, ErrInvalidVersion
 	}
 	sections, err := s.repository.ReorderSection(
-		ctx, userID, projectID, sectionID, version, beforeSectionID,
+		ctx, scope, projectID, sectionID, version, beforeSectionID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reorder project section: %w", err)

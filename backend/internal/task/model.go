@@ -57,3 +57,11 @@ type Reorder struct {
 	SectionID    *string
 	BeforeTaskID *string
 }
+
+// SearchQuery filters the tasks visible to an agent task search.
+type SearchQuery struct {
+	Query     string
+	ProjectID *string
+	Status    *Status
+	Limit     int
+}

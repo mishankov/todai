@@ -10,6 +10,8 @@ import (
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
 	"github.com/platforma-dev/platforma/log"
+
+	"github.com/mishankov/todai/backend/internal/execution"
 )
 
 type projectHandlers struct {
@@ -18,15 +20,15 @@ type projectHandlers struct {
 
 // HTTPService describes the project operations exposed over HTTP.
 type HTTPService interface {
-	Create(context.Context, string, string) (Project, error)
+	Create(context.Context, execution.Scope, string) (Project, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
-	Update(context.Context, string, string, Update) (Project, error)
-	CreateSection(context.Context, string, string, string) (Section, error)
+	Update(context.Context, execution.Scope, string, Update) (Project, error)
+	CreateSection(context.Context, execution.Scope, string, string) (Section, error)
 	ListSections(context.Context, string, string) ([]Section, error)
-	UpdateSection(context.Context, string, string, string, SectionUpdate) (Section, error)
-	DeleteSection(context.Context, string, string, string, int64) error
-	ReorderSection(context.Context, string, string, string, int64, *string) ([]Section, error)
+	UpdateSection(context.Context, execution.Scope, string, string, SectionUpdate) (Section, error)
+	DeleteSection(context.Context, execution.Scope, string, string, int64) error
+	ReorderSection(context.Context, execution.Scope, string, string, int64, *string) ([]Section, error)
 }
 
 // HTTPModule owns the project domain's routes and handlers.
@@ -136,13 +138,12 @@ func (h projectHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := projectWebUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	created, err := h.service.Create(r.Context(), user.ID, request.Name)
+	created, err := h.service.Create(r.Context(), scope, request.Name)
 	if err != nil {
 		writeProjectError(w, r, "create", err)
 		return
@@ -191,13 +192,12 @@ func (h projectHandlers) update(w http.ResponseWriter, r *http.Request) {
 		update.Layout = &request.Layout.Value
 	}
 
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := projectWebUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	updated, err := h.service.Update(r.Context(), user.ID, r.PathValue("id"), update)
+	updated, err := h.service.Update(r.Context(), scope, r.PathValue("id"), update)
 	if err != nil {
 		writeProjectError(w, r, "update", err)
 		return
@@ -228,13 +228,12 @@ func (h projectHandlers) createSection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request payload", http.StatusBadRequest)
 		return
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := projectWebUserScope(w, r)
+	if !ok {
 		return
 	}
 
-	created, err := h.service.CreateSection(r.Context(), user.ID, r.PathValue("id"), request.Name)
+	created, err := h.service.CreateSection(r.Context(), scope, r.PathValue("id"), request.Name)
 	if err != nil {
 		writeProjectError(w, r, "create_section", err)
 		return
@@ -257,14 +256,13 @@ func (h projectHandlers) updateSection(w http.ResponseWriter, r *http.Request) {
 	if request.Name.Set {
 		update.Name = &request.Name.Value
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := projectWebUserScope(w, r)
+	if !ok {
 		return
 	}
 
 	updated, err := h.service.UpdateSection(
-		r.Context(), user.ID, r.PathValue("id"), r.PathValue("sectionId"), update,
+		r.Context(), scope, r.PathValue("id"), r.PathValue("sectionId"), update,
 	)
 	if err != nil {
 		writeProjectError(w, r, "update_section", err)
@@ -284,14 +282,13 @@ func (h projectHandlers) deleteSection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "project section version is required", http.StatusBadRequest)
 		return
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := projectWebUserScope(w, r)
+	if !ok {
 		return
 	}
 
 	if err := h.service.DeleteSection(
-		r.Context(), user.ID, r.PathValue("id"), r.PathValue("sectionId"), *request.Version,
+		r.Context(), scope, r.PathValue("id"), r.PathValue("sectionId"), *request.Version,
 	); err != nil {
 		writeProjectError(w, r, "delete_section", err)
 		return
@@ -310,14 +307,13 @@ func (h projectHandlers) reorderSection(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "project section version is required", http.StatusBadRequest)
 		return
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	scope, ok := projectWebUserScope(w, r)
+	if !ok {
 		return
 	}
 
 	sections, err := h.service.ReorderSection(
-		r.Context(), user.ID, r.PathValue("id"), r.PathValue("sectionId"),
+		r.Context(), scope, r.PathValue("id"), r.PathValue("sectionId"),
 		*request.Version, request.BeforeSectionID,
 	)
 	if err != nil {
@@ -326,6 +322,23 @@ func (h projectHandlers) reorderSection(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeProjectJSON(w, r, http.StatusOK, sectionListResponse{Sections: sections})
+}
+
+func projectWebUserScope(w http.ResponseWriter, r *http.Request) (execution.Scope, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return execution.Scope{}, false
+	}
+	correlationID, _ := r.Context().Value(log.TraceIDKey).(string)
+	scope := execution.UserScope(user.ID, correlationID)
+	if err := scope.Validate(); err != nil {
+		log.ErrorContext(r.Context(), "invalid project web execution scope", "error", err)
+		http.Error(w, "request execution context unavailable", http.StatusInternalServerError)
+		return execution.Scope{}, false
+	}
+
+	return scope, true
 }
 
 func writeProjectError(w http.ResponseWriter, r *http.Request, operation string, err error) {

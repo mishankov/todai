@@ -10,10 +10,10 @@
 		initialSections: ProjectSection[];
 		initialTasks: Task[];
 		create: (title: string, sectionId: string | null) => Promise<Task>;
-		complete: (taskId: string) => Promise<Task>;
-		reopen: (taskId: string) => Promise<Task>;
+		complete: (taskId: string, version: number) => Promise<Task>;
+		reopen: (taskId: string, version: number) => Promise<Task>;
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
-		remove: (taskId: string) => Promise<void>;
+		remove: (taskId: string, version: number) => Promise<void>;
 		reorder: (
 			taskId: string,
 			version: number,
@@ -86,7 +86,11 @@
 	let sectionDropTarget = $state<SectionDropTarget | null>(null);
 	let errorMessage = $state('');
 	let activeTasks = $derived(tasks.filter((item) => item.status === 'active'));
-	let sectionGroups = $derived(buildSectionGroups(sections, tasks));
+	let sectionGroups = $derived(
+		buildSectionGroups(sections, tasks).filter(
+			(group) => currentProject.layout === 'list' || !group.completed
+		)
+	);
 	let editingTask = $derived(tasks.find((item) => item.id === editingTaskId));
 
 	async function setLayout(layout: ProjectLayout) {
@@ -191,7 +195,10 @@
 		tasks = tasks.map((candidate) => (candidate.id === item.id ? optimistic : candidate));
 		errorMessage = '';
 		try {
-			const updated = item.status === 'active' ? await complete(item.id) : await reopen(item.id);
+			const updated =
+				item.status === 'active'
+					? await complete(item.id, item.version)
+					: await reopen(item.id, item.version);
 			tasks = tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate));
 		} catch {
 			tasks = tasks.map((candidate) => (candidate.id === item.id ? previous : candidate));
@@ -207,7 +214,7 @@
 		tasks = tasks.filter((candidate) => candidate.id !== item.id);
 		errorMessage = '';
 		try {
-			await remove(item.id);
+			await remove(item.id, item.version);
 		} catch {
 			tasks = previous;
 			errorMessage = 'The task could not be deleted. Please try again.';

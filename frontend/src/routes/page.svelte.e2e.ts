@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { ActivityEvent } from '$lib/activity/client';
 import type { Project, ProjectSection } from '$lib/projects/client';
 import type { Task } from '$lib/tasks/client';
 
@@ -7,6 +8,21 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	let tasks: Task[] = [];
 	let projects: Project[] = [];
 	let sections: ProjectSection[] = [];
+	const activityEvents: ActivityEvent[] = [
+		{
+			id: 'activity-1',
+			type: 'task.updated',
+			occurredAt: new Date().toISOString(),
+			actorType: 'user',
+			actorId: 'user-id',
+			source: 'web',
+			aggregateType: 'task',
+			aggregateId: 'task-1',
+			correlationId: 'correlation-id',
+			agentRunId: null,
+			payload: { schemaVersion: 1, after: { title: 'Buy oat milk' } }
+		}
+	];
 
 	await page.route('**/api/auth/me', async (route) => {
 		if (!authenticated) {
@@ -29,6 +45,13 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.route('**/api/auth/logout', async (route) => {
 		authenticated = false;
 		await route.fulfill({ status: 200 });
+	});
+	await page.route('**/api/activity/?*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ events: activityEvents })
+		});
 	});
 	await page.route('**/api/projects?*', async (route) => {
 		const includeArchived =
@@ -179,6 +202,11 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.route('**/api/tasks/*/complete', async (route) => {
 		const taskId = new URL(route.request().url()).pathname.split('/').at(-2);
 		const updated = tasks.find((item) => item.id === taskId)!;
+		const request = route.request().postDataJSON();
+		if (request.version !== updated.version) {
+			await route.fulfill({ status: 409 });
+			return;
+		}
 		Object.assign(updated, {
 			status: 'completed',
 			version: updated.version + 1,
@@ -193,6 +221,11 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.route('**/api/tasks/*/reopen', async (route) => {
 		const taskId = new URL(route.request().url()).pathname.split('/').at(-2);
 		const updated = tasks.find((item) => item.id === taskId)!;
+		const request = route.request().postDataJSON();
+		if (request.version !== updated.version) {
+			await route.fulfill({ status: 409 });
+			return;
+		}
 		Object.assign(updated, {
 			status: 'active',
 			version: updated.version + 1,
@@ -260,6 +293,12 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 			return;
 		}
 
+		const request = route.request().postDataJSON();
+		const deleted = tasks.find((item) => item.id === taskId)!;
+		if (request.version !== deleted.version) {
+			await route.fulfill({ status: 409 });
+			return;
+		}
 		tasks = tasks.filter((item) => item.id !== taskId);
 		await route.fulfill({ status: 204 });
 	});
@@ -342,6 +381,11 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await expect(page.getByRole('button', { name: 'Complete Buy oat milk' })).toBeVisible();
 	await page.getByRole('button', { name: 'Delete Buy oat milk' }).click();
 	await expect(page.getByText('Buy oat milk')).toHaveCount(0);
+
+	await page.getByRole('link', { name: 'Activity' }).click();
+	await expect(page).toHaveURL(/\/activity$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Activity');
+	await expect(page.getByText('“Buy oat milk”')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL(/\/login$/);

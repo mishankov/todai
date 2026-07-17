@@ -12,16 +12,16 @@
 
 	let { data }: PageProps = $props();
 
-	function complete(taskId: string): Promise<Task> {
-		return completeTask(fetch, taskId);
+	function complete(taskId: string, version: number): Promise<Task> {
+		return completeTask(fetch, taskId, version);
 	}
 
-	function reopen(taskId: string): Promise<Task> {
-		return reopenTask(fetch, taskId);
+	function reopen(taskId: string, version: number): Promise<Task> {
+		return reopenTask(fetch, taskId, version);
 	}
 
-	function remove(taskId: string): Promise<void> {
-		return deleteTask(fetch, taskId);
+	function remove(taskId: string, version: number): Promise<void> {
+		return deleteTask(fetch, taskId, version);
 	}
 
 	function update(taskId: string, changes: TaskUpdate): Promise<Task> {

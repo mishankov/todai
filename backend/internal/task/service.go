@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/mishankov/todai/backend/internal/execution"
 )
 
 const maxTitleLength = 500
@@ -44,20 +46,46 @@ var (
 	ErrSectionNotFound = errors.New("task project section not found")
 	// ErrTaskNotReorderable indicates that a task cannot participate in project ordering.
 	ErrTaskNotReorderable = errors.New("only active top-level project tasks can be reordered")
+	// ErrInvalidSearchLimit indicates that a search requests an unsafe result count.
+	ErrInvalidSearchLimit = errors.New("task search limit must be between 1 and 100")
+	// ErrInvalidSearchStatus indicates that a search contains an unsupported task status.
+	ErrInvalidSearchStatus = errors.New("task search status is invalid")
 )
 
 type repository interface {
-	Create(context.Context, string, string, *string, *string) (Task, error)
+	Create(context.Context, execution.Scope, string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
 	ListAll(context.Context, string, bool) ([]Task, error)
 	ListProject(context.Context, string, string, bool) ([]Task, error)
 	ListToday(context.Context, string, Date, time.Time, time.Time, bool) ([]Task, error)
-	Complete(context.Context, string, string) (Task, error)
-	Reopen(context.Context, string, string) (Task, error)
-	Update(context.Context, string, string, Update) (Task, error)
-	Reorder(context.Context, string, string, Reorder) ([]Task, error)
-	Delete(context.Context, string, string) error
+	Search(context.Context, string, SearchQuery) ([]Task, error)
+	Complete(context.Context, execution.Scope, string, int64) (Task, error)
+	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
+	Update(context.Context, execution.Scope, string, Update) (Task, error)
+	Reorder(context.Context, execution.Scope, string, Reorder) ([]Task, error)
+	Delete(context.Context, execution.Scope, string, int64) error
+}
+
+// Search returns user-owned tasks matching a text query and optional filters.
+func (s *Service) Search(ctx context.Context, userID string, query SearchQuery) ([]Task, error) {
+	query.Query = strings.TrimSpace(query.Query)
+	if query.Limit == 0 {
+		query.Limit = 50
+	}
+	if query.Limit < 1 || query.Limit > 100 {
+		return nil, ErrInvalidSearchLimit
+	}
+	if query.Status != nil && *query.Status != StatusActive && *query.Status != StatusCompleted {
+		return nil, ErrInvalidSearchStatus
+	}
+
+	tasks, err := s.repository.Search(ctx, userID, query)
+	if err != nil {
+		return nil, fmt.Errorf("search tasks: %w", err)
+	}
+
+	return tasks, nil
 }
 
 // Service provides user-scoped task application operations.
@@ -73,11 +101,14 @@ func NewService(repository repository) *Service {
 // Create creates an active top-level task in the user's Inbox or a project.
 func (s *Service) Create(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	title string,
 	projectID *string,
 	sectionID *string,
 ) (Task, error) {
+	if err := scope.Validate(); err != nil {
+		return Task{}, fmt.Errorf("validate execution scope: %w", err)
+	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Task{}, ErrTitleRequired
@@ -90,7 +121,7 @@ func (s *Service) Create(
 		return Task{}, ErrSectionNotFound
 	}
 
-	created, err := s.repository.Create(ctx, userID, title, projectID, sectionID)
+	created, err := s.repository.Create(ctx, scope, title, projectID, sectionID)
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
 	}
@@ -171,8 +202,16 @@ func (s *Service) ListToday(
 }
 
 // Complete marks a user-owned task as completed. Repeated calls are idempotent.
-func (s *Service) Complete(ctx context.Context, userID, taskID string) (Task, error) {
-	completed, err := s.repository.Complete(ctx, userID, taskID)
+func (s *Service) Complete(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) (Task, error) {
+	if err := validateMutation(scope, version); err != nil {
+		return Task{}, err
+	}
+	completed, err := s.repository.Complete(ctx, scope, taskID, version)
 	if err != nil {
 		return Task{}, fmt.Errorf("complete task: %w", err)
 	}
@@ -181,8 +220,16 @@ func (s *Service) Complete(ctx context.Context, userID, taskID string) (Task, er
 }
 
 // Reopen marks a user-owned task as active. Repeated calls are idempotent.
-func (s *Service) Reopen(ctx context.Context, userID, taskID string) (Task, error) {
-	reopened, err := s.repository.Reopen(ctx, userID, taskID)
+func (s *Service) Reopen(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) (Task, error) {
+	if err := validateMutation(scope, version); err != nil {
+		return Task{}, err
+	}
+	reopened, err := s.repository.Reopen(ctx, scope, taskID, version)
 	if err != nil {
 		return Task{}, fmt.Errorf("reopen task: %w", err)
 	}
@@ -191,7 +238,15 @@ func (s *Service) Reopen(ctx context.Context, userID, taskID string) (Task, erro
 }
 
 // Update changes editable fields when the caller's version is still current.
-func (s *Service) Update(ctx context.Context, userID, taskID string, update Update) (Task, error) {
+func (s *Service) Update(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	update Update,
+) (Task, error) {
+	if err := scope.Validate(); err != nil {
+		return Task{}, fmt.Errorf("validate execution scope: %w", err)
+	}
 	if err := validateUpdate(&update); err != nil {
 		return Task{}, err
 	}
@@ -199,7 +254,7 @@ func (s *Service) Update(ctx context.Context, userID, taskID string, update Upda
 		update.SectionID = &Nullable[string]{}
 	}
 
-	updated, err := s.repository.Update(ctx, userID, taskID, update)
+	updated, err := s.repository.Update(ctx, scope, taskID, update)
 	if err != nil {
 		return Task{}, fmt.Errorf("update task: %w", err)
 	}
@@ -210,14 +265,17 @@ func (s *Service) Update(ctx context.Context, userID, taskID string, update Upda
 // Reorder moves an active top-level project task within or between sections.
 func (s *Service) Reorder(
 	ctx context.Context,
-	userID string,
+	scope execution.Scope,
 	taskID string,
 	reorder Reorder,
 ) ([]Task, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, fmt.Errorf("validate execution scope: %w", err)
+	}
 	if reorder.Version < 1 {
 		return nil, ErrInvalidVersion
 	}
-	tasks, err := s.repository.Reorder(ctx, userID, taskID, reorder)
+	tasks, err := s.repository.Reorder(ctx, scope, taskID, reorder)
 	if err != nil {
 		return nil, fmt.Errorf("reorder task: %w", err)
 	}
@@ -226,9 +284,23 @@ func (s *Service) Reorder(
 }
 
 // Delete permanently removes a user-owned task.
-func (s *Service) Delete(ctx context.Context, userID, taskID string) error {
-	if err := s.repository.Delete(ctx, userID, taskID); err != nil {
+func (s *Service) Delete(ctx context.Context, scope execution.Scope, taskID string, version int64) error {
+	if err := validateMutation(scope, version); err != nil {
+		return err
+	}
+	if err := s.repository.Delete(ctx, scope, taskID, version); err != nil {
 		return fmt.Errorf("delete task: %w", err)
+	}
+
+	return nil
+}
+
+func validateMutation(scope execution.Scope, version int64) error {
+	if err := scope.Validate(); err != nil {
+		return fmt.Errorf("validate execution scope: %w", err)
+	}
+	if version < 1 {
+		return ErrInvalidVersion
 	}
 
 	return nil

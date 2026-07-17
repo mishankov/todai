@@ -162,30 +162,44 @@ export async function updateTask(
 	return (await response.json()) as Task;
 }
 
-export async function completeTask(fetcher: typeof fetch, taskId: string): Promise<Task> {
+export async function completeTask(
+	fetcher: typeof fetch,
+	taskId: string,
+	version: number
+): Promise<Task> {
 	return sendTaskRequest(
 		fetcher,
 		`/api/tasks/${encodeURIComponent(taskId)}/complete`,
-		undefined,
+		{ version },
 		'Could not complete the task.'
 	);
 }
 
-export async function reopenTask(fetcher: typeof fetch, taskId: string): Promise<Task> {
+export async function reopenTask(
+	fetcher: typeof fetch,
+	taskId: string,
+	version: number
+): Promise<Task> {
 	return sendTaskRequest(
 		fetcher,
 		`/api/tasks/${encodeURIComponent(taskId)}/reopen`,
-		undefined,
+		{ version },
 		'Could not reopen the task.'
 	);
 }
 
-export async function deleteTask(fetcher: typeof fetch, taskId: string): Promise<void> {
+export async function deleteTask(
+	fetcher: typeof fetch,
+	taskId: string,
+	version: number
+): Promise<void> {
 	const response = await fetcher(`/api/tasks/${encodeURIComponent(taskId)}`, {
 		method: 'DELETE',
 		credentials: 'same-origin',
-		headers: { Accept: 'application/json' }
+		headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ version })
 	});
+	if (response.status === 409) throw new TaskConflictError();
 	if (!response.ok) {
 		throw new TaskRequestError('Could not delete the task.');
 	}
@@ -206,6 +220,7 @@ async function sendTaskRequest(
 		},
 		body: body === undefined ? undefined : JSON.stringify(body)
 	});
+	if (response.status === 409) throw new TaskConflictError();
 	if (!response.ok) {
 		throw new TaskRequestError(errorMessage);
 	}

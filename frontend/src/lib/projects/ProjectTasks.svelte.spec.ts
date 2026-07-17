@@ -71,6 +71,28 @@ describe('ProjectTasks', () => {
 		await expect.element(page.getByRole('button', { name: 'Board', pressed: true })).toBeVisible();
 	});
 
+	it('hides completed tasks in board layout', async () => {
+		const project = testProject();
+		const changed = testProject({ layout: 'board', version: 2 });
+		const completed = testTask({
+			title: 'Finished task',
+			status: 'completed',
+			completedAt: '2026-07-17T09:00:00Z'
+		});
+		renderProjectTasks({
+			project,
+			tasks: [completed],
+			changeLayout: vi.fn(async () => changed)
+		});
+
+		await expect.element(page.getByRole('region', { name: 'Completed' })).toBeVisible();
+
+		await page.getByRole('button', { name: 'Board' }).click();
+
+		await expect.element(page.getByRole('region', { name: 'Completed' })).not.toBeInTheDocument();
+		await expect.element(page.getByText(completed.title, { exact: true })).not.toBeInTheDocument();
+	});
+
 	it('creates a task in the selected section', async () => {
 		const section = testSection({ id: 'doing', name: 'Doing' });
 		const created = testTask({ title: 'Ship the change', sectionId: section.id });
@@ -160,8 +182,8 @@ describe('ProjectTasks', () => {
 
 		await page.getByRole('button', { name: `Delete ${deletable.title}` }).click();
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
-		expect(complete).toHaveBeenCalledWith(completable.id);
-		expect(remove).toHaveBeenCalledWith(deletable.id);
+		expect(complete).toHaveBeenCalledWith(completable.id, completable.version);
+		expect(remove).toHaveBeenCalledWith(deletable.id, deletable.version);
 	});
 
 	it('moves a task between sections with drag-and-drop in list layout', async () => {
@@ -405,9 +427,9 @@ interface RenderOptions {
 	sections?: ProjectSection[];
 	tasks?: Task[];
 	create?: (title: string, sectionId: string | null) => Promise<Task>;
-	complete?: (taskId: string) => Promise<Task>;
+	complete?: (taskId: string, version: number) => Promise<Task>;
 	update?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
-	remove?: (taskId: string) => Promise<void>;
+	remove?: (taskId: string, version: number) => Promise<void>;
 	reorder?: (
 		taskId: string,
 		version: number,

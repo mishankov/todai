@@ -6,10 +6,10 @@
 	interface Props {
 		initialTasks: Task[];
 		create?: (title: string) => Promise<Task>;
-		complete: (taskId: string) => Promise<Task>;
-		reopen: (taskId: string) => Promise<Task>;
+		complete: (taskId: string, version: number) => Promise<Task>;
+		reopen: (taskId: string, version: number) => Promise<Task>;
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
-		remove: (taskId: string) => Promise<void>;
+		remove: (taskId: string, version: number) => Promise<void>;
 		eyebrow: string;
 		heading: string;
 		countNoun?: string;
@@ -84,7 +84,10 @@
 		errorMessage = '';
 		tasks = tasks.map((candidate) => (candidate.id === item.id ? optimisticItem : candidate));
 		try {
-			const updated = item.status === 'active' ? await complete(item.id) : await reopen(item.id);
+			const updated =
+				item.status === 'active'
+					? await complete(item.id, item.version)
+					: await reopen(item.id, item.version);
 			tasks = tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate));
 		} catch {
 			tasks = tasks.map((candidate) => (candidate.id === item.id ? previousItem : candidate));
@@ -101,7 +104,7 @@
 		errorMessage = '';
 		tasks = tasks.filter((candidate) => candidate.id !== item.id);
 		try {
-			await remove(item.id);
+			await remove(item.id, item.version);
 		} catch {
 			if (!tasks.some((candidate) => candidate.id === item.id)) {
 				const restoredTasks = [...tasks];

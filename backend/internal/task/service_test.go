@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mishankov/todai/backend/internal/execution"
 	"github.com/mishankov/todai/backend/internal/task"
 )
 
@@ -16,15 +17,15 @@ func TestCreateNormalizesTitle(t *testing.T) {
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 
-	created, err := service.Create(context.Background(), "user-id", "  Buy milk  ", nil, nil)
+	created, err := service.Create(context.Background(), testScope(), "  Buy milk  ", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 	if created.Title != "Buy milk" {
 		t.Errorf("title = %q, want %q", created.Title, "Buy milk")
 	}
-	if repository.createUserID != "user-id" {
-		t.Errorf("user ID = %q, want %q", repository.createUserID, "user-id")
+	if repository.createScope.UserID != "user-id" {
+		t.Errorf("user ID = %q, want %q", repository.createScope.UserID, "user-id")
 	}
 }
 
@@ -45,7 +46,7 @@ func TestCreateRejectsInvalidTitle(t *testing.T) {
 			t.Parallel()
 
 			service := task.NewService(&fakeRepository{})
-			_, err := service.Create(context.Background(), "user-id", test.title, nil, nil)
+			_, err := service.Create(context.Background(), testScope(), test.title, nil, nil)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -59,7 +60,7 @@ func TestCreateCanTargetProject(t *testing.T) {
 	projectID := "project-id"
 	repository := &fakeRepository{}
 	created, err := task.NewService(repository).Create(
-		context.Background(), "user-id", "Plan sprint", &projectID, nil,
+		context.Background(), testScope(), "Plan sprint", &projectID, nil,
 	)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
@@ -76,7 +77,7 @@ func TestCreateCanTargetProjectSection(t *testing.T) {
 	sectionID := "section-id"
 	repository := &fakeRepository{}
 	created, err := task.NewService(repository).Create(
-		context.Background(), "user-id", "Plan sprint", &projectID, &sectionID,
+		context.Background(), testScope(), "Plan sprint", &projectID, &sectionID,
 	)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
@@ -92,30 +93,99 @@ func TestCreateRejectsSectionWithoutProject(t *testing.T) {
 
 	sectionID := "section-id"
 	_, err := task.NewService(&fakeRepository{}).Create(
-		context.Background(), "user-id", "Plan sprint", nil, &sectionID,
+		context.Background(), testScope(), "Plan sprint", nil, &sectionID,
 	)
 	if !errors.Is(err, task.ErrSectionNotFound) {
 		t.Fatalf("error = %v, want %v", err, task.ErrSectionNotFound)
 	}
 }
 
-func TestDeleteScopesTaskToUser(t *testing.T) {
+func TestDeletePassesExecutionScopeAndVersion(t *testing.T) {
 	t.Parallel()
 
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 
-	if err := service.Delete(context.Background(), "user-id", "task-id"); err != nil {
+	if err := service.Delete(context.Background(), testScope(), "task-id", 7); err != nil {
 		t.Fatalf("delete task: %v", err)
 	}
-	if repository.deleteUserID != "user-id" || repository.deleteTaskID != "task-id" {
+	if repository.deleteScope.UserID != "user-id" || repository.deleteTaskID != "task-id" ||
+		repository.deleteVersion != 7 {
 		t.Errorf(
-			"delete arguments = (%q, %q), want (%q, %q)",
-			repository.deleteUserID,
+			"delete arguments = (%q, %q, %d), want (%q, %q, %d)",
+			repository.deleteScope.UserID,
 			repository.deleteTaskID,
+			repository.deleteVersion,
 			"user-id",
 			"task-id",
+			7,
 		)
+	}
+}
+
+func TestStatusChangesPassExecutionScopeAndVersion(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	service := task.NewService(repository)
+	if _, err := service.Complete(context.Background(), testScope(), "task-id", 3); err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+	if repository.completeScope.UserID != "user-id" || repository.completeTaskID != "task-id" ||
+		repository.completeVersion != 3 {
+		t.Errorf("complete arguments = (%#v, %q, %d)", repository.completeScope, repository.completeTaskID, repository.completeVersion)
+	}
+
+	if _, err := service.Reopen(context.Background(), testScope(), "task-id", 4); err != nil {
+		t.Fatalf("reopen task: %v", err)
+	}
+	if repository.reopenScope.UserID != "user-id" || repository.reopenTaskID != "task-id" ||
+		repository.reopenVersion != 4 {
+		t.Errorf("reopen arguments = (%#v, %q, %d)", repository.reopenScope, repository.reopenTaskID, repository.reopenVersion)
+	}
+}
+
+func TestStatusChangesAndDeleteRejectInvalidVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call func(*task.Service) error
+	}{
+		{
+			name: "complete",
+			call: func(service *task.Service) error {
+				_, err := service.Complete(context.Background(), testScope(), "task-id", 0)
+				return err
+			},
+		},
+		{
+			name: "reopen",
+			call: func(service *task.Service) error {
+				_, err := service.Reopen(context.Background(), testScope(), "task-id", 0)
+				return err
+			},
+		},
+		{
+			name: "delete",
+			call: func(service *task.Service) error {
+				return service.Delete(context.Background(), testScope(), "task-id", 0)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			repository := &fakeRepository{}
+			if err := test.call(task.NewService(repository)); !errors.Is(err, task.ErrInvalidVersion) {
+				t.Fatalf("error = %v, want %v", err, task.ErrInvalidVersion)
+			}
+			if repository.mutationCalled {
+				t.Error("repository mutation was called")
+			}
+		})
 	}
 }
 
@@ -135,6 +205,47 @@ func TestListAllScopesTasksToUser(t *testing.T) {
 			"user-id",
 			true,
 		)
+	}
+}
+
+func TestSearchNormalizesQueryAndDefaultLimit(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	_, err := task.NewService(repository).Search(
+		context.Background(), "user-id", task.SearchQuery{Query: "  milk  "},
+	)
+	if err != nil {
+		t.Fatalf("search tasks: %v", err)
+	}
+	if repository.searchUserID != "user-id" || repository.searchQuery.Query != "milk" ||
+		repository.searchQuery.Limit != 50 {
+		t.Errorf("search arguments = (%q, %#v)", repository.searchUserID, repository.searchQuery)
+	}
+}
+
+func TestSearchRejectsInvalidFilters(t *testing.T) {
+	t.Parallel()
+
+	invalidStatus := task.Status("waiting")
+	tests := []struct {
+		name  string
+		query task.SearchQuery
+		want  error
+	}{
+		{name: "limit", query: task.SearchQuery{Limit: 101}, want: task.ErrInvalidSearchLimit},
+		{name: "status", query: task.SearchQuery{Status: &invalidStatus}, want: task.ErrInvalidSearchStatus},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := task.NewService(&fakeRepository{}).Search(
+				context.Background(), "user-id", test.query,
+			)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
 	}
 }
 
@@ -195,7 +306,7 @@ func TestUpdateNormalizesEditableFields(t *testing.T) {
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 
-	_, err := service.Update(context.Background(), "user-id", "task-id", task.Update{
+	_, err := service.Update(context.Background(), testScope(), "task-id", task.Update{
 		Version:  2,
 		Title:    &title,
 		Priority: &priority,
@@ -212,6 +323,9 @@ func TestUpdateNormalizesEditableFields(t *testing.T) {
 	}
 	if repository.update.DueTime == nil || repository.update.DueTime.Value != nil {
 		t.Errorf("due time was not cleared with due date: %#v", repository.update.DueTime)
+	}
+	if repository.updateScope.UserID != "user-id" {
+		t.Errorf("update scope = %#v", repository.updateScope)
 	}
 }
 
@@ -288,7 +402,7 @@ func TestUpdateRejectsInvalidFields(t *testing.T) {
 
 			_, err := task.NewService(&fakeRepository{}).Update(
 				context.Background(),
-				"user-id",
+				testScope(),
 				"task-id",
 				test.update,
 			)
@@ -305,7 +419,7 @@ func TestUpdateClearsSectionWhenProjectChanges(t *testing.T) {
 	projectID := "another-project"
 	repository := &fakeRepository{}
 	_, err := task.NewService(repository).Update(
-		context.Background(), "user-id", "task-id",
+		context.Background(), testScope(), "task-id",
 		task.Update{
 			Version:   2,
 			ProjectID: &task.Nullable[string]{Value: &projectID},
@@ -326,7 +440,7 @@ func TestReorderValidatesAndPreservesVersion(t *testing.T) {
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 	_, err := service.Reorder(
-		context.Background(), "user-id", "task-id",
+		context.Background(), testScope(), "task-id",
 		task.Reorder{SectionID: &sectionID},
 	)
 	if !errors.Is(err, task.ErrInvalidVersion) {
@@ -334,7 +448,7 @@ func TestReorderValidatesAndPreservesVersion(t *testing.T) {
 	}
 
 	_, err = service.Reorder(
-		context.Background(), "user-id", "task-id",
+		context.Background(), testScope(), "task-id",
 		task.Reorder{Version: 7, SectionID: &sectionID},
 	)
 	if err != nil {
@@ -344,14 +458,24 @@ func TestReorderValidatesAndPreservesVersion(t *testing.T) {
 		*repository.reorder.SectionID != sectionID {
 		t.Errorf("reorder = %#v", repository.reorder)
 	}
+	if repository.reorderScope.UserID != "user-id" {
+		t.Errorf("reorder scope = %#v", repository.reorderScope)
+	}
 }
 
 type fakeRepository struct {
-	createUserID          string
+	createScope           execution.Scope
 	createProjectID       *string
 	createSectionID       *string
-	deleteUserID          string
+	completeScope         execution.Scope
+	completeTaskID        string
+	completeVersion       int64
+	reopenScope           execution.Scope
+	reopenTaskID          string
+	reopenVersion         int64
+	deleteScope           execution.Scope
 	deleteTaskID          string
+	deleteVersion         int64
 	allUserID             string
 	allIncludeCompleted   bool
 	todayUserID           string
@@ -359,22 +483,27 @@ type fakeRepository struct {
 	todayStart            time.Time
 	todayEnd              time.Time
 	todayIncludeCompleted bool
+	searchUserID          string
+	searchQuery           task.SearchQuery
+	updateScope           execution.Scope
 	update                task.Update
+	reorderScope          execution.Scope
 	reorder               task.Reorder
+	mutationCalled        bool
 }
 
 func (r *fakeRepository) Create(
 	_ context.Context,
-	userID string,
+	scope execution.Scope,
 	title string,
 	projectID *string,
 	sectionID *string,
 ) (task.Task, error) {
-	r.createUserID = userID
+	r.createScope = scope
 	r.createProjectID = projectID
 	r.createSectionID = sectionID
 	return task.Task{
-		ID: "task-id", UserID: userID, ProjectID: projectID, SectionID: sectionID,
+		ID: "task-id", UserID: scope.UserID, ProjectID: projectID, SectionID: sectionID,
 		Title: title, Status: task.StatusActive,
 	}, nil
 }
@@ -417,31 +546,79 @@ func (r *fakeRepository) ListToday(
 	return nil, nil
 }
 
-func (*fakeRepository) Complete(context.Context, string, string) (task.Task, error) {
+func (r *fakeRepository) Search(
+	_ context.Context,
+	userID string,
+	query task.SearchQuery,
+) ([]task.Task, error) {
+	r.searchUserID = userID
+	r.searchQuery = query
+	return nil, nil
+}
+
+func (r *fakeRepository) Complete(
+	_ context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) (task.Task, error) {
+	r.mutationCalled = true
+	r.completeScope = scope
+	r.completeTaskID = taskID
+	r.completeVersion = version
 	return task.Task{}, nil
 }
 
-func (*fakeRepository) Reopen(context.Context, string, string) (task.Task, error) {
+func (r *fakeRepository) Reopen(
+	_ context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) (task.Task, error) {
+	r.mutationCalled = true
+	r.reopenScope = scope
+	r.reopenTaskID = taskID
+	r.reopenVersion = version
 	return task.Task{}, nil
 }
 
-func (r *fakeRepository) Update(_ context.Context, _, _ string, update task.Update) (task.Task, error) {
+func (r *fakeRepository) Update(
+	_ context.Context,
+	scope execution.Scope,
+	_ string,
+	update task.Update,
+) (task.Task, error) {
+	r.mutationCalled = true
+	r.updateScope = scope
 	r.update = update
 	return task.Task{}, nil
 }
 
 func (r *fakeRepository) Reorder(
 	_ context.Context,
-	_ string,
+	scope execution.Scope,
 	_ string,
 	reorder task.Reorder,
 ) ([]task.Task, error) {
+	r.mutationCalled = true
+	r.reorderScope = scope
 	r.reorder = reorder
 	return nil, nil
 }
 
-func (r *fakeRepository) Delete(_ context.Context, userID, taskID string) error {
-	r.deleteUserID = userID
+func (r *fakeRepository) Delete(
+	_ context.Context,
+	scope execution.Scope,
+	taskID string,
+	version int64,
+) error {
+	r.mutationCalled = true
+	r.deleteScope = scope
 	r.deleteTaskID = taskID
+	r.deleteVersion = version
 	return nil
+}
+
+func testScope() execution.Scope {
+	return execution.UserScope("user-id", "correlation-id")
 }

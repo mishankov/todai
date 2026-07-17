@@ -1,6 +1,10 @@
 package project
 
-import "github.com/jmoiron/sqlx"
+import (
+	"github.com/jmoiron/sqlx"
+
+	"github.com/mishankov/todai/backend/internal/activity"
+)
 
 // Domain groups project persistence and application operations.
 type Domain struct {
@@ -9,8 +13,8 @@ type Domain struct {
 }
 
 // New constructs the project domain.
-func New(db *sqlx.DB) *Domain {
-	repository := NewRepository(db)
+func New(db *sqlx.DB, events *activity.Repository) *Domain {
+	repository := NewRepository(db, events)
 	return &Domain{Repository: repository, Service: NewService(repository)}
 }
 
