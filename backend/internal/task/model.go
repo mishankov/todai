@@ -16,6 +16,7 @@ type Task struct {
 	ID             string     `db:"id" json:"id"`
 	UserID         string     `db:"user_id" json:"-"`
 	ProjectID      *string    `db:"project_id" json:"projectId"`
+	SectionID      *string    `db:"section_id" json:"sectionId"`
 	ParentID       *string    `db:"parent_id" json:"parentId"`
 	Title          string     `db:"title" json:"title"`
 	Description    *string    `db:"description" json:"description"`
@@ -43,8 +44,16 @@ type Update struct {
 	Title       *string
 	Description *Nullable[string]
 	ProjectID   *Nullable[string]
+	SectionID   *Nullable[string]
 	Priority    *int
 	DueDate     *Nullable[Date]
 	DueTime     *Nullable[TimeOfDay]
 	DueTimezone *Nullable[string]
+}
+
+// Reorder places a task before another task in a project section or at the end.
+type Reorder struct {
+	Version      int64
+	SectionID    *string
+	BeforeTaskID *string
 }

@@ -185,6 +185,88 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	if renamedProject.Name != "Home" || renamedProject.Version != 2 {
 		t.Errorf("renamed project = %#v", renamedProject)
 	}
+	boardProject := updateProject(t, client, baseURL, sessionCookie, renamedProject.ID, map[string]any{
+		"version": renamedProject.Version,
+		"layout":  project.LayoutBoard,
+	})
+	if boardProject.Layout != project.LayoutBoard || boardProject.Version != 3 {
+		t.Errorf("board project = %#v", boardProject)
+	}
+	planned := createSection(t, client, baseURL, sessionCookie, boardProject.ID, " Backlog ")
+	doing := createSection(t, client, baseURL, sessionCookie, boardProject.ID, "Doing")
+	planned = updateSection(
+		t, client, baseURL, sessionCookie, boardProject.ID, planned.ID,
+		map[string]any{"version": planned.Version, "name": "Planned"},
+	)
+	sections := reorderSection(
+		t, client, baseURL, sessionCookie, boardProject.ID, doing.ID,
+		map[string]any{"version": doing.Version, "beforeSectionId": planned.ID},
+	)
+	if len(sections) != 2 || sections[0].ID != doing.ID || sections[1].ID != planned.ID {
+		t.Fatalf("reordered sections = %#v", sections)
+	}
+	doing = sections[0]
+	planned = sections[1]
+	assertReorderSectionStatus(
+		t, client, baseURL, sessionCookie, boardProject.ID, doing.ID,
+		map[string]any{"version": 1, "beforeSectionId": nil}, http.StatusConflict,
+	)
+
+	plannedFirst := createTaskInSection(
+		t, client, baseURL, sessionCookie, "First planned task", boardProject.ID, planned.ID,
+	)
+	plannedSecond := createTaskInSection(
+		t, client, baseURL, sessionCookie, "Second planned task", boardProject.ID, planned.ID,
+	)
+	doingTask := createTaskInSection(
+		t, client, baseURL, sessionCookie, "Doing task", boardProject.ID, doing.ID,
+	)
+	reorderedTasks := reorderTask(
+		t, client, baseURL, sessionCookie, plannedSecond.ID,
+		map[string]any{
+			"version": plannedSecond.Version, "sectionId": planned.ID,
+			"beforeTaskId": plannedFirst.ID,
+		},
+	)
+	plannedSecond = findTask(t, reorderedTasks, plannedSecond.ID)
+	plannedFirst = findTask(t, reorderedTasks, plannedFirst.ID)
+	if plannedSecond.Position >= plannedFirst.Position || plannedSecond.Version != 2 || plannedFirst.Version != 2 {
+		t.Errorf("tasks after same-section reorder = %#v", reorderedTasks)
+	}
+	assertReorderTaskStatus(
+		t, client, baseURL, sessionCookie, plannedSecond.ID,
+		map[string]any{
+			"version": 1, "sectionId": planned.ID, "beforeTaskId": plannedFirst.ID,
+		},
+		http.StatusConflict,
+	)
+	reorderedTasks = reorderTask(
+		t, client, baseURL, sessionCookie, plannedSecond.ID,
+		map[string]any{
+			"version": plannedSecond.Version, "sectionId": doing.ID,
+			"beforeTaskId": doingTask.ID,
+		},
+	)
+	plannedSecond = findTask(t, reorderedTasks, plannedSecond.ID)
+	doingTask = findTask(t, reorderedTasks, doingTask.ID)
+	if plannedSecond.SectionID == nil || *plannedSecond.SectionID != doing.ID ||
+		plannedSecond.Position >= doingTask.Position {
+		t.Errorf("tasks after cross-section reorder = %#v", reorderedTasks)
+	}
+	assertDeleteSectionStatus(
+		t, client, baseURL, sessionCookie, boardProject.ID, planned.ID,
+		map[string]any{"version": planned.Version - 1}, http.StatusConflict,
+	)
+	deleteSection(t, client, baseURL, sessionCookie, boardProject.ID, planned.ID, planned.Version)
+	plannedFirstAfterDelete := getTask(t, client, baseURL, sessionCookie, plannedFirst.ID)
+	if plannedFirstAfterDelete.SectionID != nil || plannedFirstAfterDelete.Version != plannedFirst.Version+1 {
+		t.Errorf("task after section deletion = %#v", plannedFirstAfterDelete)
+	}
+	assertSections(t, client, baseURL, sessionCookie, boardProject.ID, []project.Section{doing})
+	deleteTask(t, client, baseURL, sessionCookie, plannedFirst.ID)
+	deleteTask(t, client, baseURL, sessionCookie, plannedSecond.ID)
+	deleteTask(t, client, baseURL, sessionCookie, doingTask.ID)
+
 	assertUpdateTaskStatus(
 		t,
 		client,
@@ -218,9 +300,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{moved, future})
 	archivedProject := updateProject(
 		t, client, baseURL, sessionCookie, renamedProject.ID,
-		map[string]any{"version": renamedProject.Version, "archived": true},
+		map[string]any{"version": boardProject.Version, "archived": true},
 	)
-	if archivedProject.ArchivedAt == nil || archivedProject.Version != 3 {
+	if archivedProject.ArchivedAt == nil || archivedProject.Version != 4 {
 		t.Errorf("archived project = %#v", archivedProject)
 	}
 	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{})
@@ -304,6 +386,191 @@ func updateProject(
 	return updated
 }
 
+func createSection(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	name string,
+) project.Section {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/projects/"+projectID+"/sections", cookie,
+		map[string]any{"name": name},
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create section status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	var created project.Section
+	decodeJSON(t, response, &created)
+	return created
+}
+
+func updateSection(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	sectionID string,
+	update map[string]any,
+) project.Section {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodPatch,
+		baseURL+"/api/projects/"+projectID+"/sections/"+sectionID, cookie, update,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("update section status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var updated project.Section
+	decodeJSON(t, response, &updated)
+	return updated
+}
+
+func reorderSection(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	sectionID string,
+	reorder map[string]any,
+) []project.Section {
+	t.Helper()
+
+	response := sendSectionReorder(
+		t, client, baseURL, cookie, projectID, sectionID, reorder,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("reorder section status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Sections []project.Section `json:"sections"`
+	}
+	decodeJSON(t, response, &body)
+	return body.Sections
+}
+
+func assertReorderSectionStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	sectionID string,
+	reorder map[string]any,
+	want int,
+) {
+	t.Helper()
+
+	response := sendSectionReorder(
+		t, client, baseURL, cookie, projectID, sectionID, reorder,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("reorder section status = %d, want %d", response.StatusCode, want)
+	}
+}
+
+func sendSectionReorder(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	sectionID string,
+	reorder map[string]any,
+) *http.Response {
+	t.Helper()
+
+	return sendJSONRequest(
+		t, client, http.MethodPost,
+		baseURL+"/api/projects/"+projectID+"/sections/"+sectionID+"/reorder", cookie, reorder,
+	)
+}
+
+func deleteSection(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	sectionID string,
+	version int64,
+) {
+	t.Helper()
+
+	assertDeleteSectionStatus(
+		t, client, baseURL, cookie, projectID, sectionID,
+		map[string]any{"version": version}, http.StatusNoContent,
+	)
+}
+
+func assertDeleteSectionStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	sectionID string,
+	body map[string]any,
+	want int,
+) {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodDelete,
+		baseURL+"/api/projects/"+projectID+"/sections/"+sectionID, cookie, body,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("delete section status = %d, want %d", response.StatusCode, want)
+	}
+}
+
+func assertSections(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	projectID string,
+	want []project.Section,
+) {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodGet, baseURL+"/api/projects/"+projectID+"/sections", cookie, nil,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("list sections status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Sections []project.Section `json:"sections"`
+	}
+	decodeJSON(t, response, &body)
+	if len(body.Sections) != len(want) {
+		t.Fatalf("sections = %#v, want %#v", body.Sections, want)
+	}
+	for index := range want {
+		if body.Sections[index].ID != want[index].ID ||
+			body.Sections[index].Version != want[index].Version {
+			t.Errorf("section %d = %#v, want %#v", index, body.Sections[index], want[index])
+		}
+	}
+}
+
 func assertProjects(
 	t *testing.T,
 	client *http.Client,
@@ -361,6 +628,98 @@ func createTaskInProject(
 	}
 
 	return decodeTask(t, response)
+}
+
+func createTaskInSection(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	title string,
+	projectID string,
+	sectionID string,
+) task.Task {
+	t.Helper()
+
+	response := sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/tasks", cookie,
+		map[string]any{"title": title, "projectId": projectID, "sectionId": sectionID},
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create section task status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	return decodeTask(t, response)
+}
+
+func reorderTask(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	reorder map[string]any,
+) []task.Task {
+	t.Helper()
+
+	response := sendTaskReorder(t, client, baseURL, cookie, taskID, reorder)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("reorder task status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Tasks []task.Task `json:"tasks"`
+	}
+	decodeJSON(t, response, &body)
+	return body.Tasks
+}
+
+func assertReorderTaskStatus(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	reorder map[string]any,
+	want int,
+) {
+	t.Helper()
+
+	response := sendTaskReorder(t, client, baseURL, cookie, taskID, reorder)
+	defer closeResponse(t, response)
+	if response.StatusCode != want {
+		t.Fatalf("reorder task status = %d, want %d", response.StatusCode, want)
+	}
+}
+
+func sendTaskReorder(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+	reorder map[string]any,
+) *http.Response {
+	t.Helper()
+
+	return sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/tasks/"+taskID+"/reorder", cookie, reorder,
+	)
+}
+
+func findTask(t *testing.T, tasks []task.Task, taskID string) task.Task {
+	t.Helper()
+
+	for _, found := range tasks {
+		if found.ID == taskID {
+			return found
+		}
+	}
+
+	t.Fatalf("task %q not found in %#v", taskID, tasks)
+	return task.Task{}
 }
 
 func assertProjectTasks(
@@ -575,6 +934,21 @@ func assertTask(
 ) {
 	t.Helper()
 
+	found := getTask(t, client, baseURL, cookie, taskID)
+	if found.ID != taskID || found.Status != wantStatus {
+		t.Errorf("task = %#v, want ID %q and status %q", found, taskID, wantStatus)
+	}
+}
+
+func getTask(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	cookie *http.Cookie,
+	taskID string,
+) task.Task {
+	t.Helper()
+
 	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/tasks/"+taskID, http.NoBody)
 	if err != nil {
 		t.Fatalf("create get task request: %v", err)
@@ -589,10 +963,7 @@ func assertTask(
 		t.Fatalf("get task status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 
-	found := decodeTask(t, response)
-	if found.ID != taskID || found.Status != wantStatus {
-		t.Errorf("task = %#v, want ID %q and status %q", found, taskID, wantStatus)
-	}
+	return decodeTask(t, response)
 }
 
 func assertInbox(

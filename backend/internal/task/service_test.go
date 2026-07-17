@@ -16,7 +16,7 @@ func TestCreateNormalizesTitle(t *testing.T) {
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 
-	created, err := service.Create(context.Background(), "user-id", "  Buy milk  ", nil)
+	created, err := service.Create(context.Background(), "user-id", "  Buy milk  ", nil, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestCreateRejectsInvalidTitle(t *testing.T) {
 			t.Parallel()
 
 			service := task.NewService(&fakeRepository{})
-			_, err := service.Create(context.Background(), "user-id", test.title, nil)
+			_, err := service.Create(context.Background(), "user-id", test.title, nil, nil)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -59,13 +59,43 @@ func TestCreateCanTargetProject(t *testing.T) {
 	projectID := "project-id"
 	repository := &fakeRepository{}
 	created, err := task.NewService(repository).Create(
-		context.Background(), "user-id", "Plan sprint", &projectID,
+		context.Background(), "user-id", "Plan sprint", &projectID, nil,
 	)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 	if created.ProjectID == nil || *created.ProjectID != projectID {
 		t.Errorf("created project ID = %#v, want %q", created.ProjectID, projectID)
+	}
+}
+
+func TestCreateCanTargetProjectSection(t *testing.T) {
+	t.Parallel()
+
+	projectID := "project-id"
+	sectionID := "section-id"
+	repository := &fakeRepository{}
+	created, err := task.NewService(repository).Create(
+		context.Background(), "user-id", "Plan sprint", &projectID, &sectionID,
+	)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if created.SectionID == nil || *created.SectionID != sectionID ||
+		repository.createSectionID == nil || *repository.createSectionID != sectionID {
+		t.Errorf("created task = %#v", created)
+	}
+}
+
+func TestCreateRejectsSectionWithoutProject(t *testing.T) {
+	t.Parallel()
+
+	sectionID := "section-id"
+	_, err := task.NewService(&fakeRepository{}).Create(
+		context.Background(), "user-id", "Plan sprint", nil, &sectionID,
+	)
+	if !errors.Is(err, task.ErrSectionNotFound) {
+		t.Fatalf("error = %v, want %v", err, task.ErrSectionNotFound)
 	}
 }
 
@@ -269,9 +299,57 @@ func TestUpdateRejectsInvalidFields(t *testing.T) {
 	}
 }
 
+func TestUpdateClearsSectionWhenProjectChanges(t *testing.T) {
+	t.Parallel()
+
+	projectID := "another-project"
+	repository := &fakeRepository{}
+	_, err := task.NewService(repository).Update(
+		context.Background(), "user-id", "task-id",
+		task.Update{
+			Version:   2,
+			ProjectID: &task.Nullable[string]{Value: &projectID},
+		},
+	)
+	if err != nil {
+		t.Fatalf("update task: %v", err)
+	}
+	if repository.update.SectionID == nil || repository.update.SectionID.Value != nil {
+		t.Errorf("section update = %#v, want explicit clear", repository.update.SectionID)
+	}
+}
+
+func TestReorderValidatesAndPreservesVersion(t *testing.T) {
+	t.Parallel()
+
+	sectionID := "section-id"
+	repository := &fakeRepository{}
+	service := task.NewService(repository)
+	_, err := service.Reorder(
+		context.Background(), "user-id", "task-id",
+		task.Reorder{SectionID: &sectionID},
+	)
+	if !errors.Is(err, task.ErrInvalidVersion) {
+		t.Fatalf("error = %v, want %v", err, task.ErrInvalidVersion)
+	}
+
+	_, err = service.Reorder(
+		context.Background(), "user-id", "task-id",
+		task.Reorder{Version: 7, SectionID: &sectionID},
+	)
+	if err != nil {
+		t.Fatalf("reorder task: %v", err)
+	}
+	if repository.reorder.Version != 7 || repository.reorder.SectionID == nil ||
+		*repository.reorder.SectionID != sectionID {
+		t.Errorf("reorder = %#v", repository.reorder)
+	}
+}
+
 type fakeRepository struct {
 	createUserID          string
 	createProjectID       *string
+	createSectionID       *string
 	deleteUserID          string
 	deleteTaskID          string
 	allUserID             string
@@ -282,6 +360,7 @@ type fakeRepository struct {
 	todayEnd              time.Time
 	todayIncludeCompleted bool
 	update                task.Update
+	reorder               task.Reorder
 }
 
 func (r *fakeRepository) Create(
@@ -289,11 +368,14 @@ func (r *fakeRepository) Create(
 	userID string,
 	title string,
 	projectID *string,
+	sectionID *string,
 ) (task.Task, error) {
 	r.createUserID = userID
 	r.createProjectID = projectID
+	r.createSectionID = sectionID
 	return task.Task{
-		ID: "task-id", UserID: userID, ProjectID: projectID, Title: title, Status: task.StatusActive,
+		ID: "task-id", UserID: userID, ProjectID: projectID, SectionID: sectionID,
+		Title: title, Status: task.StatusActive,
 	}, nil
 }
 
@@ -346,6 +428,16 @@ func (*fakeRepository) Reopen(context.Context, string, string) (task.Task, error
 func (r *fakeRepository) Update(_ context.Context, _, _ string, update task.Update) (task.Task, error) {
 	r.update = update
 	return task.Task{}, nil
+}
+
+func (r *fakeRepository) Reorder(
+	_ context.Context,
+	_ string,
+	_ string,
+	reorder task.Reorder,
+) ([]task.Task, error) {
+	r.reorder = reorder
+	return nil, nil
 }
 
 func (r *fakeRepository) Delete(_ context.Context, userID, taskID string) error {

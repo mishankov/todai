@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
-import type { Project } from '$lib/projects/client';
+import type { Project, ProjectSection } from '$lib/projects/client';
 import type { Task } from '$lib/tasks/client';
 
 test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ page }) => {
 	let authenticated = false;
 	let tasks: Task[] = [];
 	let projects: Project[] = [];
+	let sections: ProjectSection[] = [];
 
 	await page.route('**/api/auth/me', async (route) => {
 		if (!authenticated) {
@@ -66,6 +67,71 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 			body: JSON.stringify(found)
 		});
 	});
+	await page.route('**/api/projects/*/sections', async (route) => {
+		const projectId = new URL(route.request().url()).pathname.split('/').at(-2)!;
+		if (route.request().method() === 'POST') {
+			const request = route.request().postDataJSON();
+			const created = testSection({
+				id: `section-${sections.length + 1}`,
+				projectId,
+				name: request.name,
+				position: (sections.length + 1) * 1024
+			});
+			sections = [...sections, created];
+			await route.fulfill({
+				status: 201,
+				contentType: 'application/json',
+				body: JSON.stringify(created)
+			});
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ sections: sections.filter((item) => item.projectId === projectId) })
+		});
+	});
+	await page.route('**/api/projects/*/sections/*/reorder', async (route) => {
+		const parts = new URL(route.request().url()).pathname.split('/');
+		const sectionId = parts.at(-2)!;
+		const request = route.request().postDataJSON();
+		const moved = sections.find((item) => item.id === sectionId)!;
+		const remaining = sections.filter((item) => item.id !== sectionId);
+		const index =
+			request.beforeSectionId === null
+				? remaining.length
+				: remaining.findIndex((item) => item.id === request.beforeSectionId);
+		remaining.splice(index, 0, moved);
+		sections = remaining.map((item, itemIndex) => ({
+			...item,
+			position: (itemIndex + 1) * 1024,
+			version: item.version + 1
+		}));
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ sections })
+		});
+	});
+	await page.route('**/api/projects/*/sections/*', async (route) => {
+		const sectionId = new URL(route.request().url()).pathname.split('/').at(-1)!;
+		if (route.request().method() === 'DELETE') {
+			sections = sections.filter((item) => item.id !== sectionId);
+			tasks = tasks.map((item) =>
+				item.sectionId === sectionId ? { ...item, sectionId: null } : item
+			);
+			await route.fulfill({ status: 204 });
+			return;
+		}
+		const request = route.request().postDataJSON();
+		const updated = sections.find((item) => item.id === sectionId)!;
+		Object.assign(updated, request, { version: updated.version + 1 });
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(updated)
+		});
+	});
 	await page.route('**/api/views/inbox?*', async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -100,7 +166,8 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		const created = testTask({
 			id: `task-${tasks.length + 1}`,
 			title: request.title,
-			projectId: request.projectId ?? null
+			projectId: request.projectId ?? null,
+			sectionId: request.sectionId ?? null
 		});
 		tasks = [...tasks, created];
 		await route.fulfill({
@@ -135,6 +202,38 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 			status: 200,
 			contentType: 'application/json',
 			body: JSON.stringify(updated)
+		});
+	});
+	await page.route('**/api/tasks/*/reorder', async (route) => {
+		const taskId = new URL(route.request().url()).pathname.split('/').at(-2)!;
+		const request = route.request().postDataJSON();
+		const moved = tasks.find((item) => item.id === taskId)!;
+		const remaining = tasks.filter((item) => item.id !== taskId);
+		const destination = remaining
+			.filter(
+				(item) =>
+					item.projectId === moved.projectId &&
+					item.sectionId === request.sectionId &&
+					item.status === 'active'
+			)
+			.sort((left, right) => left.position - right.position);
+		const index =
+			request.beforeTaskId === null
+				? destination.length
+				: destination.findIndex((item) => item.id === request.beforeTaskId);
+		destination.splice(index, 0, { ...moved, sectionId: request.sectionId });
+		const positions = new Map(
+			destination.map((item, itemIndex) => [item.id, (itemIndex + 1) * 1024])
+		);
+		tasks = [...remaining, { ...moved, sectionId: request.sectionId }].map((item) =>
+			positions.has(item.id)
+				? { ...item, position: positions.get(item.id)!, version: item.version + 1 }
+				: item
+		);
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.projectId === moved.projectId) })
 		});
 	});
 	await page.route('**/api/tasks/*', async (route) => {
@@ -196,8 +295,27 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.getByRole('button', { name: 'Create' }).click();
 	await page.locator('.workspace').getByRole('link', { name: 'Work' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Work');
-	await page.getByLabel('Task title').fill('Plan sprint');
-	await page.getByRole('button', { name: 'Add task' }).click();
+	const addSection = page.getByRole('group', { name: 'Add or move section' });
+	await page.getByLabel('Section name').fill('Planning');
+	await addSection.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('textbox', { name: 'Add task to Planning' }).fill('Plan sprint');
+	await page.getByRole('button', { name: 'Add task to Planning' }).click();
+	await page.getByLabel('Section name').fill('Later');
+	await addSection.getByRole('button', { name: 'Add', exact: true }).click();
+	const planningTasks = page.getByRole('list', { name: 'Planning tasks' });
+	const laterTasks = page.getByRole('list', { name: 'Later tasks' });
+	await planningTasks
+		.getByRole('listitem')
+		.filter({ hasText: 'Plan sprint' })
+		.dragTo(laterTasks.getByLabel('Drop task in Later'));
+	await expect(laterTasks.getByText('Plan sprint')).toBeVisible();
+	await page.getByRole('button', { name: 'Board' }).click();
+	await expect(page.getByRole('button', { name: 'Board' })).toHaveAttribute('aria-pressed', 'true');
+	await laterTasks
+		.getByRole('listitem')
+		.filter({ hasText: 'Plan sprint' })
+		.dragTo(planningTasks.getByLabel('Drop task in Planning'));
+	await expect(planningTasks.getByText('Plan sprint')).toBeVisible();
 	await page.getByRole('link', { name: 'All tasks' }).click();
 	await expect(page).toHaveURL(/\/all$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('All tasks');
@@ -234,6 +352,7 @@ function testProject(overrides: Partial<Project> = {}): Project {
 	return {
 		id: 'project-id',
 		name: 'Project',
+		layout: 'list',
 		position: 1024,
 		version: 1,
 		archivedAt: null,
@@ -248,6 +367,7 @@ function testTask(overrides: Partial<Task> = {}): Task {
 	return {
 		id: 'task-id',
 		projectId: null,
+		sectionId: null,
 		parentId: null,
 		title: 'Task',
 		description: null,
@@ -259,6 +379,20 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		position: 1024,
 		version: 1,
 		completedAt: null,
+		createdAt: '2026-07-16T10:00:00Z',
+		updatedAt: '2026-07-16T10:00:00Z',
+		lastModifiedBy: 'user-id',
+		...overrides
+	};
+}
+
+function testSection(overrides: Partial<ProjectSection> = {}): ProjectSection {
+	return {
+		id: 'section-id',
+		projectId: 'project-id',
+		name: 'Section',
+		position: 1024,
+		version: 1,
 		createdAt: '2026-07-16T10:00:00Z',
 		updatedAt: '2026-07-16T10:00:00Z',
 		lastModifiedBy: 'user-id',

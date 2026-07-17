@@ -51,6 +51,7 @@ function testProject(overrides: Partial<Project> = {}): Project {
 	return {
 		id: 'project-id',
 		name: 'Project',
+		layout: 'list',
 		position: 1024,
 		version: 1,
 		archivedAt: null,

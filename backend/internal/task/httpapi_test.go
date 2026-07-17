@@ -24,6 +24,7 @@ func TestEndpointsRequireSession(t *testing.T) {
 		httptest.NewRequest(http.MethodPost, "/tasks", nil),
 		httptest.NewRequest(http.MethodPatch, "/tasks/task-id", nil),
 		httptest.NewRequest(http.MethodDelete, "/tasks/task-id", nil),
+		httptest.NewRequest(http.MethodPost, "/tasks/task-id/reorder", nil),
 		httptest.NewRequest(http.MethodGet, "/views/all", nil),
 		httptest.NewRequest(http.MethodGet, "/views/inbox", nil),
 		httptest.NewRequest(http.MethodGet, "/views/today?timezone=UTC", nil),
@@ -84,6 +85,27 @@ func TestTodayRequiresValidTimezone(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Errorf("GET %s status = %d, want %d", path, response.Code, http.StatusBadRequest)
 		}
+	}
+}
+
+func TestReorderRequiresExplicitDestinationSection(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
+	missing := serveJSON(
+		t, handler, http.MethodPost, "/tasks/task-id/reorder",
+		map[string]any{"version": 1}, authenticatedCookie(),
+	)
+	if missing.Code != http.StatusBadRequest {
+		t.Fatalf("missing section status = %d, want %d", missing.Code, http.StatusBadRequest)
+	}
+
+	unsectioned := serveJSON(
+		t, handler, http.MethodPost, "/tasks/task-id/reorder",
+		map[string]any{"version": 1, "sectionId": nil}, authenticatedCookie(),
+	)
+	if unsectioned.Code != http.StatusOK {
+		t.Fatalf("unsectioned destination status = %d, want %d", unsectioned.Code, http.StatusOK)
 	}
 }
 
@@ -212,10 +234,12 @@ func (fakeTaskService) Create(
 	userID string,
 	title string,
 	projectID *string,
+	sectionID *string,
 ) (task.Task, error) {
 	return task.Task{
 		ID:             "task-id",
 		ProjectID:      projectID,
+		SectionID:      sectionID,
 		Title:          title,
 		Status:         task.StatusActive,
 		Version:        1,
@@ -257,6 +281,10 @@ func (fakeTaskService) Reopen(context.Context, string, string) (task.Task, error
 
 func (fakeTaskService) Update(context.Context, string, string, task.Update) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
+}
+
+func (fakeTaskService) Reorder(context.Context, string, string, task.Reorder) ([]task.Task, error) {
+	return []task.Task{}, nil
 }
 
 func (fakeTaskService) Delete(context.Context, string, string) error {

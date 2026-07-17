@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Project } from '$lib/projects/client';
 	import type { Task, TaskUpdate } from '$lib/tasks/client';
-	import TaskEditor from './TaskEditor.svelte';
+	import TaskEditorModal from './TaskEditorModal.svelte';
 
 	interface Props {
 		initialTasks: Task[];
@@ -53,6 +53,7 @@
 	let activeTasks = $derived(tasks.filter((item) => item.status === 'active'));
 	let completedTasks = $derived(tasks.filter((item) => item.status === 'completed'));
 	let taskGroups = $derived(buildTaskGroups(activeTasks, completedTasks));
+	let editingTask = $derived(tasks.find((item) => item.id === editingTaskId));
 
 	async function addTask() {
 		if (!title.trim() || !create) return;
@@ -120,6 +121,10 @@
 				? tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate))
 				: tasks.filter((candidate) => candidate.id !== updated.id);
 		editingTaskId = null;
+	}
+
+	function openTaskEditor(item: Task) {
+		editingTaskId = item.id;
 	}
 
 	function dueTime(item: Task): string {
@@ -315,65 +320,68 @@
 						</header>
 						<ul aria-label={`${group.label} tasks`}>
 							{#each group.tasks as item (item.id)}
-								{#if editingTaskId === item.id}
-									<li class="editor-row">
-										<TaskEditor
-											task={item}
-											{projects}
-											save={(changes) => saveItem(item, changes)}
-											cancel={() => (editingTaskId = null)}
-										/>
-									</li>
-								{:else}
-									<li class:completed-task={item.status === 'completed'}>
+								<li class:completed-task={item.status === 'completed'}>
+									<button
+										class:checked={item.status === 'completed'}
+										class="task-toggle"
+										type="button"
+										aria-label={`${item.status === 'active' ? 'Complete' : 'Reopen'} ${item.title}`}
+										disabled={busyTaskIds.includes(item.id)}
+										onclick={(event) => {
+											event.stopPropagation();
+											void changeStatus(item);
+										}}
+									>
+										{item.status === 'completed' ? '✓' : ''}
+									</button>
+									<button
+										class="task-copy"
+										type="button"
+										aria-label={`Open ${item.title}`}
+										onclick={() => openTaskEditor(item)}
+									>
+										<span class="task-title">{item.title}</span>
+										{#if item.description}
+											<span class="task-description">{item.description}</span>
+										{/if}
+										{#if item.dueTime || item.priority > 0 || projectName(item.projectId)}
+											<span class="task-metadata">
+												{#if item.dueTime}
+													<span class:overdue={isOverdue(item)} class="due">{dueTime(item)}</span>
+												{/if}
+												{#if item.priority > 0}
+													<span class={`priority priority-${item.priority}`}>
+														{priorityLabel(item.priority)}
+													</span>
+												{/if}
+												{#if projectName(item.projectId)}
+													<span class="task-project">{projectName(item.projectId)}</span>
+												{/if}
+											</span>
+										{/if}
+									</button>
+									<div class="task-actions">
 										<button
-											class:checked={item.status === 'completed'}
-											class="task-toggle"
+											class="edit-task"
 											type="button"
-											aria-label={`${item.status === 'active' ? 'Complete' : 'Reopen'} ${item.title}`}
-											disabled={busyTaskIds.includes(item.id)}
-											onclick={() => void changeStatus(item)}
+											aria-label={`Edit ${item.title}`}
+											onclick={(event) => {
+												event.stopPropagation();
+												openTaskEditor(item);
+											}}>Edit</button
 										>
-											{item.status === 'completed' ? '✓' : ''}
-										</button>
-										<span class="task-copy">
-											<span class="task-title">{item.title}</span>
-											{#if item.description}
-												<span class="task-description">{item.description}</span>
-											{/if}
-											{#if item.dueTime || item.priority > 0 || projectName(item.projectId)}
-												<span class="task-metadata">
-													{#if item.dueTime}
-														<span class:overdue={isOverdue(item)} class="due">{dueTime(item)}</span>
-													{/if}
-													{#if item.priority > 0}
-														<span class={`priority priority-${item.priority}`}>
-															{priorityLabel(item.priority)}
-														</span>
-													{/if}
-													{#if projectName(item.projectId)}
-														<span class="task-project">{projectName(item.projectId)}</span>
-													{/if}
-												</span>
-											{/if}
-										</span>
-										<div class="task-actions">
-											<button
-												class="edit-task"
-												type="button"
-												aria-label={`Edit ${item.title}`}
-												onclick={() => (editingTaskId = item.id)}>Edit</button
-											>
-											<button
-												class="delete-task"
-												type="button"
-												aria-label={`Delete ${item.title}`}
-												disabled={busyTaskIds.includes(item.id)}
-												onclick={() => void deleteItem(item)}>Delete</button
-											>
-										</div>
-									</li>
-								{/if}
+										<button
+											class="delete-task"
+											type="button"
+											aria-label={`Delete ${item.title}`}
+											disabled={busyTaskIds.includes(item.id)}
+											onclick={(event) => {
+												event.stopPropagation();
+												void deleteItem(item);
+											}}>Delete</button
+										>
+									</div>
+								</li>
 							{/each}
 						</ul>
 					</section>
@@ -387,6 +395,15 @@
 		{/if}
 	</div>
 </section>
+
+{#if editingTask}
+	<TaskEditorModal
+		task={editingTask}
+		{projects}
+		save={(changes) => saveItem(editingTask, changes)}
+		close={() => (editingTaskId = null)}
+	/>
+{/if}
 
 <style>
 	.task-view {
@@ -525,11 +542,6 @@
 		border-bottom: 1px solid #ecece9;
 	}
 
-	.task-group .editor-row {
-		padding: 0.85rem 0;
-		border-bottom: 0;
-	}
-
 	.task-toggle {
 		display: grid;
 		flex: 0 0 auto;
@@ -566,6 +578,12 @@
 		flex: 1;
 		gap: 0.22rem;
 		min-width: 0;
+		padding: 0;
+		border: 0;
+		color: inherit;
+		background: transparent;
+		text-align: left;
+		cursor: pointer;
 	}
 
 	.task-title {

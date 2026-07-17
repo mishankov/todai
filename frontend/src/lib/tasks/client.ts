@@ -3,6 +3,7 @@ export type TaskStatus = 'active' | 'completed';
 export interface Task {
 	id: string;
 	projectId: string | null;
+	sectionId: string | null;
 	parentId: string | null;
 	title: string;
 	description: string | null;
@@ -24,6 +25,7 @@ export interface TaskUpdate {
 	title?: string;
 	description?: string | null;
 	projectId?: string | null;
+	sectionId?: string | null;
 	priority?: number;
 	dueDate?: string | null;
 	dueTime?: string | null;
@@ -102,14 +104,38 @@ async function getTaskView(
 export async function createTask(
 	fetcher: typeof fetch,
 	title: string,
-	projectId?: string
+	projectId?: string,
+	sectionId?: string
 ): Promise<Task> {
 	return sendTaskRequest(
 		fetcher,
 		'/api/tasks',
-		{ title, ...(projectId === undefined ? {} : { projectId }) },
+		{
+			title,
+			...(projectId === undefined ? {} : { projectId }),
+			...(sectionId === undefined ? {} : { sectionId })
+		},
 		'Could not create the task.'
 	);
+}
+
+export async function reorderTask(
+	fetcher: typeof fetch,
+	taskId: string,
+	version: number,
+	sectionId: string | null,
+	beforeTaskId: string | null
+): Promise<Task[]> {
+	const response = await fetcher(`/api/tasks/${encodeURIComponent(taskId)}/reorder`, {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ version, sectionId, beforeTaskId })
+	});
+	if (response.status === 409) throw new TaskConflictError();
+	if (!response.ok) throw new TaskRequestError('Could not reorder the task.');
+	const body = (await response.json()) as { tasks: Task[] };
+	return body.tasks;
 }
 
 export async function updateTask(

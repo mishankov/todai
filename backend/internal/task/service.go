@@ -40,10 +40,14 @@ var (
 	ErrDueDateRequired = errors.New("task due date is required when due time is set")
 	// ErrProjectNotFound indicates that a requested destination project is unavailable to the user.
 	ErrProjectNotFound = errors.New("task project not found")
+	// ErrSectionNotFound indicates that a requested project section is unavailable.
+	ErrSectionNotFound = errors.New("task project section not found")
+	// ErrTaskNotReorderable indicates that a task cannot participate in project ordering.
+	ErrTaskNotReorderable = errors.New("only active top-level project tasks can be reordered")
 )
 
 type repository interface {
-	Create(context.Context, string, string, *string) (Task, error)
+	Create(context.Context, string, string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
 	ListAll(context.Context, string, bool) ([]Task, error)
@@ -52,6 +56,7 @@ type repository interface {
 	Complete(context.Context, string, string) (Task, error)
 	Reopen(context.Context, string, string) (Task, error)
 	Update(context.Context, string, string, Update) (Task, error)
+	Reorder(context.Context, string, string, Reorder) ([]Task, error)
 	Delete(context.Context, string, string) error
 }
 
@@ -66,7 +71,13 @@ func NewService(repository repository) *Service {
 }
 
 // Create creates an active top-level task in the user's Inbox or a project.
-func (s *Service) Create(ctx context.Context, userID, title string, projectID *string) (Task, error) {
+func (s *Service) Create(
+	ctx context.Context,
+	userID string,
+	title string,
+	projectID *string,
+	sectionID *string,
+) (Task, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Task{}, ErrTitleRequired
@@ -75,7 +86,11 @@ func (s *Service) Create(ctx context.Context, userID, title string, projectID *s
 		return Task{}, ErrTitleTooLong
 	}
 
-	created, err := s.repository.Create(ctx, userID, title, projectID)
+	if sectionID != nil && projectID == nil {
+		return Task{}, ErrSectionNotFound
+	}
+
+	created, err := s.repository.Create(ctx, userID, title, projectID, sectionID)
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
 	}
@@ -180,6 +195,9 @@ func (s *Service) Update(ctx context.Context, userID, taskID string, update Upda
 	if err := validateUpdate(&update); err != nil {
 		return Task{}, err
 	}
+	if update.ProjectID != nil && update.SectionID == nil {
+		update.SectionID = &Nullable[string]{}
+	}
 
 	updated, err := s.repository.Update(ctx, userID, taskID, update)
 	if err != nil {
@@ -187,6 +205,24 @@ func (s *Service) Update(ctx context.Context, userID, taskID string, update Upda
 	}
 
 	return updated, nil
+}
+
+// Reorder moves an active top-level project task within or between sections.
+func (s *Service) Reorder(
+	ctx context.Context,
+	userID string,
+	taskID string,
+	reorder Reorder,
+) ([]Task, error) {
+	if reorder.Version < 1 {
+		return nil, ErrInvalidVersion
+	}
+	tasks, err := s.repository.Reorder(ctx, userID, taskID, reorder)
+	if err != nil {
+		return nil, fmt.Errorf("reorder task: %w", err)
+	}
+
+	return tasks, nil
 }
 
 // Delete permanently removes a user-owned task.
@@ -203,7 +239,8 @@ func validateUpdate(update *Update) error {
 		return ErrInvalidVersion
 	}
 	if update.Title == nil && update.Description == nil && update.ProjectID == nil && update.Priority == nil &&
-		update.DueDate == nil && update.DueTime == nil && update.DueTimezone == nil {
+		update.SectionID == nil && update.DueDate == nil && update.DueTime == nil &&
+		update.DueTimezone == nil {
 		return ErrNoChanges
 	}
 	if update.Title != nil {

@@ -28,6 +28,7 @@ function testTask(overrides: Partial<Task> = {}): Task {
 	return {
 		id: 'task-id',
 		projectId: null,
+		sectionId: null,
 		parentId: null,
 		title: 'Task',
 		description: null,

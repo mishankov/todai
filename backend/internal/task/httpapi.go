@@ -18,7 +18,7 @@ type taskHandlers struct {
 
 // HTTPService describes the task operations exposed over HTTP.
 type HTTPService interface {
-	Create(context.Context, string, string, *string) (Task, error)
+	Create(context.Context, string, string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
 	ListAll(context.Context, string, bool) ([]Task, error)
@@ -27,6 +27,7 @@ type HTTPService interface {
 	Complete(context.Context, string, string) (Task, error)
 	Reopen(context.Context, string, string) (Task, error)
 	Update(context.Context, string, string, Update) (Task, error)
+	Reorder(context.Context, string, string, Reorder) ([]Task, error)
 	Delete(context.Context, string, string) error
 }
 
@@ -39,6 +40,7 @@ type HTTPModule struct {
 type createTaskRequest struct {
 	Title     string  `json:"title"`
 	ProjectID *string `json:"projectId"`
+	SectionID *string `json:"sectionId"`
 }
 
 type updateTaskRequest struct {
@@ -46,10 +48,17 @@ type updateTaskRequest struct {
 	Title       optional[string] `json:"title"`
 	Description nullable[string] `json:"description"`
 	ProjectID   nullable[string] `json:"projectId"`
+	SectionID   nullable[string] `json:"sectionId"`
 	Priority    optional[int]    `json:"priority"`
 	DueDate     nullable[string] `json:"dueDate"`
 	DueTime     nullable[string] `json:"dueTime"`
 	DueTimezone nullable[string] `json:"dueTimezone"`
+}
+
+type reorderTaskRequest struct {
+	Version      *int64           `json:"version"`
+	SectionID    nullable[string] `json:"sectionId"`
+	BeforeTaskID *string          `json:"beforeTaskId"`
 }
 
 type optional[T any] struct {
@@ -103,6 +112,7 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	tasksAPI.HandleFunc("DELETE /{id}", handlers.delete)
 	tasksAPI.HandleFunc("POST /{id}/complete", handlers.complete)
 	tasksAPI.HandleFunc("POST /{id}/reopen", handlers.reopen)
+	tasksAPI.HandleFunc("POST /{id}/reorder", handlers.reorder)
 	api.Mount("/tasks", tasksAPI)
 
 	viewsAPI := httpserver.NewHandlerGroup()
@@ -129,7 +139,9 @@ func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.service.Create(r.Context(), user.ID, request.Title, request.ProjectID)
+	created, err := h.service.Create(
+		r.Context(), user.ID, request.Title, request.ProjectID, request.SectionID,
+	)
 	if err != nil {
 		writeTaskError(w, r, "create", err)
 		return
@@ -291,6 +303,41 @@ func (h taskHandlers) reopen(w http.ResponseWriter, r *http.Request) {
 	h.changeStatus(w, r, "reopen", h.service.Reopen)
 }
 
+func (h taskHandlers) reorder(w http.ResponseWriter, r *http.Request) {
+	var request reorderTaskRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		return
+	}
+	if request.Version == nil {
+		http.Error(w, "task version is required", http.StatusBadRequest)
+		return
+	}
+	if !request.SectionID.Set {
+		http.Error(w, "task section is required", http.StatusBadRequest)
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	tasks, err := h.service.Reorder(r.Context(), user.ID, r.PathValue("id"), Reorder{
+		Version:      *request.Version,
+		SectionID:    request.SectionID.Value,
+		BeforeTaskID: request.BeforeTaskID,
+	})
+	if err != nil {
+		writeTaskError(w, r, "reorder", err)
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
+}
+
 func (h taskHandlers) delete(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
@@ -336,6 +383,7 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 		errors.Is(err, ErrInvalidDueDate),
 		errors.Is(err, ErrInvalidDueTime),
 		errors.Is(err, ErrDueDateRequired),
+		errors.Is(err, ErrTaskNotReorderable),
 		errors.Is(err, ErrInvalidTimezone),
 		errors.Is(err, ErrInvalidVersion),
 		errors.Is(err, ErrNoChanges):
@@ -344,6 +392,8 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 		http.Error(w, ErrTaskNotFound.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, ErrProjectNotFound.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrSectionNotFound):
+		http.Error(w, ErrSectionNotFound.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrVersionConflict):
 		http.Error(w, ErrVersionConflict.Error(), http.StatusConflict)
 	default:
@@ -376,6 +426,9 @@ func (r updateTaskRequest) taskUpdate() (Update, error) {
 	}
 	if r.ProjectID.Set {
 		update.ProjectID = &Nullable[string]{Value: r.ProjectID.Value}
+	}
+	if r.SectionID.Set {
+		update.SectionID = &Nullable[string]{Value: r.SectionID.Value}
 	}
 	if r.Priority.Set {
 		update.Priority = &r.Priority.Value

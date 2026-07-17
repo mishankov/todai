@@ -14,7 +14,7 @@ import (
 )
 
 const taskColumns = `
-	id, user_id, project_id, parent_id, title, description, status, priority,
+	id, user_id, project_id, section_id, parent_id, title, description, status, priority,
 	due_date, due_time, due_timezone, position, version, completed_at, created_at, updated_at,
 	last_modified_by
 `
@@ -44,30 +44,51 @@ func (r *Repository) Create(
 	userID string,
 	title string,
 	projectID *string,
+	sectionID *string,
 ) (Task, error) {
 	var created Task
 	err := r.db.GetContext(ctx, &created, `
 		INSERT INTO tasks (
-			id, user_id, project_id, title, status, priority, position, version,
+			id, user_id, project_id, section_id, title, status, priority, position, version,
 			created_at, updated_at, last_modified_by
 		)
 		SELECT
-			$1::VARCHAR, $2::VARCHAR, $4::VARCHAR, $3::TEXT, 'active', 0,
+			$1::VARCHAR, $2::VARCHAR, $4::VARCHAR, $5::VARCHAR, $3::TEXT, 'active', 0,
 			COALESCE(MAX(position), 0) + 1024, 1,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $2::VARCHAR
 		FROM tasks
 		WHERE user_id = $2::VARCHAR
 			AND project_id IS NOT DISTINCT FROM $4::VARCHAR
+			AND section_id IS NOT DISTINCT FROM $5::VARCHAR
 			AND parent_id IS NULL
-		HAVING $4::VARCHAR IS NULL OR EXISTS (
-			SELECT 1 FROM projects
-			WHERE id = $4::VARCHAR AND user_id = $2::VARCHAR AND archived_at IS NULL
-		)
+		HAVING
+			($4::VARCHAR IS NULL OR EXISTS (
+				SELECT 1 FROM projects
+				WHERE id = $4::VARCHAR AND user_id = $2::VARCHAR AND archived_at IS NULL
+			))
+			AND ($5::VARCHAR IS NULL OR EXISTS (
+				SELECT 1 FROM project_sections
+				WHERE id = $5::VARCHAR AND user_id = $2::VARCHAR AND project_id = $4::VARCHAR
+			))
 		RETURNING `+taskColumns,
-		uuid.NewString(), userID, title, projectID,
+		uuid.NewString(), userID, title, projectID, sectionID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Task{}, ErrProjectNotFound
+		if projectID != nil {
+			var projectExists bool
+			if getErr := r.db.GetContext(ctx, &projectExists, `
+				SELECT EXISTS (
+					SELECT 1 FROM projects
+					WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
+				)
+			`, *projectID, userID); getErr != nil {
+				return Task{}, fmt.Errorf("check task project: %w", getErr)
+			}
+			if !projectExists {
+				return Task{}, ErrProjectNotFound
+			}
+		}
+		return Task{}, ErrSectionNotFound
 	}
 	if err != nil {
 		return Task{}, fmt.Errorf("insert task: %w", err)
@@ -253,10 +274,11 @@ func (r *Repository) Update(
 		SET title = CASE WHEN $4::BOOLEAN THEN $5::TEXT ELSE title END,
 			description = CASE WHEN $6::BOOLEAN THEN $7::TEXT ELSE description END,
 			project_id = CASE WHEN $8::BOOLEAN THEN $9::VARCHAR ELSE project_id END,
-			priority = CASE WHEN $10::BOOLEAN THEN $11::SMALLINT ELSE priority END,
-			due_date = CASE WHEN $12::BOOLEAN THEN $13::DATE ELSE due_date END,
-			due_time = CASE WHEN $14::BOOLEAN THEN $15::TIME ELSE due_time END,
-			due_timezone = CASE WHEN $16::BOOLEAN THEN $17::TEXT ELSE due_timezone END,
+			section_id = CASE WHEN $10::BOOLEAN THEN $11::VARCHAR ELSE section_id END,
+			priority = CASE WHEN $12::BOOLEAN THEN $13::SMALLINT ELSE priority END,
+			due_date = CASE WHEN $14::BOOLEAN THEN $15::DATE ELSE due_date END,
+			due_time = CASE WHEN $16::BOOLEAN THEN $17::TIME ELSE due_time END,
+			due_timezone = CASE WHEN $18::BOOLEAN THEN $19::TEXT ELSE due_timezone END,
 			version = version + 1,
 			updated_at = CURRENT_TIMESTAMP,
 			last_modified_by = $2
@@ -269,6 +291,19 @@ func (r *Repository) Update(
 					WHERE id = $9::VARCHAR AND user_id = $2 AND archived_at IS NULL
 				)
 			)
+			AND (
+				NOT $10::BOOLEAN
+				OR $11::VARCHAR IS NULL
+				OR EXISTS (
+					SELECT 1 FROM project_sections
+					WHERE id = $11::VARCHAR
+						AND user_id = $2
+						AND project_id = CASE
+							WHEN $8::BOOLEAN THEN $9::VARCHAR
+							ELSE tasks.project_id
+						END
+				)
+			)
 		RETURNING `+taskColumns,
 		taskID,
 		userID,
@@ -279,6 +314,8 @@ func (r *Repository) Update(
 		nullableValue(update.Description),
 		update.ProjectID != nil,
 		nullableValue(update.ProjectID),
+		update.SectionID != nil,
+		nullableValue(update.SectionID),
 		update.Priority != nil,
 		pointerValue(update.Priority),
 		update.DueDate != nil,
@@ -295,7 +332,8 @@ func (r *Repository) Update(
 		return Task{}, fmt.Errorf("update task: %w", err)
 	}
 
-	if _, getErr := r.Get(ctx, userID, taskID); getErr != nil {
+	found, getErr := r.Get(ctx, userID, taskID)
+	if getErr != nil {
 		return Task{}, getErr
 	}
 	if update.ProjectID != nil && update.ProjectID.Value != nil {
@@ -311,8 +349,181 @@ func (r *Repository) Update(
 			return Task{}, ErrProjectNotFound
 		}
 	}
+	if update.SectionID != nil && update.SectionID.Value != nil {
+		projectID := found.ProjectID
+		if update.ProjectID != nil {
+			projectID = update.ProjectID.Value
+		}
+		if projectID == nil {
+			return Task{}, ErrSectionNotFound
+		}
+		var exists bool
+		if existsErr := r.db.GetContext(ctx, &exists, `
+			SELECT EXISTS (
+				SELECT 1 FROM project_sections
+				WHERE id = $1 AND user_id = $2 AND project_id = $3
+			)
+		`, *update.SectionID.Value, userID, *projectID); existsErr != nil {
+			return Task{}, fmt.Errorf("check destination section: %w", existsErr)
+		}
+		if !exists {
+			return Task{}, ErrSectionNotFound
+		}
+	}
 
 	return Task{}, ErrVersionConflict
+}
+
+// Reorder places an active top-level project task before another task or at the end.
+func (r *Repository) Reorder(
+	ctx context.Context,
+	userID string,
+	taskID string,
+	reorder Reorder,
+) ([]Task, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin task reorder: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var moved Task
+	err = tx.GetContext(ctx, &moved, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE id = $1 AND user_id = $2
+		FOR UPDATE
+	`, taskID, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTaskNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock reordered task: %w", err)
+	}
+	if moved.Version != reorder.Version {
+		return nil, ErrVersionConflict
+	}
+	if moved.ProjectID == nil || moved.ParentID != nil || moved.Status != StatusActive {
+		return nil, ErrTaskNotReorderable
+	}
+
+	var projectActive bool
+	if err := tx.GetContext(ctx, &projectActive, `
+		SELECT EXISTS (
+			SELECT 1 FROM projects
+			WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
+		)
+	`, *moved.ProjectID, userID); err != nil {
+		return nil, fmt.Errorf("check reordered task project: %w", err)
+	}
+	if !projectActive {
+		return nil, ErrProjectNotFound
+	}
+	if reorder.SectionID != nil {
+		var sectionExists bool
+		if err := tx.GetContext(ctx, &sectionExists, `
+			SELECT EXISTS (
+				SELECT 1 FROM project_sections
+				WHERE id = $1 AND user_id = $2 AND project_id = $3
+			)
+		`, *reorder.SectionID, userID, *moved.ProjectID); err != nil {
+			return nil, fmt.Errorf("check reordered task section: %w", err)
+		}
+		if !sectionExists {
+			return nil, ErrSectionNotFound
+		}
+	}
+
+	if reorder.BeforeTaskID != nil && *reorder.BeforeTaskID == taskID &&
+		stringPointersEqual(moved.SectionID, reorder.SectionID) {
+		return commitProjectTasks(ctx, tx, userID, *moved.ProjectID)
+	}
+	sourceSectionID := moved.SectionID
+
+	targetTasks := make([]Task, 0)
+	if err := tx.SelectContext(ctx, &targetTasks, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE user_id = $1 AND project_id = $2 AND parent_id IS NULL
+			AND status = 'active' AND id <> $3
+			AND section_id IS NOT DISTINCT FROM $4::VARCHAR
+		ORDER BY position, created_at
+		FOR UPDATE
+	`, userID, *moved.ProjectID, taskID, reorder.SectionID); err != nil {
+		return nil, fmt.Errorf("lock destination task order: %w", err)
+	}
+
+	insertIndex := len(targetTasks)
+	if reorder.BeforeTaskID != nil {
+		insertIndex = taskIndex(targetTasks, *reorder.BeforeTaskID)
+		if insertIndex < 0 {
+			return nil, ErrTaskNotFound
+		}
+	}
+	moved.SectionID = reorder.SectionID
+	targetTasks = append(targetTasks, Task{})
+	copy(targetTasks[insertIndex+1:], targetTasks[insertIndex:])
+	targetTasks[insertIndex] = moved
+
+	for index := range targetTasks {
+		position := int64(index+1) * 1024
+		sectionChanged := targetTasks[index].ID == taskID &&
+			!stringPointersEqual(sourceSectionID, reorder.SectionID)
+		if targetTasks[index].Position == position && !sectionChanged {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE tasks
+			SET section_id = CASE WHEN id = $1 THEN $2::VARCHAR ELSE section_id END,
+				position = $3, version = version + 1,
+				updated_at = CURRENT_TIMESTAMP, last_modified_by = $4
+			WHERE id = $5
+		`, taskID, reorder.SectionID, position, userID, targetTasks[index].ID); err != nil {
+			return nil, fmt.Errorf("reposition task: %w", err)
+		}
+	}
+
+	return commitProjectTasks(ctx, tx, userID, *moved.ProjectID)
+}
+
+func commitProjectTasks(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	userID string,
+	projectID string,
+) ([]Task, error) {
+	tasks := make([]Task, 0)
+	if err := tx.SelectContext(ctx, &tasks, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE user_id = $1 AND project_id = $2 AND parent_id IS NULL
+		ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, position, created_at
+	`, userID, projectID); err != nil {
+		return nil, fmt.Errorf("select reordered project tasks: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit task reorder: %w", err)
+	}
+
+	return tasks, nil
+}
+
+func taskIndex(tasks []Task, taskID string) int {
+	for index := range tasks {
+		if tasks[index].ID == taskID {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func stringPointersEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+
+	return *left == *right
 }
 
 // Delete permanently removes a task scoped to its owner.

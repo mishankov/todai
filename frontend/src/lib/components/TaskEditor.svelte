@@ -1,19 +1,31 @@
 <script lang="ts">
 	import { TaskConflictError, type Task, type TaskUpdate } from '$lib/tasks/client';
-	import type { Project } from '$lib/projects/client';
+	import type { Project, ProjectSection } from '$lib/projects/client';
 
 	interface Props {
 		task: Task;
 		save: (update: TaskUpdate) => Promise<void>;
 		cancel: () => void;
 		projects?: Project[];
+		sections?: ProjectSection[];
+		currentProjectId?: string;
+		variant?: 'card' | 'dialog';
 	}
 
-	let { task, save, cancel, projects = [] }: Props = $props();
+	let {
+		task,
+		save,
+		cancel,
+		projects = [],
+		sections,
+		currentProjectId,
+		variant = 'card'
+	}: Props = $props();
 	let title = $derived(task.title);
 	let description = $derived(task.description ?? '');
 	let priority = $derived(task.priority);
 	let projectId = $derived(task.projectId ?? '');
+	let sectionId = $derived(task.sectionId ?? '');
 	let dueDate = $derived(task.dueDate ?? '');
 	let dueTime = $derived(task.dueTime ?? '');
 	let saving = $state(false);
@@ -23,16 +35,22 @@
 		saving = true;
 		errorMessage = '';
 		try {
-			await save({
+			const update: TaskUpdate = {
 				version: task.version,
 				title,
 				description: description.trim() || null,
-				projectId: projectId || null,
 				priority,
 				dueDate: dueDate || null,
 				dueTime: dueDate && dueTime ? dueTime : null,
 				dueTimezone: dueDate && dueTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
-			});
+			};
+			if (projectId !== (task.projectId ?? '')) {
+				update.projectId = projectId || null;
+			}
+			if (sections !== undefined && projectId === currentProjectId) {
+				update.sectionId = sectionId || null;
+			}
+			await save(update);
 		} catch (error) {
 			errorMessage =
 				error instanceof TaskConflictError
@@ -45,6 +63,7 @@
 
 <form
 	class="editor"
+	class:dialog={variant === 'dialog'}
 	onsubmit={(event) => {
 		event.preventDefault();
 		void submit();
@@ -82,6 +101,18 @@
 			</select>
 		</label>
 
+		{#if sections !== undefined && projectId === currentProjectId}
+			<label>
+				<span>Section</span>
+				<select bind:value={sectionId}>
+					<option value="">No section</option>
+					{#each sections as section (section.id)}
+						<option value={section.id}>{section.name}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
+
 		<label>
 			<span>Due date</span>
 			<input type="date" bind:value={dueDate} />
@@ -115,6 +146,13 @@
 		border-radius: 1rem;
 		background: #fff;
 		box-shadow: 0 0.75rem 2.5rem rgb(24 56 34 / 7%);
+	}
+	.editor.dialog {
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
 	}
 
 	label {

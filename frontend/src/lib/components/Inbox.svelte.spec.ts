@@ -115,6 +115,24 @@ describe('Inbox', () => {
 		await expect.element(page.getByText('Keep this task')).toBeVisible();
 	});
 
+	it('opens task editing in the shared modal', async () => {
+		const task = testTask({ title: 'Draft plan' });
+		render(Inbox, {
+			initialTasks: [task],
+			create: vi.fn(),
+			complete: vi.fn(),
+			reopen: vi.fn(),
+			update: vi.fn(),
+			remove: vi.fn()
+		});
+
+		await page.getByRole('button', { name: `Open ${task.title}` }).click();
+
+		await expect
+			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
+			.toHaveAttribute('aria-modal', 'true');
+	});
+
 	it('edits task fields with the observed version', async () => {
 		const active = testTask({ title: 'Draft plan' });
 		const updated = testTask({
@@ -210,6 +228,7 @@ function testTask(overrides: Partial<Task> = {}): Task {
 	return {
 		id: 'task-id',
 		projectId: null,
+		sectionId: null,
 		parentId: null,
 		title: 'Task',
 		description: null,

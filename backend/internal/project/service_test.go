@@ -96,9 +96,156 @@ func TestUpdateRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
+func TestCreateSectionNormalizesName(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	created, err := project.NewService(repository).CreateSection(
+		context.Background(), "user-id", "project-id", "  Next steps  ",
+	)
+	if err != nil {
+		t.Fatalf("create section: %v", err)
+	}
+	if created.Name != "Next steps" || repository.sectionName != "Next steps" {
+		t.Errorf("created section = %#v", created)
+	}
+}
+
+func TestUpdateRejectsInvalidLayout(t *testing.T) {
+	t.Parallel()
+
+	layout := project.Layout("calendar")
+	_, err := project.NewService(&fakeRepository{}).Update(
+		context.Background(), "user-id", "project-id",
+		project.Update{Version: 1, Layout: &layout},
+	)
+	if !errors.Is(err, project.ErrInvalidLayout) {
+		t.Fatalf("error = %v, want %v", err, project.ErrInvalidLayout)
+	}
+}
+
+func TestUpdateAcceptsBoardLayout(t *testing.T) {
+	t.Parallel()
+
+	layout := project.LayoutBoard
+	repository := &fakeRepository{}
+	updated, err := project.NewService(repository).Update(
+		context.Background(), "user-id", "project-id",
+		project.Update{Version: 4, Layout: &layout},
+	)
+	if err != nil {
+		t.Fatalf("update layout: %v", err)
+	}
+	if updated.Layout != project.LayoutBoard || repository.update.Layout == nil ||
+		*repository.update.Layout != project.LayoutBoard {
+		t.Errorf("updated project = %#v, repository update = %#v", updated, repository.update)
+	}
+}
+
+func TestSectionOperationsValidateNamesAndVersions(t *testing.T) {
+	t.Parallel()
+
+	validName := "Next"
+	tests := []struct {
+		name string
+		run  func(*project.Service) error
+		want error
+	}{
+		{
+			name: "create blank name",
+			run: func(service *project.Service) error {
+				_, err := service.CreateSection(context.Background(), "user-id", "project-id", "  ")
+				return err
+			},
+			want: project.ErrSectionNameRequired,
+		},
+		{
+			name: "create long name",
+			run: func(service *project.Service) error {
+				_, err := service.CreateSection(
+					context.Background(), "user-id", "project-id", strings.Repeat("я", 201),
+				)
+				return err
+			},
+			want: project.ErrSectionNameTooLong,
+		},
+		{
+			name: "update version",
+			run: func(service *project.Service) error {
+				_, err := service.UpdateSection(
+					context.Background(), "user-id", "project-id", "section-id",
+					project.SectionUpdate{Name: &validName},
+				)
+				return err
+			},
+			want: project.ErrInvalidVersion,
+		},
+		{
+			name: "update without changes",
+			run: func(service *project.Service) error {
+				_, err := service.UpdateSection(
+					context.Background(), "user-id", "project-id", "section-id",
+					project.SectionUpdate{Version: 1},
+				)
+				return err
+			},
+			want: project.ErrSectionNoChanges,
+		},
+		{
+			name: "delete version",
+			run: func(service *project.Service) error {
+				return service.DeleteSection(
+					context.Background(), "user-id", "project-id", "section-id", 0,
+				)
+			},
+			want: project.ErrInvalidVersion,
+		},
+		{
+			name: "reorder version",
+			run: func(service *project.Service) error {
+				_, err := service.ReorderSection(
+					context.Background(), "user-id", "project-id", "section-id", 0, nil,
+				)
+				return err
+			},
+			want: project.ErrInvalidVersion,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := test.run(project.NewService(&fakeRepository{})); !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestUpdateSectionNormalizesNameAndPreservesVersion(t *testing.T) {
+	t.Parallel()
+
+	name := "  In progress  "
+	repository := &fakeRepository{}
+	updated, err := project.NewService(repository).UpdateSection(
+		context.Background(), "user-id", "project-id", "section-id",
+		project.SectionUpdate{Version: 3, Name: &name},
+	)
+	if err != nil {
+		t.Fatalf("update section: %v", err)
+	}
+	if updated.Name != "In progress" || repository.sectionUpdate.Version != 3 ||
+		repository.sectionUpdate.Name == nil || *repository.sectionUpdate.Name != "In progress" {
+		t.Errorf("updated section = %#v, repository update = %#v", updated, repository.sectionUpdate)
+	}
+}
+
 type fakeRepository struct {
-	createUserID string
-	update       project.Update
+	createUserID  string
+	update        project.Update
+	sectionName   string
+	sectionUpdate project.SectionUpdate
 }
 
 func (r *fakeRepository) Create(_ context.Context, userID, name string) (project.Project, error) {
@@ -121,5 +268,54 @@ func (r *fakeRepository) Update(
 	update project.Update,
 ) (project.Project, error) {
 	r.update = update
-	return project.Project{Name: *update.Name, Version: update.Version + 1}, nil
+	updated := project.Project{Version: update.Version + 1}
+	if update.Name != nil {
+		updated.Name = *update.Name
+	}
+	if update.Layout != nil {
+		updated.Layout = *update.Layout
+	}
+	return updated, nil
+}
+
+func (r *fakeRepository) CreateSection(
+	_ context.Context,
+	userID string,
+	projectID string,
+	name string,
+) (project.Section, error) {
+	r.sectionName = name
+	return project.Section{
+		ID: "section-id", UserID: userID, ProjectID: projectID, Name: name, Version: 1,
+	}, nil
+}
+
+func (*fakeRepository) ListSections(context.Context, string, string) ([]project.Section, error) {
+	return nil, nil
+}
+
+func (r *fakeRepository) UpdateSection(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ string,
+	update project.SectionUpdate,
+) (project.Section, error) {
+	r.sectionUpdate = update
+	return project.Section{Name: *update.Name, Version: update.Version + 1}, nil
+}
+
+func (*fakeRepository) DeleteSection(context.Context, string, string, string, int64) error {
+	return nil
+}
+
+func (*fakeRepository) ReorderSection(
+	context.Context,
+	string,
+	string,
+	string,
+	int64,
+	*string,
+) ([]project.Section, error) {
+	return nil, nil
 }
