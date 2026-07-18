@@ -28,7 +28,8 @@
 		'section.created': 'Created section',
 		'section.updated': 'Updated section',
 		'section.reordered': 'Reordered section',
-		'section.deleted': 'Deleted section'
+		'section.deleted': 'Deleted section',
+		'user_settings.updated': 'Updated settings'
 	};
 
 	function groupEvents(items: ActivityEvent[]): ActivityGroup[] {
@@ -120,13 +121,15 @@
 	}
 
 	function eventKind(event: ActivityEvent): string {
-		return event.aggregateType === 'project' || event.type.startsWith('project.')
-			? 'project'
-			: event.aggregateType === 'section' || event.type.startsWith('section.')
-				? 'section'
-				: event.actorType === 'built_in_agent'
-					? 'agent'
-					: 'task';
+		return event.aggregateType === 'user_settings' || event.type.startsWith('user_settings.')
+			? 'settings'
+			: event.aggregateType === 'project' || event.type.startsWith('project.')
+				? 'project'
+				: event.aggregateType === 'section' || event.type.startsWith('section.')
+					? 'section'
+					: event.actorType === 'built_in_agent'
+						? 'agent'
+						: 'task';
 	}
 </script>
 
@@ -160,7 +163,13 @@
 						{#each group.events as event (event.id)}
 							<li>
 								<span class={`event-icon ${eventKind(event)}`} aria-hidden="true">
-									{#if eventKind(event) === 'project'}
+									{#if eventKind(event) === 'settings'}
+										<svg viewBox="0 0 24 24"
+											><circle cx="12" cy="12" r="3" /><path
+												d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"
+											/></svg
+										>
+									{:else if eventKind(event) === 'project'}
 										<svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" /></svg>
 									{:else if eventKind(event) === 'section'}
 										<svg viewBox="0 0 24 24"><path d="M6 5h12M6 12h12M6 19h12" /></svg>

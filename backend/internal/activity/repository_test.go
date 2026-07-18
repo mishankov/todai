@@ -106,6 +106,35 @@ func TestRepositoryAppendParticipatesInCallerTransaction(t *testing.T) {
 	}
 }
 
+func TestRepositoryListsEventsAfterDurableOffset(t *testing.T) {
+	db, repository := testRepository(t)
+	ctx := context.Background()
+	first := appendEvent(t, ctx, repository, db, execution.UserScope("user-id", "first"), activity.NewEvent{
+		Type: "task.created", Payload: map[string]any{"schemaVersion": 1},
+	})
+	second := appendEvent(t, ctx, repository, db, execution.UserScope("user-id", "second"), activity.NewEvent{
+		Type: "task.updated", Payload: map[string]any{"schemaVersion": 1},
+	})
+	appendEvent(t, ctx, repository, db, execution.UserScope("other-user", "other"), activity.NewEvent{
+		Type: "task.created", Payload: map[string]any{"schemaVersion": 1},
+	})
+
+	latest, err := repository.LatestOffset(ctx, "user-id")
+	if err != nil {
+		t.Fatalf("latest offset: %v", err)
+	}
+	if latest != second.StreamOffset || second.StreamOffset <= first.StreamOffset {
+		t.Errorf("offsets = first %d, second %d, latest %d", first.StreamOffset, second.StreamOffset, latest)
+	}
+	events, err := repository.ListAfter(ctx, "user-id", first.StreamOffset, 100)
+	if err != nil {
+		t.Fatalf("list after: %v", err)
+	}
+	if len(events) != 1 || events[0].ID != second.ID {
+		t.Errorf("events after first = %#v", events)
+	}
+}
+
 func TestRepositoryRejectsInvalidEventsBeforeDatabaseAccess(t *testing.T) {
 	t.Parallel()
 

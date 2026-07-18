@@ -1,5 +1,7 @@
 version: "3"
 
+dotenv: [".env"]
+
 includes:
   backend:
     taskfile: ./backend/Taskfile.yml
@@ -10,17 +12,22 @@ includes:
   infrastructure:
     taskfile: ./infrastructure/Taskfile.yml
     dir: ./infrastructure
+  pi-runner:
+    taskfile: ./pi-runner/Taskfile.yml
+    dir: ./pi-runner
 
 tasks:
   setup:
     desc: Install project dependencies
     cmds:
       - task: frontend:install
+      - task: pi-runner:install
 
   setup:test:
     desc: Install project dependencies and test browsers
     cmds:
       - task: frontend:install
+      - task: pi-runner:install
       - task: frontend:browsers
 
   dev:
@@ -28,6 +35,7 @@ tasks:
     cmds:
       - task: infrastructure:up
       - task: backend:migrate
+      - task: pi-runner:build
       - task: dev:servers
 
   dev:servers:
@@ -38,6 +46,7 @@ tasks:
 
   check:
     desc: Run all checks that do not require external services
-    deps:
-      - backend:check
-      - frontend:check
+    cmds:
+      - task: pi-runner:check
+      - task: backend:check
+      - task: frontend:check

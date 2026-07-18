@@ -42,6 +42,7 @@ var (
 type tokenRepository interface {
 	Create(context.Context, []byte, Claims) error
 	Get(context.Context, []byte) (Claims, error)
+	RevokeRun(context.Context, string, string) error
 }
 
 // Service issues and authenticates short-lived scoped agent tokens.
@@ -52,6 +53,14 @@ type Service struct {
 // NewService constructs an agent token service.
 func NewService(repository tokenRepository) *Service {
 	return &Service{repository: repository}
+}
+
+// RevokeRun invalidates every token issued for one user's agent run.
+func (s *Service) RevokeRun(ctx context.Context, userID, runID string) error {
+	if err := s.repository.RevokeRun(ctx, userID, runID); err != nil {
+		return fmt.Errorf("revoke agent run tokens: %w", err)
+	}
+	return nil
 }
 
 // Issue creates a random opaque token and persists only its SHA-256 hash.

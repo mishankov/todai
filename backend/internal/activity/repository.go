@@ -16,7 +16,7 @@ import (
 )
 
 const eventColumns = `
-	id, user_id, type, occurred_at, actor_type, actor_id, source,
+	stream_offset, id, user_id, type, occurred_at, actor_type, actor_id, source,
 	aggregate_type, aggregate_id, correlation_id, agent_run_id, payload
 `
 
@@ -29,6 +29,8 @@ var (
 	ErrInvalidPayload = errors.New("activity event payload must be a JSON object")
 	// ErrInvalidLimit indicates that a list limit is outside the supported range.
 	ErrInvalidLimit = errors.New("activity event limit must be between 1 and 200")
+	// ErrInvalidStreamCursor indicates a negative activity stream cursor.
+	ErrInvalidStreamCursor = errors.New("activity stream cursor must be zero or greater")
 )
 
 //go:embed migrations/*.sql
@@ -96,12 +98,52 @@ func (r *Repository) List(ctx context.Context, userID string, limit int) ([]Even
 		SELECT `+eventColumns+`
 		FROM activity_events
 		WHERE user_id = $1
-		ORDER BY occurred_at DESC, id DESC
+		ORDER BY stream_offset DESC
 		LIMIT $2
 	`, userID, limit); err != nil {
 		return nil, fmt.Errorf("select activity events: %w", err)
 	}
 
+	return events, nil
+}
+
+// LatestOffset returns the newest durable event offset visible to a user.
+func (r *Repository) LatestOffset(ctx context.Context, userID string) (int64, error) {
+	var offset int64
+	if err := r.db.GetContext(ctx, &offset, `
+		SELECT COALESCE(MAX(stream_offset), 0)
+		FROM activity_events
+		WHERE user_id = $1
+	`, userID); err != nil {
+		return 0, fmt.Errorf("select latest activity offset: %w", err)
+	}
+	return offset, nil
+}
+
+// ListAfter returns a user's events after a durable stream cursor, oldest first.
+func (r *Repository) ListAfter(
+	ctx context.Context,
+	userID string,
+	after int64,
+	limit int,
+) ([]Event, error) {
+	if after < 0 {
+		return nil, ErrInvalidStreamCursor
+	}
+	if limit < 1 || limit > 200 {
+		return nil, ErrInvalidLimit
+	}
+
+	events := make([]Event, 0)
+	if err := r.db.SelectContext(ctx, &events, `
+		SELECT `+eventColumns+`
+		FROM activity_events
+		WHERE user_id = $1 AND stream_offset > $2
+		ORDER BY stream_offset
+		LIMIT $3
+	`, userID, after, limit); err != nil {
+		return nil, fmt.Errorf("select activity stream events: %w", err)
+	}
 	return events, nil
 }
 

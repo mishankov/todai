@@ -2,6 +2,7 @@ export type ActivityActorType = 'user' | 'built_in_agent' | 'external_agent' | '
 export type ActivitySource = 'web' | 'internal_api' | 'system';
 
 export interface ActivityEvent {
+	streamOffset: number;
 	id: string;
 	type: string;
 	occurredAt: string;

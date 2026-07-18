@@ -8,8 +8,12 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	let tasks: Task[] = [];
 	let projects: Project[] = [];
 	let sections: ProjectSection[] = [];
+	let inboxLoads = 0;
+	let realtimeEventReady = false;
+	let realtimeEventDelivered = false;
 	const activityEvents: ActivityEvent[] = [
 		{
+			streamOffset: 1,
 			id: 'activity-1',
 			type: 'task.updated',
 			occurredAt: new Date().toISOString(),
@@ -45,6 +49,50 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.route('**/api/auth/logout', async (route) => {
 		authenticated = false;
 		await route.fulfill({ status: 200 });
+	});
+	await page.route('**/api/settings', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				settings: {
+					timezone: 'Europe/Moscow',
+					agentModel: 'gpt-5.4',
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString()
+				},
+				availableAgentModels: ['gpt-5.4']
+			})
+		});
+	});
+	await page.route('**/api/agent/sessions', async (route) => {
+		await route.fulfill({
+			status: 201,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				id: 'session-e2e',
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString()
+			})
+		});
+	});
+	await page.route('**/api/agent/sessions/session-e2e/events', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+	});
+	await page.route('**/api/activity/changes*', async (route) => {
+		const after = new URL(route.request().url()).searchParams.get('after');
+		const shouldDeliver = after === '1' && realtimeEventReady && !realtimeEventDelivered;
+		realtimeEventDelivered ||= shouldDeliver;
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				cursor: shouldDeliver ? 2 : Number(after ?? 1),
+				events: shouldDeliver
+					? [{ streamOffset: 2, id: 'realtime-event', type: 'task.created' }]
+					: []
+			})
+		});
 	});
 	await page.route('**/api/activity/?*', async (route) => {
 		await route.fulfill({
@@ -156,6 +204,7 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		});
 	});
 	await page.route('**/api/views/inbox?*', async (route) => {
+		inboxLoads += 1;
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -313,6 +362,11 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 
 	await expect(page).toHaveURL(/\/$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Inbox');
+	await expect.poll(() => inboxLoads).toBeGreaterThanOrEqual(2);
+	tasks = [...tasks, testTask({ id: 'task-from-server', title: 'Synced from server' })];
+	realtimeEventReady = true;
+	await expect(page.getByText('Synced from server')).toBeVisible();
+	await expect.poll(() => inboxLoads).toBeGreaterThanOrEqual(3);
 
 	await page.getByLabel('Task title').fill('Buy milk');
 	await page.getByRole('button', { name: 'Add task' }).click();
@@ -369,9 +423,13 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 
 	await page.getByRole('link', { name: 'Inbox' }).click();
 	await expect(page.getByText('Plan sprint')).toBeVisible();
+	await page.getByRole('button', { name: 'Open assistant' }).click();
+	await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
 
 	await page.getByRole('link', { name: 'Today' }).click();
 	await expect(page).toHaveURL(/\/today$/);
+	await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
+	await page.getByRole('button', { name: 'Close assistant' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Today');
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 

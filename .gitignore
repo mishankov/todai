@@ -9,3 +9,6 @@ frontend/node_modules/
 frontend/.svelte-kit/
 frontend/build/
 frontend/test-results/
+pi-runner/node_modules/
+pi-runner/dist/
+pi-runner/coverage/

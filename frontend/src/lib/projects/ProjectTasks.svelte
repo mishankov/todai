@@ -93,6 +93,23 @@
 	);
 	let editingTask = $derived(tasks.find((item) => item.id === editingTaskId));
 
+	$effect(() => {
+		const nextProject = project;
+		const nextSections = initialSections;
+		const nextTasks = initialTasks;
+		untrack(() => {
+			currentProject = nextProject;
+			sections = [...nextSections];
+			tasks = [...nextTasks];
+			if (editingTaskId !== null && !nextTasks.some((item) => item.id === editingTaskId)) {
+				editingTaskId = null;
+			}
+			if (editingSectionId !== null && !nextSections.some((item) => item.id === editingSectionId)) {
+				editingSectionId = null;
+			}
+		});
+	});
+
 	async function setLayout(layout: ProjectLayout) {
 		if (layout === currentProject.layout || changingLayout) return;
 		const previous = currentProject;
@@ -117,7 +134,7 @@
 		errorMessage = '';
 		try {
 			const created = await create(title, sectionId);
-			tasks = [...tasks, created];
+			tasks = [...tasks.filter((item) => item.id !== created.id), created];
 			titles[key] = '';
 		} catch {
 			errorMessage = 'The task could not be created. Please try again.';
@@ -133,7 +150,7 @@
 		errorMessage = '';
 		try {
 			const created = await createSection(name);
-			sections = [...sections, created];
+			sections = [...sections.filter((item) => item.id !== created.id), created];
 			newSectionName = '';
 		} catch {
 			errorMessage = 'The section could not be created. Please try again.';

@@ -2,8 +2,10 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import AgentChat from '$lib/agent/AgentChat.svelte';
 	import { logout } from '$lib/auth/client';
 	import AppShell from '$lib/components/AppShell.svelte';
+	import RealtimeSync from '$lib/realtime/RealtimeSync.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -29,3 +31,6 @@
 >
 	{@render children()}
 </AppShell>
+
+<AgentChat />
+<RealtimeSync />

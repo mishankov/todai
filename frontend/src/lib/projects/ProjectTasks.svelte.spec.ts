@@ -108,6 +108,17 @@ describe('ProjectTasks', () => {
 			.toBeVisible();
 	});
 
+	it('reflects a new server snapshot without remounting the project', async () => {
+		const existing = testTask({ id: 'existing', title: 'Existing task' });
+		const external = testTask({ id: 'external', title: 'Created elsewhere', position: 2048 });
+		const view = renderProjectTasks({ tasks: [existing] });
+
+		await expect.element(view.getByText(existing.title, { exact: true })).toBeVisible();
+		await view.rerender({ initialTasks: [existing, external] });
+
+		await expect.element(view.getByText(external.title, { exact: true })).toBeVisible();
+	});
+
 	it('opens task editing as an accessible modal with the existing values', async () => {
 		const task = testTask({
 			title: 'Draft proposal',
@@ -446,7 +457,7 @@ interface RenderOptions {
 
 function renderProjectTasks(options: RenderOptions = {}) {
 	const project = options.project ?? testProject();
-	render(ProjectTasks, {
+	return render(ProjectTasks, {
 		project,
 		projects: [project],
 		initialSections: options.sections ?? [],

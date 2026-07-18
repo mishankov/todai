@@ -10,6 +10,7 @@ import (
 
 // Event is one immutable entry in the product activity log.
 type Event struct {
+	StreamOffset  int64               `db:"stream_offset" json:"streamOffset"`
 	ID            string              `db:"id" json:"id"`
 	UserID        *string             `db:"user_id" json:"-"`
 	Type          string              `db:"type" json:"type"`

@@ -1,9 +1,11 @@
 package app_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +26,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/mishankov/todai/backend/internal/activity"
+	"github.com/mishankov/todai/backend/internal/agent"
 	"github.com/mishankov/todai/backend/internal/agentauth"
 	"github.com/mishankov/todai/backend/internal/fakeagent"
 	"github.com/mishankov/todai/backend/internal/project"
@@ -32,6 +35,7 @@ import (
 
 func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
+	t.Setenv("TODAI_AGENT_RUNTIME", "fake")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -45,12 +49,22 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	}
 
 	port := availablePort(t)
+	runnerEntry := filepath.Clean(filepath.Join(moduleRoot(t), "../pi-runner/dist/cli/main.js"))
+	runnerAvailable := true
+	if _, err := os.Stat(runnerEntry); errors.Is(err, os.ErrNotExist) {
+		runnerAvailable = false
+	} else if err != nil {
+		t.Fatalf("stat compiled runner: %v", err)
+	}
 	processEnvironment := append(
 		os.Environ(),
 		"GOCOVERDIR="+coverageDir,
 		"TODAI_DATABASE_URL="+databaseURL,
 		"TODAI_HTTP_PORT="+port,
 	)
+	if runnerAvailable {
+		processEnvironment = append(processEnvironment, "TODAI_RUNNER_ENTRY="+runnerEntry)
+	}
 	runBinaryCommand(t, ctx, binary, processEnvironment, nil, "migrate")
 	runBinaryCommand(
 		t,
@@ -345,6 +359,11 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		"section.deleted":   1,
 	})
 	runFakeAgentFlow(t, ctx, client, baseURL, databaseURL, "owner", sessionCookie)
+	if runnerAvailable {
+		runCompiledRunnerFlow(t, baseURL, sessionCookie)
+	} else {
+		t.Log("compiled pi-runner is unavailable; skipping cross-component runner flow")
+	}
 
 	logout(t, client, baseURL, sessionCookie)
 	assertStatus(t, client, http.MethodGet, baseURL+"/api/auth/me", http.StatusUnauthorized)
@@ -1439,6 +1458,122 @@ func mapsEqual(left, right map[string]int) bool {
 	}
 
 	return true
+}
+
+func runCompiledRunnerFlow(
+	t *testing.T,
+	baseURL string,
+	cookie *http.Cookie,
+) {
+	t.Helper()
+	client := &http.Client{Timeout: 5 * time.Second}
+	response := sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/agent/sessions", cookie, nil,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create agent session status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+	var session agent.Session
+	decodeJSON(t, response, &session)
+
+	response = sendJSONRequest(
+		t, client, http.MethodPost, baseURL+"/api/agent/sessions/"+session.ID+"/messages",
+		cookie, map[string]any{"message": "Plan the day"},
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("post agent message status = %d, want %d", response.StatusCode, http.StatusAccepted)
+	}
+	var posted agent.PostedMessage
+	decodeJSON(t, response, &posted)
+	if posted.Run.Status != agent.RunStatusQueued || posted.Message.Content != "Plan the day" {
+		t.Errorf("posted agent message = %#v", posted)
+	}
+
+	events := readAgentSSE(t, baseURL, cookie, session.ID, 0, 4)
+	wantTypes := []string{
+		agent.EventRunStarted, agent.EventMessageDelta, agent.EventHistoryMessage, agent.EventRunCompleted,
+	}
+	for index, want := range wantTypes {
+		if events[index].Type != want || events[index].Sequence != int64(index+1) {
+			t.Errorf("agent event %d = %#v, want %s", index, events[index], want)
+		}
+	}
+	replayed := readAgentSSE(t, baseURL, cookie, session.ID, events[2].StreamOffset, 1)
+	if replayed[0].StreamOffset != events[3].StreamOffset ||
+		replayed[0].Type != agent.EventRunCompleted {
+		t.Errorf("replayed event = %#v, want %#v", replayed[0], events[3])
+	}
+
+	response = sendJSONRequest(
+		t, client, http.MethodGet, baseURL+"/api/agent/sessions/"+session.ID, cookie, nil,
+	)
+	defer closeResponse(t, response)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("get agent session status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var conversation agent.Conversation
+	decodeJSON(t, response, &conversation)
+	if len(conversation.Messages) != 2 || conversation.Messages[1].Role != agent.RoleAssistant ||
+		conversation.Messages[1].Content != "Fake response to: Plan the day" {
+		t.Errorf("agent conversation = %#v", conversation)
+	}
+}
+
+func readAgentSSE(
+	t *testing.T,
+	baseURL string,
+	cookie *http.Cookie,
+	sessionID string,
+	after int64,
+	want int,
+) []agent.RunEvent {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, baseURL+"/api/agent/sessions/"+sessionID+"/events", http.NoBody,
+	)
+	if err != nil {
+		t.Fatalf("create agent SSE request: %v", err)
+	}
+	request.AddCookie(cookie)
+	if after > 0 {
+		request.Header.Set("Last-Event-ID", strconv.FormatInt(after, 10))
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("open agent SSE: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("agent SSE response = (%d, %q)", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+
+	events := make([]agent.RunEvent, 0, want)
+	scanner := bufio.NewScanner(response.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var event agent.RunEvent
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+			t.Fatalf("decode agent SSE event: %v", err)
+		}
+		events = append(events, event)
+		if len(events) == want {
+			cancel()
+			return events
+		}
+	}
+	if err := scanner.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("read agent SSE: %v", err)
+	}
+	t.Fatalf("agent SSE event count = %d, want %d", len(events), want)
+	return nil
 }
 
 func runBinaryCommand(

@@ -1,5 +1,6 @@
 import { AuthenticationRequiredError, getCurrentUser } from '$lib/auth/client';
 import { listProjects } from '$lib/projects/client';
+import { getSettings } from '$lib/settings/client';
 import { redirect } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
 
@@ -8,8 +9,8 @@ export const ssr = false;
 export const load = (async ({ fetch }) => {
 	try {
 		const user = await getCurrentUser(fetch);
-		const projects = await listProjects(fetch);
-		return { user, projects };
+		const [projects, settings] = await Promise.all([listProjects(fetch), getSettings(fetch)]);
+		return { user, projects, settings };
 	} catch (error) {
 		if (error instanceof AuthenticationRequiredError) {
 			redirect(303, '/login');

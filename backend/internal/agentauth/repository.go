@@ -84,3 +84,14 @@ func (r *Repository) Get(ctx context.Context, tokenHash []byte) (Claims, error) 
 		ExpiresAt:      stored.ExpiresAt,
 	}, nil
 }
+
+// RevokeRun deletes all token grants for one user-owned run.
+func (r *Repository) RevokeRun(ctx context.Context, userID, runID string) error {
+	if _, err := r.db.ExecContext(ctx, `
+		DELETE FROM agent_tokens
+		WHERE user_id = $1 AND agent_run_id = $2
+	`, userID, runID); err != nil {
+		return fmt.Errorf("delete agent run tokens: %w", err)
+	}
+	return nil
+}

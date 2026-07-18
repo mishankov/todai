@@ -2,15 +2,25 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
-	defaultDatabaseURL = "postgres://todai:todai@localhost:5432/todai?sslmode=disable"
-	defaultHTTPPort    = "8080"
-	defaultCookieName  = "todai_session"
+	defaultDatabaseURL   = "postgres://todai:todai@localhost:5432/todai?sslmode=disable"
+	defaultHTTPPort      = "8080"
+	defaultCookieName    = "todai_session"
+	defaultRunnerExec    = "node"
+	defaultRunnerEntry   = "../pi-runner/dist/cli/main.js"
+	defaultRunnerLine    = 1024 * 1024
+	defaultAgentRuntime  = "fake"
+	defaultAgentTokenTTL = 15 * time.Minute
 )
 
 // Config contains the process configuration required by the backend.
@@ -18,6 +28,19 @@ type Config struct {
 	DatabaseURL       string
 	HTTPPort          string
 	SessionCookieName string
+	RunnerExecutable  string
+	RunnerEntry       string
+	RunnerStartup     time.Duration
+	RunnerRunTimeout  time.Duration
+	RunnerAbort       time.Duration
+	RunnerMaximumLine int
+	AgentRuntime      string
+	InternalAPIURL    string
+	AgentTokenTTL     time.Duration
+	PiAgentDirectory  string
+	PiProvider        string
+	PiModel           string
+	PiModels          []string
 }
 
 // Load reads configuration from the process environment.
@@ -30,10 +53,65 @@ func load(getenv func(string) string) (Config, error) {
 		DatabaseURL:       valueOrDefault(getenv("TODAI_DATABASE_URL"), defaultDatabaseURL),
 		HTTPPort:          valueOrDefault(getenv("TODAI_HTTP_PORT"), defaultHTTPPort),
 		SessionCookieName: valueOrDefault(getenv("TODAI_SESSION_COOKIE_NAME"), defaultCookieName),
+		RunnerExecutable:  valueOrDefault(getenv("TODAI_RUNNER_EXECUTABLE"), defaultRunnerExec),
+		RunnerEntry:       valueOrDefault(getenv("TODAI_RUNNER_ENTRY"), defaultRunnerEntry),
+		AgentRuntime:      valueOrDefault(getenv("TODAI_AGENT_RUNTIME"), defaultAgentRuntime),
+		PiAgentDirectory:  strings.TrimSpace(getenv("TODAI_PI_AGENT_DIR")),
+		PiProvider:        strings.TrimSpace(getenv("TODAI_PI_PROVIDER")),
+		PiModel:           strings.TrimSpace(getenv("TODAI_PI_MODEL")),
+		PiModels:          commaSeparatedValues(getenv("TODAI_PI_MODELS")),
+	}
+	if len(cfg.PiModels) == 0 && cfg.PiModel != "" {
+		cfg.PiModels = []string{cfg.PiModel}
+	}
+	if cfg.PiModel != "" && !contains(cfg.PiModels, cfg.PiModel) {
+		return Config{}, errors.New("TODAI_PI_MODEL must be included in TODAI_PI_MODELS")
 	}
 
 	if _, err := net.LookupPort("tcp", cfg.HTTPPort); err != nil {
 		return Config{}, fmt.Errorf("invalid TODAI_HTTP_PORT %q: %w", cfg.HTTPPort, err)
+	}
+	var err error
+	if cfg.RunnerStartup, err = durationValue(
+		getenv("TODAI_RUNNER_STARTUP_TIMEOUT"), 5*time.Second,
+	); err != nil {
+		return Config{}, fmt.Errorf("invalid TODAI_RUNNER_STARTUP_TIMEOUT: %w", err)
+	}
+	if cfg.RunnerRunTimeout, err = durationValue(
+		getenv("TODAI_RUNNER_RUN_TIMEOUT"), 2*time.Minute,
+	); err != nil {
+		return Config{}, fmt.Errorf("invalid TODAI_RUNNER_RUN_TIMEOUT: %w", err)
+	}
+	if cfg.RunnerAbort, err = durationValue(
+		getenv("TODAI_RUNNER_ABORT_TIMEOUT"), 2*time.Second,
+	); err != nil {
+		return Config{}, fmt.Errorf("invalid TODAI_RUNNER_ABORT_TIMEOUT: %w", err)
+	}
+	if cfg.RunnerMaximumLine, err = positiveIntegerValue(
+		getenv("TODAI_RUNNER_MAX_LINE_BYTES"), defaultRunnerLine,
+	); err != nil {
+		return Config{}, fmt.Errorf("invalid TODAI_RUNNER_MAX_LINE_BYTES: %w", err)
+	}
+	if cfg.AgentTokenTTL, err = durationValue(
+		getenv("TODAI_AGENT_TOKEN_TTL"), defaultAgentTokenTTL,
+	); err != nil || cfg.AgentTokenTTL > 15*time.Minute {
+		return Config{}, errors.New("invalid TODAI_AGENT_TOKEN_TTL: must be between 1ns and 15m")
+	}
+	if cfg.AgentTokenTTL < cfg.RunnerRunTimeout {
+		return Config{}, errors.New("TODAI_AGENT_TOKEN_TTL must be at least TODAI_RUNNER_RUN_TIMEOUT")
+	}
+	if cfg.AgentRuntime != "fake" && cfg.AgentRuntime != "pi" {
+		return Config{}, errors.New("TODAI_AGENT_RUNTIME must be fake or pi")
+	}
+	cfg.InternalAPIURL = strings.TrimRight(valueOrDefault(
+		getenv("TODAI_INTERNAL_API_URL"), "http://127.0.0.1:"+cfg.HTTPPort,
+	), "/")
+	parsedInternalURL, parseErr := url.Parse(cfg.InternalAPIURL)
+	if parseErr != nil || (parsedInternalURL.Scheme != "http" && parsedInternalURL.Scheme != "https") || parsedInternalURL.Host == "" {
+		return Config{}, errors.New("invalid TODAI_INTERNAL_API_URL: must be an absolute HTTP(S) URL")
+	}
+	if parsedInternalURL.User != nil || parsedInternalURL.RawQuery != "" || parsedInternalURL.Fragment != "" {
+		return Config{}, errors.New("invalid TODAI_INTERNAL_API_URL: credentials, query, and fragment are not allowed")
 	}
 
 	return cfg, nil
@@ -45,4 +123,52 @@ func valueOrDefault(value, fallback string) string {
 	}
 
 	return value
+}
+
+func durationValue(value string, fallback time.Duration) (time.Duration, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		return 0, errors.New("must be a positive duration")
+	}
+	return parsed, nil
+}
+
+func positiveIntegerValue(value string, fallback int) (int, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, errors.New("must be a positive integer")
+	}
+	return parsed, nil
+}
+
+func commaSeparatedValues(value string) []string {
+	values := make([]string, 0)
+	seen := make(map[string]struct{})
+	for item := range strings.SplitSeq(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		values = append(values, item)
+	}
+	return values
+}
+
+func contains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }

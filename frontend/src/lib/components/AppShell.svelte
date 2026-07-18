@@ -141,7 +141,21 @@
 		</section>
 
 		<div class="session">
-			<button type="button" disabled={signingOut} onclick={() => void signOut()}>
+			<a
+				href={resolve('/settings')}
+				class:active={currentPath === '/settings'}
+				aria-current={currentPath === '/settings' ? 'page' : undefined}
+				onclick={closeSidebar}
+			>
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<circle cx="12" cy="12" r="3" />
+					<path
+						d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6-.7-2H8.5l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4z"
+					/>
+				</svg>
+				<span>Settings</span>
+			</a>
+			<button type="button" disabled={signingOut} onclick={signOut}>
 				<svg viewBox="0 0 24 24" aria-hidden="true">
 					<path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" />
 				</svg>
@@ -337,6 +351,7 @@
 		padding-top: 1.5rem;
 	}
 
+	.session a,
 	.session button {
 		display: flex;
 		align-items: center;
@@ -350,11 +365,19 @@
 		font-size: 0.8rem;
 		font-weight: 650;
 		cursor: pointer;
+		text-decoration: none;
 	}
 
+	.session a:hover,
 	.session button:hover:not(:disabled) {
 		color: #2d6540;
 		background: #e6ece4;
+	}
+
+	.session a.active {
+		color: #2d6540;
+		background: #dfeadf;
+		font-weight: 700;
 	}
 
 	.session button:disabled {

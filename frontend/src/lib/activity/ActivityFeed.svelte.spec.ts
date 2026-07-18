@@ -62,6 +62,7 @@ describe('ActivityFeed', () => {
 
 function testEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
 	return {
+		streamOffset: 1,
 		id: 'event-id',
 		type: 'task.created',
 		occurredAt: new Date().toISOString(),

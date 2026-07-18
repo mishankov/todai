@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
@@ -13,13 +15,18 @@ import (
 )
 
 const (
-	defaultListLimit = 50
-	maximumListLimit = 200
+	defaultListLimit    = 50
+	maximumListLimit    = 200
+	changePageSize      = 100
+	changePollInterval  = 250 * time.Millisecond
+	changeRequestMaxAge = 15 * time.Second
 )
 
 // HTTPService describes the activity operations exposed over HTTP.
 type HTTPService interface {
 	List(context.Context, string, int) ([]Event, error)
+	LatestOffset(context.Context, string) (int64, error)
+	ListAfter(context.Context, string, int64, int) ([]Event, error)
 }
 
 // HTTPModule owns the activity domain's routes and handlers.
@@ -36,6 +43,11 @@ type eventListResponse struct {
 	Events []Event `json:"events"`
 }
 
+type changeListResponse struct {
+	Cursor int64   `json:"cursor"`
+	Events []Event `json:"events"`
+}
+
 // NewHTTPModule constructs the activity HTTP module.
 func NewHTTPModule(authDomain *auth.Domain, service HTTPService) *HTTPModule {
 	return &HTTPModule{authDomain: authDomain, service: service}
@@ -47,7 +59,92 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	activityAPI := httpserver.NewHandlerGroup()
 	activityAPI.Use(m.authDomain.Middleware)
 	activityAPI.HandleFunc("GET /", handlers.list)
+	activityAPI.HandleFunc("GET /changes", handlers.changes)
 	api.Mount("/activity", activityAPI)
+}
+
+func (h activityHandlers) changes(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	rawCursor := strings.TrimSpace(r.URL.Query().Get("after"))
+	after, err := parseChangeCursor(rawCursor)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if rawCursor == "" {
+		after, err = h.service.LatestOffset(r.Context(), user.ID)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			writeActivityError(w, r, err)
+			return
+		}
+		writeActivityJSON(w, r, changeListResponse{Cursor: after, Events: []Event{}})
+		return
+	}
+
+	events, err := h.waitForChanges(r.Context(), user.ID, after)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		writeActivityError(w, r, err)
+		return
+	}
+	if len(events) > 0 {
+		after = events[len(events)-1].StreamOffset
+	}
+	writeActivityJSON(w, r, changeListResponse{Cursor: after, Events: events})
+}
+
+func (h activityHandlers) waitForChanges(
+	ctx context.Context,
+	userID string,
+	after int64,
+) ([]Event, error) {
+	poll := time.NewTicker(changePollInterval)
+	timeout := time.NewTimer(changeRequestMaxAge)
+	defer poll.Stop()
+	defer timeout.Stop()
+	for {
+		events, err := h.service.ListAfter(ctx, userID, after, changePageSize)
+		if err != nil || len(events) > 0 {
+			return events, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timeout.C:
+			return []Event{}, nil
+		case <-poll.C:
+		}
+	}
+}
+
+func parseChangeCursor(raw string) (int64, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	after, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || after < 0 {
+		return 0, ErrInvalidStreamCursor
+	}
+	return after, nil
+}
+
+func writeActivityJSON(w http.ResponseWriter, r *http.Request, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		log.ErrorContext(r.Context(), "encode activity response", "error", err)
+	}
 }
 
 func (h activityHandlers) list(w http.ResponseWriter, r *http.Request) {

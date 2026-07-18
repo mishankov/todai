@@ -6,17 +6,20 @@ import AppShell from './AppShell.svelte';
 
 describe('AppShell', () => {
 	it('shows the authenticated user and signs out', async () => {
-		const onLogout = vi.fn(async () => {});
-		render(AppShell, { username: 'owner', onLogout, currentPath: '/today' });
+		let loggedOut = false;
+		const onLogout = async () => {
+			loggedOut = true;
+		};
+		const view = render(AppShell, { username: 'owner', onLogout, currentPath: '/today' });
 
-		await expect.element(page.getByText('owner', { exact: true })).toHaveTextContent('owner');
+		await expect.element(view.getByText('owner', { exact: true })).toHaveTextContent('owner');
 		await expect
-			.element(page.getByRole('link', { name: 'Today' }))
+			.element(view.getByRole('link', { name: 'Today' }))
 			.toHaveAttribute('aria-current', 'page');
 
-		await page.getByRole('button', { name: 'Open navigation' }).click();
-		await page.getByRole('button', { name: 'Log out' }).click();
-		expect(onLogout).toHaveBeenCalledOnce();
+		await view.getByRole('button', { name: 'Open navigation' }).click();
+		await view.getByRole('button', { name: 'Log out' }).click();
+		await vi.waitFor(() => expect(loggedOut).toBe(true));
 	});
 
 	it('shows projects in the sidebar and marks the current project', async () => {
@@ -55,6 +58,18 @@ describe('AppShell', () => {
 
 		await expect
 			.element(page.getByRole('link', { name: 'Activity' }))
+			.toHaveAttribute('aria-current', 'page');
+	});
+
+	it('links to settings and marks it as the current section', async () => {
+		render(AppShell, {
+			username: 'owner',
+			onLogout: vi.fn(),
+			currentPath: '/settings'
+		});
+
+		await expect
+			.element(page.getByRole('link', { name: 'Settings' }))
 			.toHaveAttribute('aria-current', 'page');
 	});
 });

@@ -222,6 +222,8 @@ func (r *fakeRepository) Get(_ context.Context, tokenHash []byte) (agentauth.Cla
 	return cloneClaims(claims), nil
 }
 
+func (r *fakeRepository) RevokeRun(context.Context, string, string) error { return nil }
+
 func (r *fakeRepository) put(rawToken string, claims agentauth.Claims) {
 	hash := sha256.Sum256([]byte(rawToken))
 	r.byHash[hash] = cloneClaims(claims)

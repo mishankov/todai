@@ -1,0 +1,38 @@
+{
+  "name": "@todai/pi-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.13.1",
+  "scripts": {
+    "dev": "tsx src/cli/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/cli/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.5",
+    "tsx": "^4.23.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "typebox": "1.1.38"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "@google/genai",
+      "protobufjs"
+    ]
+  }
+}

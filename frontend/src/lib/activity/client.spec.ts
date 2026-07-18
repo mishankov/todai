@@ -30,6 +30,7 @@ describe('activity client', () => {
 
 function testEvent(): ActivityEvent {
 	return {
+		streamOffset: 1,
 		id: 'event-id',
 		type: 'task.created',
 		occurredAt: '2026-07-17T12:00:00Z',

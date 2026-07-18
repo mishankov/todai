@@ -13,12 +13,15 @@ import (
 	"github.com/platforma-dev/platforma/session"
 
 	"github.com/mishankov/todai/backend/internal/activity"
+	"github.com/mishankov/todai/backend/internal/agent"
 	"github.com/mishankov/todai/backend/internal/agentauth"
 	"github.com/mishankov/todai/backend/internal/config"
 	"github.com/mishankov/todai/backend/internal/httpapi"
+	"github.com/mishankov/todai/backend/internal/piruntime"
 	"github.com/mishankov/todai/backend/internal/project"
 	"github.com/mishankov/todai/backend/internal/task"
 	"github.com/mishankov/todai/backend/internal/tasktools"
+	"github.com/mishankov/todai/backend/internal/usersettings"
 )
 
 const databaseName = "main"
@@ -56,6 +59,28 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 	productApp.RegisterDomain("activity", databaseName, activityDomain)
 	agentAuthDomain := agentauth.New(db.Connection())
 	productApp.RegisterDomain("agent_auth", databaseName, agentAuthDomain)
+	settingsDomain := usersettings.New(
+		db.Connection(), activityDomain.Repository, cfg.PiModel, cfg.PiModels,
+	)
+	productApp.RegisterDomain("user_settings", databaseName, settingsDomain)
+	runnerRuntime := piruntime.New(piruntime.Config{
+		Executable:     cfg.RunnerExecutable,
+		Args:           []string{cfg.RunnerEntry},
+		StartupTimeout: cfg.RunnerStartup,
+		RunTimeout:     cfg.RunnerRunTimeout,
+		AbortTimeout:   cfg.RunnerAbort,
+		MaximumLine:    cfg.RunnerMaximumLine,
+	})
+	agentDomain := agent.New(
+		db.Connection(), activityDomain.Repository, runnerRuntime, agentAuthDomain.Service,
+		agent.ServiceConfig{
+			Runtime: cfg.AgentRuntime, InternalURL: cfg.InternalAPIURL,
+			TokenTTL: cfg.AgentTokenTTL, AllowedTools: agentTools(),
+			AgentDir: cfg.PiAgentDirectory, Provider: cfg.PiProvider, Model: cfg.PiModel,
+			Preferences: settingsDomain.Service,
+		},
+	)
+	productApp.RegisterDomain("agent", databaseName, agentDomain)
 	taskDomain := task.New(db.Connection(), activityDomain.Repository)
 	productApp.RegisterDomain("task", databaseName, taskDomain)
 	projectDomain := project.New(db.Connection(), activityDomain.Repository)
@@ -71,6 +96,8 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 			task.NewHTTPModule(authDomain, taskDomain.Service),
 			project.NewHTTPModule(authDomain, projectDomain.Service),
 			activity.NewHTTPModule(authDomain, activityDomain.Service),
+			agent.NewHTTPModule(authDomain, agentDomain.Service),
+			usersettings.NewHTTPModule(authDomain, settingsDomain.Service),
 		),
 	)
 	internalTools := httpserver.NewHandlerGroup()
@@ -79,8 +106,18 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 	).Mount(internalTools)
 	server.Mount("/internal/tools", internalTools)
 	productApp.RegisterService("http", server)
+	productApp.RegisterService("agent", agentDomain.Service)
 
 	return productApp, &Resources{
 		Database: db, Auth: authDomain, AgentTokens: agentAuthDomain.Service,
 	}, nil
+}
+
+func agentTools() []agentauth.Tool {
+	return []agentauth.Tool{
+		agentauth.ToolTaskGet, agentauth.ToolTaskSearch, agentauth.ToolProjectList,
+		agentauth.ToolViewQuery, agentauth.ToolTaskCreate, agentauth.ToolTaskUpdate,
+		agentauth.ToolTaskComplete, agentauth.ToolTaskReopen, agentauth.ToolTaskMove,
+		agentauth.ToolTaskReorder,
+	}
 }

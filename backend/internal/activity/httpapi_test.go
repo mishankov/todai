@@ -87,6 +87,69 @@ func TestActivityEndpointRejectsInvalidLimits(t *testing.T) {
 	}
 }
 
+func TestActivityChangesReturnEventsAfterCursor(t *testing.T) {
+	t.Parallel()
+
+	handler, service := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
+	service.events = []activity.Event{{StreamOffset: 8, ID: "event-id", Type: "task.created"}}
+	request := httptest.NewRequest(http.MethodGet, "/activity/changes?after=7", nil)
+	request.AddCookie(activityCookie())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if service.userID != "user-id" || service.after != 7 || service.limit != 100 {
+		t.Errorf("ListAfter() = user %q after %d limit %d", service.userID, service.after, service.limit)
+	}
+	var body struct {
+		Cursor int64            `json:"cursor"`
+		Events []activity.Event `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode changes: %v", err)
+	}
+	if body.Cursor != 8 || len(body.Events) != 1 || body.Events[0].ID != "event-id" {
+		t.Errorf("changes = %#v", body)
+	}
+}
+
+func TestActivityChangesStartAtLatestOffset(t *testing.T) {
+	t.Parallel()
+
+	handler, service := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
+	service.latestOffset = 42
+	request := httptest.NewRequest(http.MethodGet, "/activity/changes", nil)
+	request.AddCookie(activityCookie())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	var body struct {
+		Cursor int64            `json:"cursor"`
+		Events []activity.Event `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode initial changes: %v", err)
+	}
+	if body.Cursor != 42 || len(body.Events) != 0 {
+		t.Errorf("initial changes = %#v", body)
+	}
+}
+
+func TestActivityChangesRejectInvalidCursor(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
+	request := httptest.NewRequest(http.MethodGet, "/activity/changes?after=invalid", nil)
+	request.AddCookie(activityCookie())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
 func testActivityAPI(user *auth.User) (http.Handler, *fakeActivityService) {
 	repository := fakeActivityAuthRepository{user: user}
 	storage := &fakeActivitySessionStorage{sessions: make(map[string]string)}
@@ -109,9 +172,28 @@ func activityCookie() *http.Cookie {
 }
 
 type fakeActivityService struct {
-	userID string
-	limit  int
-	events []activity.Event
+	userID       string
+	limit        int
+	after        int64
+	latestOffset int64
+	events       []activity.Event
+}
+
+func (s *fakeActivityService) LatestOffset(_ context.Context, userID string) (int64, error) {
+	s.userID = userID
+	return s.latestOffset, nil
+}
+
+func (s *fakeActivityService) ListAfter(
+	_ context.Context,
+	userID string,
+	after int64,
+	limit int,
+) ([]activity.Event, error) {
+	s.userID = userID
+	s.after = after
+	s.limit = limit
+	return s.events, nil
 }
 
 func (s *fakeActivityService) List(_ context.Context, userID string, limit int) ([]activity.Event, error) {
