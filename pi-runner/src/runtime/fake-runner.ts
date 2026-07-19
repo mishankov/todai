@@ -87,6 +87,8 @@ export class FakeRunner {
     this.#write({
       ...runEnvelope(command, 1),
       type: "run.started",
+      model: command.pi.model ?? "fake",
+      thinkingEffort: command.pi.thinkingEffort ?? "off",
     });
 
     const activeRun: ActiveRun = {

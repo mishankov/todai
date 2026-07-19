@@ -37,19 +37,22 @@ type tokenIssuer interface {
 
 // PreferencesResolver supplies the effective user preferences for a new run.
 type PreferencesResolver interface {
-	ResolveAgent(context.Context, string) (timezone string, model string, err error)
+	ResolveAgent(context.Context, string) (
+		timezone string, model string, thinkingEffort string, err error,
+	)
 }
 
 // ServiceConfig controls the isolated runtime without exposing credentials globally.
 type ServiceConfig struct {
-	Runtime      string
-	InternalURL  string
-	TokenTTL     time.Duration
-	AllowedTools []agentauth.Tool
-	AgentDir     string
-	Provider     string
-	Model        string
-	Preferences  PreferencesResolver
+	Runtime        string
+	InternalURL    string
+	TokenTTL       time.Duration
+	AllowedTools   []agentauth.Tool
+	AgentDir       string
+	Provider       string
+	Model          string
+	ThinkingEffort string
+	Preferences    PreferencesResolver
 }
 
 // Conversation contains a session and its canonical messages and runs.
@@ -149,9 +152,10 @@ func (s *Service) PostMessage(
 	}
 	timezone := ""
 	model := s.config.Model
+	thinkingEffort := s.config.ThinkingEffort
 	if s.config.Preferences != nil {
 		var err error
-		timezone, model, err = s.config.Preferences.ResolveAgent(ctx, scope.UserID)
+		timezone, model, thinkingEffort, err = s.config.Preferences.ResolveAgent(ctx, scope.UserID)
 		if err != nil {
 			return PostedMessage{}, fmt.Errorf("resolve agent preferences: %w", err)
 		}
@@ -190,7 +194,9 @@ func (s *Service) PostMessage(
 	s.waitRuns.Add(1)
 	s.mu.Unlock()
 
-	go s.execute(runCtx, run, message.Content, history, issued.Token, timezone, model)
+	go s.execute(
+		runCtx, run, message.Content, history, issued.Token, timezone, model, thinkingEffort,
+	)
 	return PostedMessage{Message: message, Run: run}, nil
 }
 
@@ -243,6 +249,7 @@ func (s *Service) execute(
 	accessToken string,
 	timezone string,
 	model string,
+	thinkingEffort string,
 ) {
 	defer s.waitRuns.Done()
 	defer func() {
@@ -269,6 +276,7 @@ func (s *Service) execute(
 		Runtime: s.config.Runtime, InternalURL: s.config.InternalURL, AccessToken: accessToken,
 		AllowedTools: allowedTools, AgentDir: s.config.AgentDir,
 		Provider: s.config.Provider, Model: model, Timezone: timezone,
+		ThinkingEffort: thinkingEffort,
 	}, func(eventCtx context.Context, event RuntimeEvent) error {
 		if eventCtx == nil {
 			eventCtx = ctx

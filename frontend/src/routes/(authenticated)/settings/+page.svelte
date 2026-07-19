@@ -8,6 +8,7 @@
 	let current = $state(initial.settings);
 	let timezone = $state(initial.timezone);
 	let agentModel = $state(initial.agentModel);
+	let agentThinkingEffort = $state(initial.agentThinkingEffort);
 	let saving = $state(false);
 	let saved = $state(false);
 	let errorMessage = $state('');
@@ -21,6 +22,7 @@
 			current = next;
 			timezone = next.timezone ?? detectedTimezone();
 			agentModel = next.agentModel;
+			agentThinkingEffort = next.agentThinkingEffort;
 			saved = false;
 		});
 	});
@@ -30,7 +32,8 @@
 		return {
 			settings,
 			timezone: settings.timezone ?? detectedTimezone(),
-			agentModel: settings.agentModel
+			agentModel: settings.agentModel,
+			agentThinkingEffort: settings.agentThinkingEffort
 		};
 	}
 
@@ -42,11 +45,13 @@
 			const updated = await updateSettings(fetch, {
 				timezone,
 				agentModel,
+				agentThinkingEffort,
 				version: current.version
 			});
 			current = updated.settings;
 			timezone = updated.settings.timezone ?? timezone;
 			agentModel = updated.settings.agentModel;
+			agentThinkingEffort = updated.settings.agentThinkingEffort;
 			saved = true;
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Could not save settings.';
@@ -63,6 +68,20 @@
 		const intl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] };
 		const values = intl.supportedValuesOf?.('timeZone') ?? ['UTC'];
 		return values.includes(currentTimezone) ? values : [currentTimezone, ...values];
+	}
+
+	function thinkingEffortLabel(effort: string): string {
+		return (
+			{
+				off: 'Off',
+				minimal: 'Minimal',
+				low: 'Low',
+				medium: 'Medium',
+				high: 'High',
+				xhigh: 'Extra high',
+				max: 'Maximum'
+			}[effort] ?? effort
+		);
 	}
 </script>
 
@@ -101,22 +120,41 @@
 		<section class="settings-group" aria-labelledby="agent-settings">
 			<div>
 				<h2 id="agent-settings">Agent</h2>
-				<p>The selected model is used for new messages. Existing chat history is preserved.</p>
+				<p>
+					The model and reasoning depth are used for new messages. Pi limits effort to each model's
+					capabilities.
+				</p>
 			</div>
-			<label>
-				<span>Model</span>
-				<select bind:value={agentModel} disabled={data.settings.availableAgentModels.length === 0}>
-					{#each data.settings.availableAgentModels as model (model)}
-						<option value={model}>{model}</option>
-					{/each}
-				</select>
-			</label>
+			<div class="agent-controls">
+				<label>
+					<span>Model</span>
+					<select
+						bind:value={agentModel}
+						disabled={data.settings.availableAgentModels.length === 0}
+					>
+						{#each data.settings.availableAgentModels as model (model)}
+							<option value={model}>{model}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>Thinking effort</span>
+					<select
+						bind:value={agentThinkingEffort}
+						disabled={data.settings.availableAgentThinkingEfforts.length === 0}
+					>
+						{#each data.settings.availableAgentThinkingEfforts as effort (effort)}
+							<option value={effort}>{thinkingEffortLabel(effort)}</option>
+						{/each}
+					</select>
+				</label>
+			</div>
 		</section>
 
 		<footer>
 			{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 			{#if saved}<p class="success" role="status">Settings saved.</p>{/if}
-			<button type="submit" disabled={saving || !timezone || !agentModel}>
+			<button type="submit" disabled={saving || !timezone || !agentModel || !agentThinkingEffort}>
 				{saving ? 'Saving…' : 'Save changes'}
 			</button>
 		</footer>
@@ -186,6 +224,11 @@
 		gap: 0.5rem;
 		font-size: 0.78rem;
 		font-weight: 750;
+	}
+
+	.agent-controls {
+		display: grid;
+		gap: 0.9rem;
 	}
 
 	select {

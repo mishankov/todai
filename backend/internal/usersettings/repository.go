@@ -15,7 +15,8 @@ import (
 )
 
 const settingsColumns = `
-	user_id, timezone, agent_model, version, created_at, updated_at, last_modified_by
+	user_id, timezone, agent_model, agent_thinking_effort,
+	version, created_at, updated_at, last_modified_by
 `
 
 //go:embed migrations/*.sql
@@ -84,19 +85,21 @@ func (r *Repository) Update(ctx context.Context, scope execution.Scope, update U
 	if current.Version == 0 {
 		err = tx.GetContext(ctx, &updated, `
 			INSERT INTO user_settings (
-				user_id, timezone, agent_model, version, created_at, updated_at, last_modified_by
-			) VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $4)
+				user_id, timezone, agent_model, agent_thinking_effort,
+				version, created_at, updated_at, last_modified_by
+			) VALUES ($1, $2, $3, $4, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $5)
 			RETURNING `+settingsColumns,
-			scope.UserID, update.Timezone, update.AgentModel, scope.ModifiedBy(),
+			scope.UserID, update.Timezone, update.AgentModel, update.AgentThinkingEffort, scope.ModifiedBy(),
 		)
 	} else {
 		err = tx.GetContext(ctx, &updated, `
 			UPDATE user_settings
-			SET timezone = $3, agent_model = $4, version = version + 1,
-				updated_at = CURRENT_TIMESTAMP, last_modified_by = $5
+			SET timezone = $3, agent_model = $4, agent_thinking_effort = $5,
+				version = version + 1, updated_at = CURRENT_TIMESTAMP, last_modified_by = $6
 			WHERE user_id = $1 AND version = $2
 			RETURNING `+settingsColumns,
-			scope.UserID, update.Version, update.Timezone, update.AgentModel, scope.ModifiedBy(),
+			scope.UserID, update.Version, update.Timezone, update.AgentModel,
+			update.AgentThinkingEffort, scope.ModifiedBy(),
 		)
 	}
 	if err != nil {
@@ -108,8 +111,9 @@ func (r *Repository) Update(ctx context.Context, scope execution.Scope, update U
 	if _, err := r.events.Append(ctx, tx, scope, activity.NewEvent{
 		Type: "user_settings.updated", AggregateType: &aggregateType, AggregateID: &aggregateID,
 		Payload: map[string]any{
-			"schemaVersion": 1, "timezone": updated.Timezone,
-			"agentModel": updated.AgentModel, "version": updated.Version,
+			"schemaVersion": 2, "timezone": updated.Timezone,
+			"agentModel": updated.AgentModel, "agentThinkingEffort": updated.AgentThinkingEffort,
+			"version": updated.Version,
 		},
 	}); err != nil {
 		return Settings{}, fmt.Errorf("append user settings activity: %w", err)

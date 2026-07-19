@@ -59,10 +59,14 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 				settings: {
 					timezone: 'Europe/Moscow',
 					agentModel: 'gpt-5.4',
+					agentThinkingEffort: 'medium',
+					version: 1,
 					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString()
+					updatedAt: new Date().toISOString(),
+					lastModifiedBy: 'user-e2e'
 				},
-				availableAgentModels: ['gpt-5.4']
+				availableAgentModels: ['gpt-5.4'],
+				availableAgentThinkingEfforts: ['off', 'low', 'medium', 'high']
 			})
 		});
 	});

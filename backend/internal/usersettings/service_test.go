@@ -20,28 +20,33 @@ func TestServiceReturnsDefaultsAndResolvesSavedAgentPreferences(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 	if view.Settings.Version != 0 || view.Settings.Timezone != nil ||
-		view.Settings.AgentModel != "gpt-default" || len(view.AvailableAgentModels) != 2 {
+		view.Settings.AgentModel != "gpt-default" ||
+		view.Settings.AgentThinkingEffort != usersettings.DefaultAgentThinkingEffort ||
+		len(view.AvailableAgentModels) != 2 || len(view.AvailableAgentThinkingEfforts) != 7 {
 		t.Errorf("default view = %#v", view)
 	}
 
 	updated, err := service.Update(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		usersettings.Update{Timezone: "Europe/Moscow", AgentModel: "gpt-fast", Version: 0},
+		usersettings.Update{
+			Timezone: "Europe/Moscow", AgentModel: "gpt-fast", AgentThinkingEffort: "high", Version: 0,
+		},
 	)
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
 	if updated.Settings.Version != 1 || updated.Settings.Timezone == nil ||
-		*updated.Settings.Timezone != "Europe/Moscow" || updated.Settings.AgentModel != "gpt-fast" {
+		*updated.Settings.Timezone != "Europe/Moscow" || updated.Settings.AgentModel != "gpt-fast" ||
+		updated.Settings.AgentThinkingEffort != "high" {
 		t.Errorf("updated view = %#v", updated)
 	}
 
-	timezone, model, err := service.ResolveAgent(context.Background(), "user-id")
+	timezone, model, thinkingEffort, err := service.ResolveAgent(context.Background(), "user-id")
 	if err != nil {
 		t.Fatalf("ResolveAgent() error = %v", err)
 	}
-	if timezone != "Europe/Moscow" || model != "gpt-fast" {
-		t.Errorf("agent preferences = (%q, %q)", timezone, model)
+	if timezone != "Europe/Moscow" || model != "gpt-fast" || thinkingEffort != "high" {
+		t.Errorf("agent preferences = (%q, %q, %q)", timezone, model, thinkingEffort)
 	}
 }
 
@@ -57,6 +62,7 @@ func TestServiceRejectsInvalidSettings(t *testing.T) {
 		{name: "timezone required", update: usersettings.Update{AgentModel: "gpt-default"}, want: usersettings.ErrInvalidTimezone},
 		{name: "timezone unknown", update: usersettings.Update{Timezone: "Mars/Olympus", AgentModel: "gpt-default"}, want: usersettings.ErrInvalidTimezone},
 		{name: "model unavailable", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-other"}, want: usersettings.ErrInvalidAgentModel},
+		{name: "thinking effort unavailable", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-default", AgentThinkingEffort: "extreme"}, want: usersettings.ErrInvalidAgentThinkingEffort},
 		{name: "negative version", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-default", Version: -1}, want: usersettings.ErrInvalidVersion},
 	}
 	for _, test := range tests {
@@ -89,7 +95,8 @@ func (r *fakeSettingsRepository) Update(
 	timezone := update.Timezone
 	r.settings = usersettings.Settings{
 		UserID: scope.UserID, Timezone: &timezone, AgentModel: update.AgentModel,
-		Version: update.Version + 1, LastModifiedBy: scope.ModifiedBy(),
+		AgentThinkingEffort: update.AgentThinkingEffort,
+		Version:             update.Version + 1, LastModifiedBy: scope.ModifiedBy(),
 	}
 	r.found = true
 	return r.settings, nil

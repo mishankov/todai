@@ -279,12 +279,34 @@ function optionalPiConfig(
   const provider = optionalString(pi, "provider");
   const model = optionalString(pi, "model");
   const timezone = optionalString(pi, "timezone");
+  const thinkingEffort = optionalThinkingEffort(pi, requestId);
   return {
     ...(agentDir === undefined ? {} : { agentDir }),
     ...(provider === undefined ? {} : { provider }),
     ...(model === undefined ? {} : { model }),
     ...(timezone === undefined ? {} : { timezone }),
+    ...(thinkingEffort === undefined ? {} : { thinkingEffort }),
   };
+}
+
+function optionalThinkingEffort(
+  pi: Record<string, unknown>,
+  requestId?: string,
+): RunStartCommand["pi"]["thinkingEffort"] {
+  const effort = optionalString(pi, "thinkingEffort");
+  if (effort === undefined) return undefined;
+  if (
+    !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+      effort,
+    )
+  ) {
+    throw new ProtocolError(
+      "invalid_command",
+      "pi.thinkingEffort is invalid",
+      requestId,
+    );
+  }
+  return effort as RunStartCommand["pi"]["thinkingEffort"];
 }
 
 export function encodeMessage(message: RunnerOutput): string {

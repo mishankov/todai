@@ -24,6 +24,10 @@ const definitions = {
     "List projects",
     Type.Object({ includeArchived: Type.Optional(Type.Boolean()) }),
   ],
+  project_get: [
+    "Get a project and its ordered sections, including empty sections",
+    Type.Object({ projectId: Type.String() }),
+  ],
   view_query: [
     "List tasks from inbox, all, project, or today view",
     Type.Object({

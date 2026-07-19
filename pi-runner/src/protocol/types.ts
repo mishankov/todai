@@ -1,5 +1,8 @@
 export const RUNNER_PROTOCOL = "todai.runner" as const;
-export const RUNNER_PROTOCOL_VERSION = 2 as const;
+export const RUNNER_PROTOCOL_VERSION = 3 as const;
+
+export type ThinkingEffort =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface HistoryTextContent {
   type: "text";
@@ -60,6 +63,7 @@ export interface RunStartCommand extends RunnerEnvelope {
     provider?: string;
     model?: string;
     timezone?: string;
+    thinkingEffort?: ThinkingEffort;
   };
 }
 
@@ -88,6 +92,8 @@ interface RunEvent extends RunnerEnvelope {
 
 export interface RunStartedEvent extends RunEvent {
   type: "run.started";
+  model: string;
+  thinkingEffort: ThinkingEffort;
 }
 
 export interface AssistantDeltaEvent extends RunEvent {

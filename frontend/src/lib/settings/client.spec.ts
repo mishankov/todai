@@ -17,6 +17,7 @@ describe('settings client', () => {
 			updateSettings(fetcher, {
 				timezone: 'Europe/Moscow',
 				agentModel: 'gpt-fast',
+				agentThinkingEffort: 'high',
 				version: 1
 			})
 		).resolves.toEqual(view);
@@ -27,6 +28,7 @@ describe('settings client', () => {
 				body: JSON.stringify({
 					timezone: 'Europe/Moscow',
 					agentModel: 'gpt-fast',
+					agentThinkingEffort: 'high',
 					version: 1
 				})
 			})
@@ -38,7 +40,12 @@ describe('settings client', () => {
 			async () => new Response(null, { status: 409 })
 		) as unknown as typeof fetch;
 		await expect(
-			updateSettings(fetcher, { timezone: 'UTC', agentModel: 'gpt-fast', version: 1 })
+			updateSettings(fetcher, {
+				timezone: 'UTC',
+				agentModel: 'gpt-fast',
+				agentThinkingEffort: 'medium',
+				version: 1
+			})
 		).rejects.toBeInstanceOf(SettingsConflictError);
 	});
 });
@@ -48,11 +55,13 @@ function testSettingsView(): SettingsView {
 		settings: {
 			timezone: 'Europe/Moscow',
 			agentModel: 'gpt-fast',
+			agentThinkingEffort: 'high',
 			version: 1,
 			createdAt: '2026-07-18T10:00:00Z',
 			updatedAt: '2026-07-18T10:00:00Z',
 			lastModifiedBy: 'user-id'
 		},
-		availableAgentModels: ['gpt-default', 'gpt-fast']
+		availableAgentModels: ['gpt-default', 'gpt-fast'],
+		availableAgentThinkingEfforts: ['off', 'low', 'medium', 'high']
 	};
 }

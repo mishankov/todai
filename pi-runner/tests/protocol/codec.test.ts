@@ -50,7 +50,7 @@ describe("protocol codec", () => {
           token: "token",
           allowedTools: ["task_get"],
         },
-        pi: { timezone: "Europe/Moscow" },
+        pi: { timezone: "Europe/Moscow", thinkingEffort: "high" },
       }),
     );
 
@@ -91,8 +91,32 @@ describe("protocol codec", () => {
         token: "token",
         allowedTools: ["task_get"],
       },
-      pi: { timezone: "Europe/Moscow" },
+      pi: { timezone: "Europe/Moscow", thinkingEffort: "high" },
     });
+  });
+
+  it("rejects an unknown thinking effort", () => {
+    expect(() =>
+      decodeCommand(
+        JSON.stringify({
+          protocol: RUNNER_PROTOCOL,
+          version: RUNNER_PROTOCOL_VERSION,
+          type: "run.start",
+          requestId: "request-1",
+          sessionId: "session-1",
+          runId: "run-1",
+          message: "Plan my day",
+          history: [],
+          runtimeName: "pi",
+          toolAccess: {
+            baseUrl: "http://127.0.0.1:8080",
+            token: "token",
+            allowedTools: [],
+          },
+          pi: { thinkingEffort: "extreme" },
+        }),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "invalid_command" }));
   });
 
   it.each([

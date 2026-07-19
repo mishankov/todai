@@ -77,7 +77,8 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 			Runtime: cfg.AgentRuntime, InternalURL: cfg.InternalAPIURL,
 			TokenTTL: cfg.AgentTokenTTL, AllowedTools: agentTools(),
 			AgentDir: cfg.PiAgentDirectory, Provider: cfg.PiProvider, Model: cfg.PiModel,
-			Preferences: settingsDomain.Service,
+			ThinkingEffort: usersettings.DefaultAgentThinkingEffort,
+			Preferences:    settingsDomain.Service,
 		},
 	)
 	productApp.RegisterDomain("agent", databaseName, agentDomain)
@@ -115,7 +116,8 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 
 func agentTools() []agentauth.Tool {
 	return []agentauth.Tool{
-		agentauth.ToolTaskGet, agentauth.ToolTaskSearch, agentauth.ToolProjectList,
+		agentauth.ToolTaskGet, agentauth.ToolTaskSearch, agentauth.ToolProjectGet,
+		agentauth.ToolProjectList,
 		agentauth.ToolViewQuery, agentauth.ToolTaskCreate, agentauth.ToolTaskUpdate,
 		agentauth.ToolTaskComplete, agentauth.ToolTaskReopen, agentauth.ToolTaskMove,
 		agentauth.ToolTaskReorder,

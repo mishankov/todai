@@ -12,6 +12,7 @@ type Tool string
 const (
 	ToolTaskGet      Tool = "task_get"
 	ToolTaskSearch   Tool = "task_search"
+	ToolProjectGet   Tool = "project_get"
 	ToolProjectList  Tool = "project_list"
 	ToolViewQuery    Tool = "view_query"
 	ToolTaskCreate   Tool = "task_create"

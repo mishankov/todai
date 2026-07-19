@@ -1,6 +1,7 @@
 export interface UserSettings {
 	timezone: string | null;
 	agentModel: string;
+	agentThinkingEffort: AgentThinkingEffort;
 	version: number;
 	createdAt: string | null;
 	updatedAt: string | null;
@@ -10,11 +11,15 @@ export interface UserSettings {
 export interface SettingsView {
 	settings: UserSettings;
 	availableAgentModels: string[];
+	availableAgentThinkingEfforts: AgentThinkingEffort[];
 }
+
+export type AgentThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface SettingsUpdate {
 	timezone: string;
 	agentModel: string;
+	agentThinkingEffort: AgentThinkingEffort;
 	version: number;
 }
 

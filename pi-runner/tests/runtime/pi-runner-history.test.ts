@@ -11,6 +11,7 @@ const harness = vi.hoisted(() => ({
   restoredMessages: [] as unknown[],
   listener: undefined as ((event: unknown) => void) | undefined,
   systemPrompt: "",
+  thinkingLevel: "",
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
@@ -32,7 +33,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     }),
   },
   SessionManager: { inMemory: () => ({}) },
-  createAgentSession: async () => {
+  createAgentSession: async (options: { thinkingLevel?: string }) => {
+    harness.thinkingLevel = options.thinkingLevel ?? "";
     const state = {
       messages: [] as unknown[],
       model: {
@@ -44,6 +46,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     return {
       session: {
         agent: { state },
+        thinkingLevel: options.thinkingLevel ?? "off",
         subscribe: (listener: (event: unknown) => void) => {
           harness.listener = listener;
           return () => undefined;
@@ -68,6 +71,7 @@ describe("Pi runner history", () => {
     harness.restoredMessages = [];
     harness.listener = undefined;
     harness.systemPrompt = "";
+    harness.thinkingLevel = "";
   });
 
   it("restores messages and emits persistable tool arguments and results", async () => {
@@ -97,6 +101,7 @@ describe("Pi runner history", () => {
           provider: "openai",
           model: "test-model",
           timezone: "Europe/Moscow",
+          thinkingEffort: "high",
         },
       });
     });
@@ -104,6 +109,16 @@ describe("Pi runner history", () => {
 
     expect(output.find((event) => event.type === "run.failed")).toBeUndefined();
     expect(harness.systemPrompt).toContain("Europe/Moscow");
+    expect(harness.thinkingLevel).toBe("high");
+    expect(output).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "run.started",
+          model: "test-model",
+          thinkingEffort: "high",
+        }),
+      ]),
+    );
 
     expect(harness.restoredMessages).toMatchObject([
       { role: "user", content: "Create a task" },

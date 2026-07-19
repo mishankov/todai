@@ -41,7 +41,9 @@ type TaskService interface {
 
 // ProjectService describes project reads exposed to internal tools.
 type ProjectService interface {
+	Get(context.Context, string, string) (project.Project, error)
 	List(context.Context, string, bool) ([]project.Project, error)
+	ListSections(context.Context, string, string) ([]project.Section, error)
 }
 
 // HTTPModule owns the internal task-tool routes.
@@ -71,6 +73,10 @@ type viewQueryRequest struct {
 
 type projectListRequest struct {
 	IncludeArchived bool `json:"includeArchived"`
+}
+
+type projectGetRequest struct {
+	ProjectID string `json:"projectId"`
 }
 
 type taskSearchRequest struct {
@@ -150,6 +156,11 @@ type projectListResponse struct {
 	Projects []project.Project `json:"projects"`
 }
 
+type projectGetResponse struct {
+	Project  project.Project   `json:"project"`
+	Sections []project.Section `json:"sections"`
+}
+
 // NewHTTPModule constructs the closed task-tool HTTP module.
 func NewHTTPModule(authorizer Authorizer, tasks TaskService, projects ProjectService) *HTTPModule {
 	return &HTTPModule{authorizer: authorizer, tasks: tasks, projects: projects}
@@ -159,6 +170,7 @@ func NewHTTPModule(authorizer Authorizer, tasks TaskService, projects ProjectSer
 func (m *HTTPModule) Mount(group *httpserver.HandlerGroup) {
 	group.HandleFunc("POST /task_get", m.authorize(agentauth.ToolTaskGet, m.taskGet))
 	group.HandleFunc("POST /view_query", m.authorize(agentauth.ToolViewQuery, m.viewQuery))
+	group.HandleFunc("POST /project_get", m.authorize(agentauth.ToolProjectGet, m.projectGet))
 	group.HandleFunc("POST /project_list", m.authorize(agentauth.ToolProjectList, m.projectList))
 	group.HandleFunc("POST /task_search", m.authorize(agentauth.ToolTaskSearch, m.taskSearch))
 	group.HandleFunc("POST /task_create", m.authorize(agentauth.ToolTaskCreate, m.taskCreate))
@@ -260,6 +272,25 @@ func (m *HTTPModule) projectList(w http.ResponseWriter, r *http.Request, claims 
 		return
 	}
 	writeJSON(w, r, http.StatusOK, projectListResponse{Projects: projects})
+}
+
+func (m *HTTPModule) projectGet(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {
+	var request projectGetRequest
+	if !decodeRequest(w, r, &request) || !requireProjectID(w, request.ProjectID) {
+		return
+	}
+
+	found, err := m.projects.Get(r.Context(), claims.UserID, request.ProjectID)
+	if err != nil {
+		writeToolError(w, r, "project_get", err)
+		return
+	}
+	sections, err := m.projects.ListSections(r.Context(), claims.UserID, request.ProjectID)
+	if err != nil {
+		writeToolError(w, r, "project_get", err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, projectGetResponse{Project: found, Sections: sections})
 }
 
 func (m *HTTPModule) taskSearch(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {
@@ -463,6 +494,14 @@ func requireTaskID(w http.ResponseWriter, taskID string) bool {
 		return true
 	}
 	http.Error(w, "taskId is required", http.StatusBadRequest)
+	return false
+}
+
+func requireProjectID(w http.ResponseWriter, projectID string) bool {
+	if strings.TrimSpace(projectID) != "" {
+		return true
+	}
+	http.Error(w, "projectId is required", http.StatusBadRequest)
 	return false
 }
 

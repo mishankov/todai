@@ -102,6 +102,9 @@ export class PiRunner {
       const { session } = await createAgentSession({
         agentDir,
         ...(model ? { model } : {}),
+        ...(command.pi.thinkingEffort
+          ? { thinkingLevel: command.pi.thinkingEffort }
+          : {}),
         modelRuntime,
         resourceLoader: loader,
         sessionManager: SessionManager.inMemory(),
@@ -122,7 +125,12 @@ export class PiRunner {
         const active = this.#active;
         if (active?.command.runId !== command.runId) return;
         if (event.type === "agent_start")
-          this.#write({ ...envelope(active), type: "run.started" });
+          this.#write({
+            ...envelope(active),
+            type: "run.started",
+            model: session.agent.state.model.id,
+            thinkingEffort: session.thinkingLevel,
+          });
         if (
           event.type === "message_update" &&
           event.assistantMessageEvent.type === "text_delta"

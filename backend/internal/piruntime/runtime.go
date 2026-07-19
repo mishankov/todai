@@ -114,6 +114,7 @@ func (r *Runtime) Run(
 		Pi: &piConfig{
 			AgentDir: request.AgentDir, Provider: request.Provider,
 			Model: request.Model, Timezone: request.Timezone,
+			ThinkingEffort: request.ThinkingEffort,
 		},
 	}
 	if err := writeEnvelope(stdin, start); err != nil {
@@ -123,6 +124,7 @@ func (r *Runtime) Run(
 
 	runtimePayload := map[string]any{
 		"runtime": ready.Runtime.Name, "runtimeVersion": ready.Runtime.Version,
+		"model": request.Model, "thinkingEffort": request.ThinkingEffort,
 	}
 	expectedSequence := int64(1)
 	terminal := false
@@ -265,6 +267,12 @@ func adaptEvent(
 		productType = "agent.run.started"
 		for key, item := range runtimePayload {
 			payload[key] = item
+		}
+		if strings.TrimSpace(value.Model) != "" {
+			payload["model"] = value.Model
+		}
+		if strings.TrimSpace(value.ThinkingEffort) != "" {
+			payload["thinkingEffort"] = value.ThinkingEffort
 		}
 	case "assistant.delta":
 		if strings.TrimSpace(value.MessageID) == "" {

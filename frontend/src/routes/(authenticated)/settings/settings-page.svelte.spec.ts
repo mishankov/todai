@@ -6,7 +6,7 @@ import SettingsPage from './+page.svelte';
 describe('Settings page', () => {
 	afterEach(() => vi.unstubAllGlobals());
 
-	it('saves the selected timezone and agent model', async () => {
+	it('saves the selected timezone, agent model and thinking effort', async () => {
 		const fetcher = vi.fn(
 			async () =>
 				new Response(
@@ -14,12 +14,14 @@ describe('Settings page', () => {
 						settings: {
 							timezone: 'Europe/London',
 							agentModel: 'gpt-fast',
+							agentThinkingEffort: 'high',
 							version: 2,
 							createdAt: '2026-07-18T10:00:00Z',
 							updatedAt: '2026-07-18T10:01:00Z',
 							lastModifiedBy: 'user-id'
 						},
-						availableAgentModels: ['gpt-default', 'gpt-fast']
+						availableAgentModels: ['gpt-default', 'gpt-fast'],
+						availableAgentThinkingEfforts: ['off', 'low', 'medium', 'high']
 					}),
 					{ status: 200, headers: { 'Content-Type': 'application/json' } }
 				)
@@ -31,18 +33,21 @@ describe('Settings page', () => {
 					settings: {
 						timezone: 'UTC',
 						agentModel: 'gpt-default',
+						agentThinkingEffort: 'medium',
 						version: 1,
 						createdAt: null,
 						updatedAt: null,
 						lastModifiedBy: ''
 					},
-					availableAgentModels: ['gpt-default', 'gpt-fast']
+					availableAgentModels: ['gpt-default', 'gpt-fast'],
+					availableAgentThinkingEfforts: ['off', 'low', 'medium', 'high']
 				}
 			}
 		} as never);
 
 		await page.getByLabelText('Time zone').selectOptions('Europe/London');
 		await page.getByLabelText('Model').selectOptions('gpt-fast');
+		await page.getByLabelText('Thinking effort').selectOptions('high');
 		await page.getByRole('button', { name: 'Save changes' }).click();
 
 		expect(fetcher).toHaveBeenCalledWith(
@@ -51,6 +56,7 @@ describe('Settings page', () => {
 				body: JSON.stringify({
 					timezone: 'Europe/London',
 					agentModel: 'gpt-fast',
+					agentThinkingEffort: 'high',
 					version: 1
 				})
 			})

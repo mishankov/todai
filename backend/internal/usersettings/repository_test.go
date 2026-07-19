@@ -21,7 +21,7 @@ func TestRepositoryPersistsVersionedSettingsAndActivity(t *testing.T) {
 	scope := execution.UserScope("user-id", "correlation-id")
 
 	created, err := repository.Update(ctx, scope, usersettings.Update{
-		Timezone: "Europe/Moscow", AgentModel: "gpt-fast", Version: 0,
+		Timezone: "Europe/Moscow", AgentModel: "gpt-fast", AgentThinkingEffort: "high", Version: 0,
 	})
 	if err != nil {
 		t.Fatalf("create settings: %v", err)
@@ -30,17 +30,18 @@ func TestRepositoryPersistsVersionedSettingsAndActivity(t *testing.T) {
 		t.Errorf("created settings = %#v", created)
 	}
 	if _, err := repository.Update(ctx, scope, usersettings.Update{
-		Timezone: "UTC", AgentModel: "gpt-default", Version: 0,
+		Timezone: "UTC", AgentModel: "gpt-default", AgentThinkingEffort: "low", Version: 0,
 	}); !errors.Is(err, usersettings.ErrVersionConflict) {
 		t.Fatalf("stale update error = %v, want version conflict", err)
 	}
 	updated, err := repository.Update(ctx, scope, usersettings.Update{
-		Timezone: "UTC", AgentModel: "gpt-default", Version: created.Version,
+		Timezone: "UTC", AgentModel: "gpt-default", AgentThinkingEffort: "low", Version: created.Version,
 	})
 	if err != nil {
 		t.Fatalf("update settings: %v", err)
 	}
-	if updated.Version != 2 || updated.Timezone == nil || *updated.Timezone != "UTC" {
+	if updated.Version != 2 || updated.Timezone == nil || *updated.Timezone != "UTC" ||
+		updated.AgentThinkingEffort != "low" {
 		t.Errorf("updated settings = %#v", updated)
 	}
 

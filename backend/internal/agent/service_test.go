@@ -78,8 +78,8 @@ func TestPostMessageScopesToolAccessToTheDurableRun(t *testing.T) {
 		Runtime: "pi", InternalURL: "http://127.0.0.1:8080", TokenTTL: 5 * time.Minute,
 		AllowedTools: []agentauth.Tool{agentauth.ToolTaskGet, agentauth.ToolTaskUpdate},
 		AgentDir:     "/tmp/pi", Provider: "openai-codex", Model: "model-id",
-		Preferences: preferencesResolverFunc(func(context.Context, string) (string, string, error) {
-			return "Europe/Moscow", "selected-model", nil
+		Preferences: preferencesResolverFunc(func(context.Context, string) (string, string, string, error) {
+			return "Europe/Moscow", "selected-model", "high", nil
 		}),
 	})
 
@@ -103,7 +103,8 @@ func TestPostMessageScopesToolAccessToTheDurableRun(t *testing.T) {
 	}
 	if request.AccessToken != "scoped-token" || request.InternalURL != "http://127.0.0.1:8080" ||
 		request.Runtime != "pi" || len(request.AllowedTools) != 2 ||
-		request.Timezone != "Europe/Moscow" || request.Model != "selected-model" {
+		request.Timezone != "Europe/Moscow" || request.Model != "selected-model" ||
+		request.ThinkingEffort != "high" {
 		t.Errorf("runtime request = %#v", request)
 	}
 	if issuer.revokedUser != "user-id" || issuer.revokedRun != "run-id" {
@@ -188,12 +189,12 @@ func (f runtimeFunc) Run(
 
 type tokenIssuerFunc func(context.Context, agentauth.IssueRequest) (agentauth.IssuedToken, error)
 
-type preferencesResolverFunc func(context.Context, string) (string, string, error)
+type preferencesResolverFunc func(context.Context, string) (string, string, string, error)
 
 func (f preferencesResolverFunc) ResolveAgent(
 	ctx context.Context,
 	userID string,
-) (string, string, error) {
+) (string, string, string, error) {
 	return f(ctx, userID)
 }
 

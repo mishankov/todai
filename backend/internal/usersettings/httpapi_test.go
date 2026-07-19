@@ -24,7 +24,8 @@ func TestSettingsHTTPUpdatesAuthenticatedUserPreferences(t *testing.T) {
 	service := &recordingSettingsHTTPService{scopes: make(chan execution.Scope, 1)}
 	handler := settingsTestAPI(&auth.User{ID: "user-id", Username: "owner"}, service)
 	request := settingsJSONRequest(t, http.MethodPatch, "/settings", map[string]any{
-		"timezone": "Europe/Moscow", "agentModel": "gpt-fast", "version": 0,
+		"timezone": "Europe/Moscow", "agentModel": "gpt-fast",
+		"agentThinkingEffort": "high", "version": 0,
 	})
 	request.AddCookie(&http.Cookie{Name: "todai_session", Value: "session-id"})
 	response := httptest.NewRecorder()
@@ -39,7 +40,8 @@ func TestSettingsHTTPUpdatesAuthenticatedUserPreferences(t *testing.T) {
 		scope.ActorType != execution.ActorUser || scope.Source != execution.SourceWeb {
 		t.Errorf("execution scope = %#v, error = %v", scope, err)
 	}
-	if service.update.Timezone != "Europe/Moscow" || service.update.AgentModel != "gpt-fast" {
+	if service.update.Timezone != "Europe/Moscow" || service.update.AgentModel != "gpt-fast" ||
+		service.update.AgentThinkingEffort != "high" {
 		t.Errorf("update = %#v", service.update)
 	}
 }
@@ -103,7 +105,8 @@ func (s *recordingSettingsHTTPService) Update(
 	}
 	timezone := update.Timezone
 	return usersettings.View{Settings: usersettings.Settings{
-		Timezone: &timezone, AgentModel: update.AgentModel, Version: update.Version + 1,
+		Timezone: &timezone, AgentModel: update.AgentModel,
+		AgentThinkingEffort: update.AgentThinkingEffort, Version: update.Version + 1,
 	}}, nil
 }
 

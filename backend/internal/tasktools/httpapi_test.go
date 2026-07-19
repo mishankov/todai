@@ -72,6 +72,7 @@ func TestEveryRouteRequiresItsExplicitTool(t *testing.T) {
 	}{
 		{path: "/task_get", body: map[string]any{"taskId": "task-id"}, wantTool: agentauth.ToolTaskGet, wantStatus: http.StatusOK},
 		{path: "/view_query", body: map[string]any{"view": "all"}, wantTool: agentauth.ToolViewQuery, wantStatus: http.StatusOK},
+		{path: "/project_get", body: map[string]any{"projectId": "project-id"}, wantTool: agentauth.ToolProjectGet, wantStatus: http.StatusOK},
 		{path: "/project_list", body: map[string]any{}, wantTool: agentauth.ToolProjectList, wantStatus: http.StatusOK},
 		{path: "/task_search", body: map[string]any{"query": "milk"}, wantTool: agentauth.ToolTaskSearch, wantStatus: http.StatusOK},
 		{path: "/task_create", body: map[string]any{"title": "Buy milk"}, wantTool: agentauth.ToolTaskCreate, wantStatus: http.StatusCreated},
@@ -188,12 +189,48 @@ func TestReadsAreScopedToTokenUser(t *testing.T) {
 	if projectResponse.Code != http.StatusOK {
 		t.Fatalf("project_list status = %d, want %d", projectResponse.Code, http.StatusOK)
 	}
+	projectGetResponse := serveJSON(
+		t, handler, "/project_get", map[string]any{"projectId": "project-id"}, "Bearer raw-token",
+	)
+	if projectGetResponse.Code != http.StatusOK {
+		t.Fatalf("project_get status = %d, want %d", projectGetResponse.Code, http.StatusOK)
+	}
 
 	if tasks.readUserID != "user-id" {
 		t.Errorf("task read user ID = %q, want %q", tasks.readUserID, "user-id")
 	}
-	if projects.userID != "user-id" {
-		t.Errorf("project read user ID = %q, want %q", projects.userID, "user-id")
+	if projects.userID != "user-id" || projects.getProjectID != "project-id" ||
+		projects.sectionsProjectID != "project-id" {
+		t.Errorf("project read scope = %#v", projects)
+	}
+}
+
+func TestProjectGetReturnsProjectAndOrderedSections(t *testing.T) {
+	projects := &fakeProjectService{
+		project: project.Project{ID: "project-id", Name: "Work", Layout: project.LayoutBoard},
+		sections: []project.Section{
+			{ID: "section-1", ProjectID: "project-id", Name: "Next", Position: 1},
+			{ID: "section-2", ProjectID: "project-id", Name: "Empty", Position: 2},
+		},
+	}
+	response := serveJSON(
+		t, testAPI(&fakeAuthorizer{claims: testClaims()}, &fakeTaskService{}, projects),
+		"/project_get", map[string]any{"projectId": "project-id"}, "Bearer raw-token",
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusOK, response.Body.String())
+	}
+
+	var payload struct {
+		Project  project.Project   `json:"project"`
+		Sections []project.Section `json:"sections"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Project.ID != "project-id" || len(payload.Sections) != 2 ||
+		payload.Sections[0].Name != "Next" || payload.Sections[1].Name != "Empty" {
+		t.Errorf("project payload = %#v", payload)
 	}
 }
 
@@ -431,12 +468,40 @@ func (s *fakeTaskService) Reorder(
 }
 
 type fakeProjectService struct {
-	userID string
+	userID            string
+	getProjectID      string
+	sectionsProjectID string
+	project           project.Project
+	sections          []project.Section
 }
 
 func (s *fakeProjectService) List(_ context.Context, userID string, _ bool) ([]project.Project, error) {
 	s.userID = userID
 	return []project.Project{}, nil
+}
+
+func (s *fakeProjectService) Get(
+	_ context.Context,
+	userID string,
+	projectID string,
+) (project.Project, error) {
+	s.userID = userID
+	s.getProjectID = projectID
+	found := s.project
+	if found.ID == "" {
+		found.ID = projectID
+	}
+	return found, nil
+}
+
+func (s *fakeProjectService) ListSections(
+	_ context.Context,
+	userID string,
+	projectID string,
+) ([]project.Section, error) {
+	s.userID = userID
+	s.sectionsProjectID = projectID
+	return append([]project.Section(nil), s.sections...), nil
 }
 
 func testTask(userID, taskID string) task.Task {

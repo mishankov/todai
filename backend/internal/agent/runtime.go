@@ -16,19 +16,20 @@ const (
 
 // RunRequest contains the product identities and prompt supplied to a runtime.
 type RunRequest struct {
-	UserID       string
-	SessionID    string
-	RunID        string
-	Message      string
-	History      []HistoryMessage
-	Runtime      string
-	InternalURL  string
-	AccessToken  string
-	AllowedTools []string
-	AgentDir     string
-	Provider     string
-	Model        string
-	Timezone     string
+	UserID         string
+	SessionID      string
+	RunID          string
+	Message        string
+	History        []HistoryMessage
+	Runtime        string
+	InternalURL    string
+	AccessToken    string
+	AllowedTools   []string
+	AgentDir       string
+	Provider       string
+	Model          string
+	Timezone       string
+	ThinkingEffort string
 }
 
 // RuntimeEvent is one stable product event emitted by an agent runtime.

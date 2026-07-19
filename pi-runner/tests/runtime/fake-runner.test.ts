@@ -53,6 +53,8 @@ describe("fake runner", () => {
         sessionId: "session-1",
         runId: "run-1",
         sequence: 1,
+        model: "fake",
+        thinkingEffort: "off",
       },
       {
         protocol: RUNNER_PROTOCOL,

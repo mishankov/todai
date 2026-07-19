@@ -159,7 +159,7 @@ func normalizeTools(tools []Tool) ([]Tool, error) {
 
 func validTool(tool Tool) bool {
 	switch tool {
-	case ToolTaskGet, ToolTaskSearch, ToolProjectList, ToolViewQuery,
+	case ToolTaskGet, ToolTaskSearch, ToolProjectGet, ToolProjectList, ToolViewQuery,
 		ToolTaskCreate, ToolTaskUpdate, ToolTaskComplete, ToolTaskReopen,
 		ToolTaskMove, ToolTaskReorder:
 		return true

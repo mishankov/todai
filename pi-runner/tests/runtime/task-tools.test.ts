@@ -3,9 +3,21 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
-import { callTaskTool } from "../../src/runtime/task-tools.js";
+import { callTaskTool, createTaskTools } from "../../src/runtime/task-tools.js";
 
 describe("task tool client", () => {
+  it("exposes project_get as a read-only project and section lookup", () => {
+    const [tool] = createTaskTools({
+      baseUrl: "http://127.0.0.1:8080",
+      token: "secret-token",
+      allowedTools: ["project_get"],
+    });
+
+    expect(tool?.name).toBe("project_get");
+    expect(tool?.description).toContain("ordered sections");
+    expect(tool?.executionMode).toBe("parallel");
+  });
+
   it("sends the scoped bearer token only to the selected internal tool", async () => {
     let requestPath = "";
     let authorization = "";

@@ -12,7 +12,7 @@ import (
 
 const (
 	protocolName    = "todai.runner"
-	protocolVersion = 2
+	protocolVersion = 3
 )
 
 var (
@@ -37,6 +37,8 @@ type envelope struct {
 	Sequence       int64                  `json:"sequence,omitempty"`
 	MessageID      string                 `json:"messageId,omitempty"`
 	Delta          string                 `json:"delta,omitempty"`
+	Model          string                 `json:"model,omitempty"`
+	ThinkingEffort string                 `json:"thinkingEffort,omitempty"`
 	ToolCallID     string                 `json:"toolCallId,omitempty"`
 	ToolName       string                 `json:"toolName,omitempty"`
 	Arguments      json.RawMessage        `json:"arguments,omitempty"`
@@ -55,10 +57,11 @@ type toolAccess struct {
 }
 
 type piConfig struct {
-	AgentDir string `json:"agentDir,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Timezone string `json:"timezone,omitempty"`
+	AgentDir       string `json:"agentDir,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Timezone       string `json:"timezone,omitempty"`
+	ThinkingEffort string `json:"thinkingEffort,omitempty"`
 }
 
 type runtimeInfo struct {

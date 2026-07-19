@@ -15,11 +15,19 @@ var (
 	ErrInvalidTimezone = errors.New("settings timezone is invalid")
 	// ErrInvalidAgentModel indicates that the model is not enabled by the server.
 	ErrInvalidAgentModel = errors.New("settings agent model is not available")
+	// ErrInvalidAgentThinkingEffort indicates that Pi does not recognize the requested effort.
+	ErrInvalidAgentThinkingEffort = errors.New("settings agent thinking effort is not available")
 	// ErrInvalidVersion indicates that the caller did not provide an observed version.
 	ErrInvalidVersion = errors.New("settings version must not be negative")
 	// ErrVersionConflict indicates that settings changed after the caller loaded them.
 	ErrVersionConflict = errors.New("settings version conflict")
 )
+
+const DefaultAgentThinkingEffort = "medium"
+
+var availableAgentThinkingEfforts = []string{
+	"off", "minimal", "low", "medium", "high", "xhigh", "max",
+}
 
 type repository interface {
 	Get(context.Context, string) (Settings, bool, error)
@@ -48,9 +56,12 @@ func (s *Service) Get(ctx context.Context, userID string) (View, error) {
 		return View{}, fmt.Errorf("get user settings: %w", err)
 	}
 	if !found {
-		settings = Settings{UserID: userID, AgentModel: s.defaultAgentModel}
+		settings = Settings{
+			UserID: userID, AgentModel: s.defaultAgentModel,
+			AgentThinkingEffort: DefaultAgentThinkingEffort,
+		}
 	}
-	return View{Settings: settings, AvailableAgentModels: append([]string(nil), s.availableAgentModels...)}, nil
+	return s.view(settings), nil
 }
 
 // Update validates and persists all editable preferences.
@@ -72,30 +83,46 @@ func (s *Service) Update(ctx context.Context, scope execution.Scope, update Upda
 	if !containsModel(s.availableAgentModels, update.AgentModel) {
 		return View{}, ErrInvalidAgentModel
 	}
+	update.AgentThinkingEffort = strings.TrimSpace(update.AgentThinkingEffort)
+	if !containsValue(availableAgentThinkingEfforts, update.AgentThinkingEffort) {
+		return View{}, ErrInvalidAgentThinkingEffort
+	}
 
 	updated, err := s.repository.Update(ctx, scope, update)
 	if err != nil {
 		return View{}, fmt.Errorf("update user settings: %w", err)
 	}
-	return View{Settings: updated, AvailableAgentModels: append([]string(nil), s.availableAgentModels...)}, nil
+	return s.view(updated), nil
 }
 
-// ResolveAgent returns the timezone and model effective for a new agent run.
-func (s *Service) ResolveAgent(ctx context.Context, userID string) (string, string, error) {
+// ResolveAgent returns the timezone, model and thinking effort effective for a new agent run.
+func (s *Service) ResolveAgent(ctx context.Context, userID string) (string, string, string, error) {
 	view, err := s.Get(ctx, userID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	timezone := ""
 	if view.Settings.Timezone != nil {
 		timezone = *view.Settings.Timezone
 	}
-	return timezone, view.Settings.AgentModel, nil
+	return timezone, view.Settings.AgentModel, view.Settings.AgentThinkingEffort, nil
+}
+
+func (s *Service) view(settings Settings) View {
+	return View{
+		Settings:                      settings,
+		AvailableAgentModels:          append([]string(nil), s.availableAgentModels...),
+		AvailableAgentThinkingEfforts: append([]string(nil), availableAgentThinkingEfforts...),
+	}
 }
 
 func containsModel(models []string, wanted string) bool {
-	for _, model := range models {
-		if model == wanted {
+	return containsValue(models, wanted)
+}
+
+func containsValue(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
 			return true
 		}
 	}
