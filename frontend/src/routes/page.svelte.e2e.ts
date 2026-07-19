@@ -448,7 +448,8 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.getByLabel('Description').fill('For breakfast');
 	await page.getByLabel('Priority').selectOption('3');
 	await page.getByLabel('Due date').fill(todayDate());
-	await page.getByLabel('Due time').fill('23:59');
+	await page.getByRole('button', { name: '+ Time' }).click();
+	await page.getByLabel('Due time', { exact: true }).fill('23:59');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 	await expect(page.getByText('High')).toBeVisible();
@@ -488,6 +489,7 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 
 	await page.getByRole('link', { name: 'Work' }).click();
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
+	await page.getByRole('button', { name: /^Location:/ }).click();
 	await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Plan sprint')).toHaveCount(0);
