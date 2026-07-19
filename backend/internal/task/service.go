@@ -15,6 +15,8 @@ const maxTitleLength = 500
 
 const maxDescriptionLength = 10_000
 
+const maxCommentLength = 10_000
+
 var (
 	// ErrTitleRequired indicates that a task title is empty after trimming whitespace.
 	ErrTitleRequired = errors.New("task title is required")
@@ -50,11 +52,26 @@ var (
 	ErrInvalidSearchLimit = errors.New("task search limit must be between 1 and 100")
 	// ErrInvalidSearchStatus indicates that a search contains an unsupported task status.
 	ErrInvalidSearchStatus = errors.New("task search status is invalid")
+	// ErrActiveSubtasks indicates that completing a parent would hide active child work.
+	ErrActiveSubtasks = errors.New("task has active subtasks")
+	// ErrSubtaskPlacement indicates that a child must inherit placement from its parent.
+	ErrSubtaskPlacement = errors.New("subtask project and section are inherited from its parent")
+	// ErrParentCompleted indicates that active work cannot be added below a completed parent.
+	ErrParentCompleted = errors.New("cannot add a subtask to a completed task")
+	// ErrCommentRequired indicates that a comment is empty after trimming whitespace.
+	ErrCommentRequired = errors.New("task comment is required")
+	// ErrCommentTooLong indicates that a comment exceeds the supported length.
+	ErrCommentTooLong = errors.New("task comment is too long")
+	// ErrCommentNotFound avoids exposing comments outside the current user's task.
+	ErrCommentNotFound = errors.New("task comment not found")
+	// ErrCommentVersionConflict indicates that a comment changed after it was read.
+	ErrCommentVersionConflict = errors.New("task comment version conflict")
 )
 
 type repository interface {
-	Create(context.Context, execution.Scope, string, *string, *string) (Task, error)
+	Create(context.Context, execution.Scope, string, *string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
+	ListSubtasks(context.Context, string, string) ([]Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
 	ListAll(context.Context, string, bool) ([]Task, error)
 	ListProject(context.Context, string, string, bool) ([]Task, error)
@@ -65,6 +82,10 @@ type repository interface {
 	Update(context.Context, execution.Scope, string, Update) (Task, error)
 	Reorder(context.Context, execution.Scope, string, Reorder) ([]Task, error)
 	Delete(context.Context, execution.Scope, string, int64) error
+	ListComments(context.Context, string, string) ([]Comment, error)
+	CreateComment(context.Context, execution.Scope, string, string) (Comment, error)
+	UpdateComment(context.Context, execution.Scope, string, string, string, int64) (Comment, error)
+	DeleteComment(context.Context, execution.Scope, string, string, int64) error
 }
 
 // Search returns user-owned tasks matching a text query and optional filters.
@@ -121,12 +142,129 @@ func (s *Service) Create(
 		return Task{}, ErrSectionNotFound
 	}
 
-	created, err := s.repository.Create(ctx, scope, title, projectID, sectionID)
+	created, err := s.repository.Create(ctx, scope, title, projectID, sectionID, nil)
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
 	}
 
 	return created, nil
+}
+
+// CreateSubtask creates an active direct child inheriting the parent's placement.
+func (s *Service) CreateSubtask(
+	ctx context.Context,
+	scope execution.Scope,
+	title string,
+	parentID string,
+) (Task, error) {
+	if strings.TrimSpace(parentID) == "" {
+		return Task{}, ErrTaskNotFound
+	}
+	if err := scope.Validate(); err != nil {
+		return Task{}, fmt.Errorf("validate execution scope: %w", err)
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Task{}, ErrTitleRequired
+	}
+	if utf8.RuneCountInString(title) > maxTitleLength {
+		return Task{}, ErrTitleTooLong
+	}
+	created, err := s.repository.Create(ctx, scope, title, nil, nil, &parentID)
+	if err != nil {
+		return Task{}, fmt.Errorf("create subtask: %w", err)
+	}
+	return created, nil
+}
+
+// ListSubtasks returns the direct children of a user-owned task in position order.
+func (s *Service) ListSubtasks(ctx context.Context, userID, parentID string) ([]Task, error) {
+	tasks, err := s.repository.ListSubtasks(ctx, userID, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("list subtasks: %w", err)
+	}
+	return tasks, nil
+}
+
+// ListComments returns task comments from oldest to newest.
+func (s *Service) ListComments(ctx context.Context, userID, taskID string) ([]Comment, error) {
+	comments, err := s.repository.ListComments(ctx, userID, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("list task comments: %w", err)
+	}
+	return comments, nil
+}
+
+// CreateComment appends a comment to a user-owned task.
+func (s *Service) CreateComment(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	content string,
+) (Comment, error) {
+	if err := scope.Validate(); err != nil {
+		return Comment{}, fmt.Errorf("validate execution scope: %w", err)
+	}
+	content, err := validateComment(content)
+	if err != nil {
+		return Comment{}, err
+	}
+	created, err := s.repository.CreateComment(ctx, scope, taskID, content)
+	if err != nil {
+		return Comment{}, fmt.Errorf("create task comment: %w", err)
+	}
+	return created, nil
+}
+
+// UpdateComment changes comment content using optimistic concurrency.
+func (s *Service) UpdateComment(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	commentID string,
+	content string,
+	version int64,
+) (Comment, error) {
+	if err := validateMutation(scope, version); err != nil {
+		return Comment{}, err
+	}
+	content, err := validateComment(content)
+	if err != nil {
+		return Comment{}, err
+	}
+	updated, err := s.repository.UpdateComment(ctx, scope, taskID, commentID, content, version)
+	if err != nil {
+		return Comment{}, fmt.Errorf("update task comment: %w", err)
+	}
+	return updated, nil
+}
+
+// DeleteComment permanently removes a comment using optimistic concurrency.
+func (s *Service) DeleteComment(
+	ctx context.Context,
+	scope execution.Scope,
+	taskID string,
+	commentID string,
+	version int64,
+) error {
+	if err := validateMutation(scope, version); err != nil {
+		return err
+	}
+	if err := s.repository.DeleteComment(ctx, scope, taskID, commentID, version); err != nil {
+		return fmt.Errorf("delete task comment: %w", err)
+	}
+	return nil
+}
+
+func validateComment(content string) (string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", ErrCommentRequired
+	}
+	if utf8.RuneCountInString(content) > maxCommentLength {
+		return "", ErrCommentTooLong
+	}
+	return content, nil
 }
 
 // ListProject returns top-level tasks in one project.

@@ -21,7 +21,9 @@ type taskHandlers struct {
 // HTTPService describes the task operations exposed over HTTP.
 type HTTPService interface {
 	Create(context.Context, execution.Scope, string, *string, *string) (Task, error)
+	CreateSubtask(context.Context, execution.Scope, string, string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
+	ListSubtasks(context.Context, string, string) ([]Task, error)
 	ListInbox(context.Context, string, bool) ([]Task, error)
 	ListAll(context.Context, string, bool) ([]Task, error)
 	ListProject(context.Context, string, string, bool) ([]Task, error)
@@ -31,6 +33,10 @@ type HTTPService interface {
 	Update(context.Context, execution.Scope, string, Update) (Task, error)
 	Reorder(context.Context, execution.Scope, string, Reorder) ([]Task, error)
 	Delete(context.Context, execution.Scope, string, int64) error
+	ListComments(context.Context, string, string) ([]Comment, error)
+	CreateComment(context.Context, execution.Scope, string, string) (Comment, error)
+	UpdateComment(context.Context, execution.Scope, string, string, string, int64) (Comment, error)
+	DeleteComment(context.Context, execution.Scope, string, string, int64) error
 }
 
 // HTTPModule owns the task domain's routes and handlers.
@@ -43,6 +49,7 @@ type createTaskRequest struct {
 	Title     string  `json:"title"`
 	ProjectID *string `json:"projectId"`
 	SectionID *string `json:"sectionId"`
+	ParentID  *string `json:"parentId"`
 }
 
 type updateTaskRequest struct {
@@ -64,6 +71,11 @@ type reorderTaskRequest struct {
 }
 
 type taskVersionRequest struct {
+	Version *int64 `json:"version"`
+}
+
+type commentRequest struct {
+	Body    string `json:"body"`
 	Version *int64 `json:"version"`
 }
 
@@ -101,6 +113,10 @@ type taskListResponse struct {
 	Tasks []Task `json:"tasks"`
 }
 
+type commentListResponse struct {
+	Comments []Comment `json:"comments"`
+}
+
 // NewHTTPModule constructs the task HTTP module.
 func NewHTTPModule(authDomain *auth.Domain, service HTTPService) *HTTPModule {
 	return &HTTPModule{authDomain: authDomain, service: service}
@@ -114,6 +130,11 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	tasksAPI.Use(m.authDomain.Middleware)
 	tasksAPI.HandleFunc("POST /", handlers.create)
 	tasksAPI.HandleFunc("GET /{id}", handlers.get)
+	tasksAPI.HandleFunc("GET /{id}/subtasks", handlers.listSubtasks)
+	tasksAPI.HandleFunc("GET /{id}/comments", handlers.listComments)
+	tasksAPI.HandleFunc("POST /{id}/comments", handlers.createComment)
+	tasksAPI.HandleFunc("PATCH /{id}/comments/{commentId}", handlers.updateComment)
+	tasksAPI.HandleFunc("DELETE /{id}/comments/{commentId}", handlers.deleteComment)
 	tasksAPI.HandleFunc("PATCH /{id}", handlers.update)
 	tasksAPI.HandleFunc("DELETE /{id}", handlers.delete)
 	tasksAPI.HandleFunc("POST /{id}/complete", handlers.complete)
@@ -144,15 +165,122 @@ func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.service.Create(
-		r.Context(), scope, request.Title, request.ProjectID, request.SectionID,
-	)
+	var created Task
+	var err error
+	if request.ParentID != nil {
+		if request.ProjectID != nil || request.SectionID != nil {
+			writeTaskError(w, r, "create", ErrSubtaskPlacement)
+			return
+		}
+		created, err = h.service.CreateSubtask(r.Context(), scope, request.Title, *request.ParentID)
+	} else {
+		created, err = h.service.Create(
+			r.Context(), scope, request.Title, request.ProjectID, request.SectionID,
+		)
+	}
 	if err != nil {
 		writeTaskError(w, r, "create", err)
 		return
 	}
 
 	writeJSON(w, r, http.StatusCreated, created)
+}
+
+func (h taskHandlers) listSubtasks(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	tasks, err := h.service.ListSubtasks(r.Context(), user.ID, r.PathValue("id"))
+	if err != nil {
+		writeTaskError(w, r, "list_subtasks", err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
+}
+
+func (h taskHandlers) listComments(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	comments, err := h.service.ListComments(r.Context(), user.ID, r.PathValue("id"))
+	if err != nil {
+		writeTaskError(w, r, "list_comments", err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, commentListResponse{Comments: comments})
+}
+
+func (h taskHandlers) createComment(w http.ResponseWriter, r *http.Request) {
+	var request commentRequest
+	if !decodeTaskJSON(w, r, &request) {
+		return
+	}
+	scope, ok := webUserScope(w, r)
+	if !ok {
+		return
+	}
+	created, err := h.service.CreateComment(r.Context(), scope, r.PathValue("id"), request.Body)
+	if err != nil {
+		writeTaskError(w, r, "create_comment", err)
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, created)
+}
+
+func (h taskHandlers) updateComment(w http.ResponseWriter, r *http.Request) {
+	var request commentRequest
+	if !decodeTaskJSON(w, r, &request) {
+		return
+	}
+	if request.Version == nil {
+		http.Error(w, "task comment version is required", http.StatusBadRequest)
+		return
+	}
+	scope, ok := webUserScope(w, r)
+	if !ok {
+		return
+	}
+	updated, err := h.service.UpdateComment(
+		r.Context(), scope, r.PathValue("id"), r.PathValue("commentId"),
+		request.Body, *request.Version,
+	)
+	if err != nil {
+		writeTaskError(w, r, "update_comment", err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, updated)
+}
+
+func (h taskHandlers) deleteComment(w http.ResponseWriter, r *http.Request) {
+	request, ok := decodeTaskVersion(w, r)
+	if !ok {
+		return
+	}
+	scope, ok := webUserScope(w, r)
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteComment(
+		r.Context(), scope, r.PathValue("id"), r.PathValue("commentId"), *request.Version,
+	); err != nil {
+		writeTaskError(w, r, "delete_comment", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeTaskJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 func (h taskHandlers) listProject(w http.ResponseWriter, r *http.Request) {
@@ -428,16 +556,25 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 		errors.Is(err, ErrTaskNotReorderable),
 		errors.Is(err, ErrInvalidTimezone),
 		errors.Is(err, ErrInvalidVersion),
-		errors.Is(err, ErrNoChanges):
+		errors.Is(err, ErrNoChanges),
+		errors.Is(err, ErrSubtaskPlacement),
+		errors.Is(err, ErrCommentRequired),
+		errors.Is(err, ErrCommentTooLong):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrTaskNotFound):
 		http.Error(w, ErrTaskNotFound.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrCommentNotFound):
+		http.Error(w, ErrCommentNotFound.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrProjectNotFound):
 		http.Error(w, ErrProjectNotFound.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrSectionNotFound):
 		http.Error(w, ErrSectionNotFound.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrVersionConflict):
 		http.Error(w, ErrVersionConflict.Error(), http.StatusConflict)
+	case errors.Is(err, ErrCommentVersionConflict):
+		http.Error(w, ErrCommentVersionConflict.Error(), http.StatusConflict)
+	case errors.Is(err, ErrActiveSubtasks), errors.Is(err, ErrParentCompleted):
+		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		log.ErrorContext(r.Context(), "task request failed", "operation", operation, "error", err)
 		http.Error(w, "task request failed", http.StatusInternalServerError)

@@ -100,6 +100,52 @@ func TestCreateRejectsSectionWithoutProject(t *testing.T) {
 	}
 }
 
+func TestCreateSubtaskNormalizesTitleAndPassesParent(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	created, err := task.NewService(repository).CreateSubtask(
+		context.Background(), testScope(), "  Child task  ", "parent-id",
+	)
+	if err != nil {
+		t.Fatalf("create subtask: %v", err)
+	}
+	if created.Title != "Child task" || repository.createParentID == nil ||
+		*repository.createParentID != "parent-id" {
+		t.Errorf("created/repository = %#v / %#v", created, repository.createParentID)
+	}
+}
+
+func TestCommentsNormalizeBodyAndRequireVersion(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	service := task.NewService(repository)
+	if _, err := service.CreateComment(
+		context.Background(), testScope(), "task-id", "  A note  ",
+	); err != nil {
+		t.Fatalf("create comment: %v", err)
+	}
+	if repository.commentBody != "A note" {
+		t.Errorf("comment body = %q, want %q", repository.commentBody, "A note")
+	}
+	if _, err := service.UpdateComment(
+		context.Background(), testScope(), "task-id", "comment-id", "Edit", 0,
+	); !errors.Is(err, task.ErrInvalidVersion) {
+		t.Errorf("invalid version error = %v", err)
+	}
+	if _, err := service.CreateComment(
+		context.Background(), testScope(), "task-id", "   ",
+	); !errors.Is(err, task.ErrCommentRequired) {
+		t.Errorf("blank comment error = %v", err)
+	}
+	if _, err := service.CreateComment(
+		context.Background(), testScope(), "task-id", strings.Repeat("x", 10_001),
+	); !errors.Is(err, task.ErrCommentTooLong) {
+		t.Errorf("long comment error = %v", err)
+	}
+}
+
 func TestDeletePassesExecutionScopeAndVersion(t *testing.T) {
 	t.Parallel()
 
@@ -467,6 +513,7 @@ type fakeRepository struct {
 	createScope           execution.Scope
 	createProjectID       *string
 	createSectionID       *string
+	createParentID        *string
 	completeScope         execution.Scope
 	completeTaskID        string
 	completeVersion       int64
@@ -490,6 +537,7 @@ type fakeRepository struct {
 	reorderScope          execution.Scope
 	reorder               task.Reorder
 	mutationCalled        bool
+	commentBody           string
 }
 
 func (r *fakeRepository) Create(
@@ -498,14 +546,43 @@ func (r *fakeRepository) Create(
 	title string,
 	projectID *string,
 	sectionID *string,
+	parentID *string,
 ) (task.Task, error) {
 	r.createScope = scope
 	r.createProjectID = projectID
 	r.createSectionID = sectionID
+	r.createParentID = parentID
 	return task.Task{
-		ID: "task-id", UserID: scope.UserID, ProjectID: projectID, SectionID: sectionID,
+		ID: "task-id", UserID: scope.UserID, ProjectID: projectID, SectionID: sectionID, ParentID: parentID,
 		Title: title, Status: task.StatusActive,
 	}, nil
+}
+
+func (*fakeRepository) ListSubtasks(context.Context, string, string) ([]task.Task, error) {
+	return nil, nil
+}
+
+func (*fakeRepository) ListComments(context.Context, string, string) ([]task.Comment, error) {
+	return nil, nil
+}
+
+func (r *fakeRepository) CreateComment(
+	_ context.Context, _ execution.Scope, _ string, body string,
+) (task.Comment, error) {
+	r.commentBody = body
+	return task.Comment{}, nil
+}
+
+func (*fakeRepository) UpdateComment(
+	context.Context, execution.Scope, string, string, string, int64,
+) (task.Comment, error) {
+	return task.Comment{}, nil
+}
+
+func (*fakeRepository) DeleteComment(
+	context.Context, execution.Scope, string, string, int64,
+) error {
+	return nil
 }
 
 func (*fakeRepository) Get(context.Context, string, string) (task.Task, error) {

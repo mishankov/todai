@@ -39,6 +39,7 @@ const definitions = {
       title: Type.String(),
       projectId: Type.Optional(nullableString),
       sectionId: Type.Optional(nullableString),
+      parentId: Type.Optional(Type.String()),
     }),
   ],
   task_update: [

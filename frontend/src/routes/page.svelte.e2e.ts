@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { ActivityEvent } from '$lib/activity/client';
 import type { Project, ProjectSection } from '$lib/projects/client';
-import type { Task } from '$lib/tasks/client';
+import type { Task, TaskComment } from '$lib/tasks/client';
 
 test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ page }) => {
 	let authenticated = false;
 	let tasks: Task[] = [];
+	let comments: TaskComment[] = [];
 	let projects: Project[] = [];
 	let sections: ProjectSection[] = [];
 	let inboxLoads = 0;
@@ -208,21 +209,23 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ tasks })
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.parentId === null) })
 		});
 	});
 	await page.route('**/api/views/all?*', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ tasks })
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.parentId === null) })
 		});
 	});
 	await page.route('**/api/views/today?*', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ tasks: tasks.filter((item) => item.dueDate !== null) })
+			body: JSON.stringify({
+				tasks: tasks.filter((item) => item.parentId === null && item.dueDate !== null)
+			})
 		});
 	});
 	await page.route('**/api/views/projects/*?*', async (route) => {
@@ -230,16 +233,20 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ tasks: tasks.filter((item) => item.projectId === projectId) })
+			body: JSON.stringify({
+				tasks: tasks.filter((item) => item.parentId === null && item.projectId === projectId)
+			})
 		});
 	});
 	await page.route('**/api/tasks', async (route) => {
 		const request = route.request().postDataJSON();
+		const parent = tasks.find((item) => item.id === request.parentId);
 		const created = testTask({
 			id: `task-${tasks.length + 1}`,
 			title: request.title,
-			projectId: request.projectId ?? null,
-			sectionId: request.sectionId ?? null
+			projectId: parent?.projectId ?? request.projectId ?? null,
+			sectionId: parent?.sectionId ?? request.sectionId ?? null,
+			parentId: parent?.id ?? null
 		});
 		tasks = [...tasks, created];
 		await route.fulfill({
@@ -351,6 +358,58 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		tasks = tasks.filter((item) => item.id !== taskId);
 		await route.fulfill({ status: 204 });
 	});
+	await page.route('**/api/tasks/*/subtasks', async (route) => {
+		const taskId = new URL(route.request().url()).pathname.split('/').at(-2);
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ tasks: tasks.filter((item) => item.parentId === taskId) })
+		});
+	});
+	await page.route('**/api/tasks/*/comments', async (route) => {
+		const taskId = new URL(route.request().url()).pathname.split('/').at(-2)!;
+		if (route.request().method() === 'POST') {
+			const request = route.request().postDataJSON();
+			const created = testComment({
+				id: `comment-${comments.length + 1}`,
+				taskId,
+				body: request.body
+			});
+			comments = [...comments, created];
+			await route.fulfill({
+				status: 201,
+				contentType: 'application/json',
+				body: JSON.stringify(created)
+			});
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ comments: comments.filter((item) => item.taskId === taskId) })
+		});
+	});
+	await page.route('**/api/tasks/*/comments/*', async (route) => {
+		const path = new URL(route.request().url()).pathname.split('/');
+		const commentId = path.at(-1)!;
+		const existing = comments.find((item) => item.id === commentId)!;
+		const request = route.request().postDataJSON();
+		if (request.version !== existing.version) {
+			await route.fulfill({ status: 409 });
+			return;
+		}
+		if (route.request().method() === 'DELETE') {
+			comments = comments.filter((item) => item.id !== commentId);
+			await route.fulfill({ status: 204 });
+			return;
+		}
+		Object.assign(existing, { body: request.body, version: existing.version + 1 });
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(existing)
+		});
+	});
 
 	await page.goto('/');
 	await expect(page).toHaveURL(/\/login$/);
@@ -373,6 +432,14 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await expect(page.getByText('Buy milk')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Edit Buy milk' }).click();
+	await page.getByRole('textbox', { name: 'Add a subtask' }).fill('Compare brands');
+	await page.getByRole('button', { name: 'Add subtask' }).click();
+	await expect(page.getByText('Compare brands', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Complete Compare brands' }).click();
+	await expect(page.getByRole('button', { name: 'Reopen Compare brands' })).toBeVisible();
+	await page.getByRole('textbox', { name: 'Add a comment' }).fill('Prefer an unsweetened option.');
+	await page.getByRole('button', { name: 'Send comment' }).click();
+	await expect(page.getByText('Prefer an unsweetened option.', { exact: true })).toBeVisible();
 	await page.getByLabel('Title', { exact: true }).fill('Buy oat milk');
 	await page.getByLabel('Description').fill('For breakfast');
 	await page.getByLabel('Priority').selectOption('3');
@@ -483,6 +550,20 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		completedAt: null,
 		createdAt: '2026-07-16T10:00:00Z',
 		updatedAt: '2026-07-16T10:00:00Z',
+		lastModifiedBy: 'user-id',
+		...overrides
+	};
+}
+
+function testComment(overrides: Partial<TaskComment> = {}): TaskComment {
+	return {
+		id: 'comment-id',
+		taskId: 'task-id',
+		authorId: 'user-id',
+		body: 'Comment',
+		version: 1,
+		createdAt: '2026-07-19T10:00:00Z',
+		updatedAt: '2026-07-19T10:00:00Z',
 		lastModifiedBy: 'user-id',
 		...overrides
 	};

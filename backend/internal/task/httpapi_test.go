@@ -27,6 +27,11 @@ func TestEndpointsRequireSession(t *testing.T) {
 		httptest.NewRequest(http.MethodPatch, "/tasks/task-id", nil),
 		httptest.NewRequest(http.MethodDelete, "/tasks/task-id", nil),
 		httptest.NewRequest(http.MethodPost, "/tasks/task-id/reorder", nil),
+		httptest.NewRequest(http.MethodGet, "/tasks/task-id/subtasks", nil),
+		httptest.NewRequest(http.MethodGet, "/tasks/task-id/comments", nil),
+		httptest.NewRequest(http.MethodPost, "/tasks/task-id/comments", nil),
+		httptest.NewRequest(http.MethodPatch, "/tasks/task-id/comments/comment-id", nil),
+		httptest.NewRequest(http.MethodDelete, "/tasks/task-id/comments/comment-id", nil),
 		httptest.NewRequest(http.MethodGet, "/views/all", nil),
 		httptest.NewRequest(http.MethodGet, "/views/inbox", nil),
 		httptest.NewRequest(http.MethodGet, "/views/today?timezone=UTC", nil),
@@ -68,6 +73,68 @@ func TestAuthenticatedUserCanCreateInboxTask(t *testing.T) {
 	}
 	if created.Title != "Buy milk" || created.LastModifiedBy != "user-id" {
 		t.Errorf("created task = %#v", created)
+	}
+}
+
+func TestAuthenticatedUserCanCreateAndListSubtasks(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
+	createdResponse := serveJSON(
+		t, handler, http.MethodPost, "/tasks",
+		map[string]any{"title": "Child", "parentId": "parent-id"}, authenticatedCookie(),
+	)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create subtask status = %d, want %d", createdResponse.Code, http.StatusCreated)
+	}
+	var created task.Task
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatalf("decode subtask: %v", err)
+	}
+	if created.ParentID == nil || *created.ParentID != "parent-id" {
+		t.Errorf("created subtask = %#v", created)
+	}
+
+	listResponse := serveJSON(
+		t, handler, http.MethodGet, "/tasks/parent-id/subtasks", nil, authenticatedCookie(),
+	)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list subtasks status = %d, want %d", listResponse.Code, http.StatusOK)
+	}
+}
+
+func TestCommentEndpointsUseBodyAuthorAndVersionContract(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
+	createdResponse := serveJSON(
+		t, handler, http.MethodPost, "/tasks/task-id/comments",
+		map[string]any{"body": "A note"}, authenticatedCookie(),
+	)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create comment status = %d, want %d", createdResponse.Code, http.StatusCreated)
+	}
+	var created task.Comment
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatalf("decode comment: %v", err)
+	}
+	if created.Body != "A note" || created.AuthorID != "user-id" || created.Version != 1 {
+		t.Errorf("created comment = %#v", created)
+	}
+
+	updatedResponse := serveJSON(
+		t, handler, http.MethodPatch, "/tasks/task-id/comments/comment-id",
+		map[string]any{"body": "Edited", "version": 1}, authenticatedCookie(),
+	)
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("update comment status = %d, want %d", updatedResponse.Code, http.StatusOK)
+	}
+	deleteResponse := serveJSON(
+		t, handler, http.MethodDelete, "/tasks/task-id/comments/comment-id",
+		map[string]any{"version": 2}, authenticatedCookie(),
+	)
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf("delete comment status = %d, want %d", deleteResponse.Code, http.StatusNoContent)
 	}
 }
 
@@ -367,6 +434,45 @@ func (fakeTaskService) Create(
 		Version:        1,
 		LastModifiedBy: scope.ModifiedBy(),
 	}, nil
+}
+
+func (fakeTaskService) CreateSubtask(
+	_ context.Context, scope execution.Scope, title string, parentID string,
+) (task.Task, error) {
+	return task.Task{
+		ID: "subtask-id", ParentID: &parentID, Title: title, Status: task.StatusActive,
+		Version: 1, LastModifiedBy: scope.ModifiedBy(),
+	}, nil
+}
+
+func (fakeTaskService) ListSubtasks(context.Context, string, string) ([]task.Task, error) {
+	return []task.Task{}, nil
+}
+
+func (fakeTaskService) ListComments(context.Context, string, string) ([]task.Comment, error) {
+	return []task.Comment{}, nil
+}
+
+func (fakeTaskService) CreateComment(
+	_ context.Context, scope execution.Scope, taskID string, body string,
+) (task.Comment, error) {
+	return task.Comment{
+		ID: "comment-id", TaskID: taskID, AuthorID: scope.UserID, Body: body, Version: 1,
+	}, nil
+}
+
+func (fakeTaskService) UpdateComment(
+	_ context.Context, scope execution.Scope, taskID, commentID, body string, version int64,
+) (task.Comment, error) {
+	return task.Comment{
+		ID: commentID, TaskID: taskID, AuthorID: scope.UserID, Body: body, Version: version + 1,
+	}, nil
+}
+
+func (fakeTaskService) DeleteComment(
+	context.Context, execution.Scope, string, string, int64,
+) error {
+	return nil
 }
 
 func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {

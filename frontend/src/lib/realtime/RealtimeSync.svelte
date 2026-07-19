@@ -2,6 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { pollActivityChanges, RealtimeRequestError } from './client';
+	import { publishActivityEvent } from './events';
 
 	type Poll = typeof pollActivityChanges;
 
@@ -31,6 +32,7 @@
 		while (!signal.aborted) {
 			try {
 				const changes = await poll(fetch, cursor, signal);
+				for (const event of changes.events) publishActivityEvent(event);
 				const shouldRefresh =
 					cursor === null ||
 					changes.events.some(

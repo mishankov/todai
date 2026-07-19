@@ -58,6 +58,7 @@ func (r *Repository) Create(
 	title string,
 	projectID *string,
 	sectionID *string,
+	parentID *string,
 ) (Task, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -66,7 +67,41 @@ func (r *Repository) Create(
 	defer func() { _ = tx.Rollback() }()
 
 	var created Task
-	err = tx.GetContext(ctx, &created, `
+	if parentID != nil {
+		var parent Task
+		err = tx.GetContext(ctx, &parent, `
+			SELECT `+taskColumns+`
+			FROM tasks
+			WHERE id = $1 AND user_id = $2
+			FOR UPDATE
+		`, *parentID, scope.UserID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Task{}, ErrTaskNotFound
+		}
+		if err != nil {
+			return Task{}, fmt.Errorf("lock subtask parent: %w", err)
+		}
+		if parent.Status == StatusCompleted {
+			return Task{}, ErrParentCompleted
+		}
+		err = tx.GetContext(ctx, &created, `
+			INSERT INTO tasks (
+				id, user_id, project_id, section_id, parent_id, title, status, priority,
+				position, version, created_at, updated_at, last_modified_by
+			)
+			SELECT
+				$1::VARCHAR, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR,
+				$5::VARCHAR, $6::TEXT, 'active', 0,
+				COALESCE(MAX(child.position), 0) + 1024, 1,
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $7::VARCHAR
+			FROM tasks child
+			WHERE child.user_id = $2::VARCHAR AND child.parent_id = $5::VARCHAR
+			RETURNING `+taskColumns,
+			uuid.NewString(), scope.UserID, parent.ProjectID, parent.SectionID, parent.ID,
+			title, scope.ModifiedBy(),
+		)
+	} else {
+		err = tx.GetContext(ctx, &created, `
 		INSERT INTO tasks (
 			id, user_id, project_id, section_id, title, status, priority, position, version,
 			created_at, updated_at, last_modified_by
@@ -90,8 +125,9 @@ func (r *Repository) Create(
 				WHERE id = $5::VARCHAR AND user_id = $2::VARCHAR AND project_id = $4::VARCHAR
 			))
 		RETURNING `+taskColumns,
-		uuid.NewString(), scope.UserID, title, projectID, sectionID, scope.ModifiedBy(),
-	)
+			uuid.NewString(), scope.UserID, title, projectID, sectionID, scope.ModifiedBy(),
+		)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		if projectID != nil {
 			var projectExists bool
@@ -112,8 +148,13 @@ func (r *Repository) Create(
 	if err != nil {
 		return Task{}, fmt.Errorf("insert task: %w", err)
 	}
-	if err := r.appendTaskEvent(ctx, tx, scope, "task.created", created, map[string]any{
+	eventType := "task.created"
+	if created.ParentID != nil {
+		eventType = "task.subtask.created"
+	}
+	if err := r.appendTaskEvent(ctx, tx, scope, eventType, created, map[string]any{
 		"schemaVersion": 1,
+		"parentId":      created.ParentID,
 		"task":          taskEventSnapshot(created),
 	}); err != nil {
 		return Task{}, err
@@ -123,6 +164,23 @@ func (r *Repository) Create(
 	}
 
 	return created, nil
+}
+
+// ListSubtasks returns direct children in their durable sibling order.
+func (r *Repository) ListSubtasks(ctx context.Context, userID, parentID string) ([]Task, error) {
+	if _, err := r.Get(ctx, userID, parentID); err != nil {
+		return nil, err
+	}
+	tasks := make([]Task, 0)
+	if err := r.db.SelectContext(ctx, &tasks, `
+		SELECT `+taskColumns+`
+		FROM tasks
+		WHERE user_id = $1 AND parent_id = $2
+		ORDER BY position, created_at, id
+	`, userID, parentID); err != nil {
+		return nil, fmt.Errorf("select subtasks: %w", err)
+	}
+	return tasks, nil
 }
 
 // ListProject returns the user's top-level tasks in one project.
@@ -253,6 +311,7 @@ func (r *Repository) ListToday(
 		SELECT `+taskColumns+`
 		FROM tasks
 		WHERE user_id = $1
+			AND parent_id IS NULL
 			AND due_date IS NOT NULL
 			AND due_date <= $2::DATE
 			AND (
@@ -350,6 +409,9 @@ func (r *Repository) Update(
 	}
 	if previous.Version != update.Version {
 		return Task{}, ErrVersionConflict
+	}
+	if previous.ParentID != nil && (update.ProjectID != nil || update.SectionID != nil) {
+		return Task{}, ErrSubtaskPlacement
 	}
 	if update.ProjectID != nil && update.ProjectID.Value != nil {
 		var exists bool
@@ -451,9 +513,30 @@ func (r *Repository) Update(
 		return Task{}, fmt.Errorf("update task: %w", err)
 	}
 
+	placementChanged := !stringPointersEqual(previous.ProjectID, updated.ProjectID) ||
+		!stringPointersEqual(previous.SectionID, updated.SectionID)
+	if placementChanged {
+		if _, err := tx.ExecContext(ctx, `
+			WITH RECURSIVE descendants AS (
+				SELECT id FROM tasks WHERE user_id = $1 AND parent_id = $2
+				UNION ALL
+				SELECT child.id
+				FROM tasks child
+				JOIN descendants parent ON child.parent_id = parent.id
+				WHERE child.user_id = $1
+			)
+			UPDATE tasks
+			SET project_id = $3, section_id = $4,
+				version = version + 1, updated_at = CURRENT_TIMESTAMP,
+				last_modified_by = $5
+			WHERE id IN (SELECT id FROM descendants)
+		`, scope.UserID, updated.ID, updated.ProjectID, updated.SectionID, scope.ModifiedBy()); err != nil {
+			return Task{}, fmt.Errorf("move task descendants: %w", err)
+		}
+	}
+
 	eventType := "task.updated"
-	if !stringPointersEqual(previous.ProjectID, updated.ProjectID) ||
-		!stringPointersEqual(previous.SectionID, updated.SectionID) {
+	if placementChanged {
 		eventType = "task.moved"
 	}
 	if err := r.appendTaskEvent(ctx, tx, scope, eventType, updated, map[string]any{
@@ -712,6 +795,42 @@ func (r *Repository) setStatus(
 	}
 	if current.Status == status {
 		return current, nil
+	}
+	if status == StatusActive && current.ParentID != nil {
+		var hasCompletedAncestor bool
+		if err := tx.GetContext(ctx, &hasCompletedAncestor, `
+			WITH RECURSIVE ancestors AS (
+				SELECT parent.id, parent.parent_id, parent.status
+				FROM tasks child
+				JOIN tasks parent ON parent.id = child.parent_id
+				WHERE child.id = $1 AND child.user_id = $2 AND parent.user_id = $2
+				UNION ALL
+				SELECT parent.id, parent.parent_id, parent.status
+				FROM tasks parent
+				JOIN ancestors child ON parent.id = child.parent_id
+				WHERE parent.user_id = $2
+			)
+			SELECT EXISTS (SELECT 1 FROM ancestors WHERE status = 'completed')
+		`, taskID, scope.UserID); err != nil {
+			return Task{}, fmt.Errorf("check completed task ancestors: %w", err)
+		}
+		if hasCompletedAncestor {
+			return Task{}, ErrParentCompleted
+		}
+	}
+	if status == StatusCompleted {
+		var hasActiveSubtasks bool
+		if err := tx.GetContext(ctx, &hasActiveSubtasks, `
+			SELECT EXISTS (
+				SELECT 1 FROM tasks
+				WHERE user_id = $1 AND parent_id = $2 AND status = 'active'
+			)
+		`, scope.UserID, taskID); err != nil {
+			return Task{}, fmt.Errorf("check active subtasks: %w", err)
+		}
+		if hasActiveSubtasks {
+			return Task{}, ErrActiveSubtasks
+		}
 	}
 
 	var updated Task

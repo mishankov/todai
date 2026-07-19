@@ -132,6 +132,26 @@ func TestMutationUsesAgentScopeTraceAndObservedVersion(t *testing.T) {
 	}
 }
 
+func TestTaskCreateAcceptsParentID(t *testing.T) {
+	response := serveJSON(
+		t,
+		testAPI(&fakeAuthorizer{claims: testClaims()}, &fakeTaskService{}, &fakeProjectService{}),
+		"/task_create",
+		map[string]any{"title": "Child", "parentId": "parent-id"},
+		"Bearer raw-token",
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusCreated, response.Body.String())
+	}
+	var created task.Task
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		t.Fatalf("decode task: %v", err)
+	}
+	if created.ParentID == nil || *created.ParentID != "parent-id" {
+		t.Errorf("created task = %#v", created)
+	}
+}
+
 func TestMissingPlatformaTraceDoesNotInvokeService(t *testing.T) {
 	service := &fakeTaskService{}
 	group := httpserver.NewHandlerGroup()
@@ -343,6 +363,18 @@ func (*fakeTaskService) Create(
 	created.Title = title
 	created.ProjectID = projectID
 	created.SectionID = sectionID
+	return created, nil
+}
+
+func (*fakeTaskService) CreateSubtask(
+	_ context.Context,
+	scope execution.Scope,
+	title string,
+	parentID string,
+) (task.Task, error) {
+	created := testTask(scope.UserID, "task-id")
+	created.Title = title
+	created.ParentID = &parentID
 	return created, nil
 }
 

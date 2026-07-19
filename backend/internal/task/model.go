@@ -33,6 +33,19 @@ type Task struct {
 	LastModifiedBy string     `db:"last_modified_by" json:"lastModifiedBy"`
 }
 
+// Comment is a user-owned note attached to a task.
+type Comment struct {
+	ID             string    `db:"id" json:"id"`
+	TaskID         string    `db:"task_id" json:"taskId"`
+	UserID         string    `db:"user_id" json:"-"`
+	AuthorID       string    `db:"author_id" json:"authorId"`
+	Body           string    `db:"body" json:"body"`
+	Version        int64     `db:"version" json:"version"`
+	CreatedAt      time.Time `db:"created_at" json:"createdAt"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updatedAt"`
+	LastModifiedBy string    `db:"last_modified_by" json:"lastModifiedBy"`
+}
+
 // Nullable represents an explicitly provided nullable field in an update.
 type Nullable[T any] struct {
 	Value *T

@@ -32,6 +32,7 @@ type TaskService interface {
 	ListToday(context.Context, string, string, bool) ([]task.Task, error)
 	Search(context.Context, string, task.SearchQuery) ([]task.Task, error)
 	Create(context.Context, execution.Scope, string, *string, *string) (task.Task, error)
+	CreateSubtask(context.Context, execution.Scope, string, string) (task.Task, error)
 	Update(context.Context, execution.Scope, string, task.Update) (task.Task, error)
 	Complete(context.Context, execution.Scope, string, int64) (task.Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (task.Task, error)
@@ -83,6 +84,7 @@ type createTaskRequest struct {
 	Title     string  `json:"title"`
 	ProjectID *string `json:"projectId"`
 	SectionID *string `json:"sectionId"`
+	ParentID  *string `json:"parentId"`
 }
 
 type updateTaskRequest struct {
@@ -282,9 +284,21 @@ func (m *HTTPModule) taskCreate(w http.ResponseWriter, r *http.Request, claims a
 		return
 	}
 
-	created, err := m.tasks.Create(
-		r.Context(), scopeFor(r, claims), request.Title, request.ProjectID, request.SectionID,
-	)
+	var created task.Task
+	var err error
+	if request.ParentID != nil {
+		if request.ProjectID != nil || request.SectionID != nil {
+			http.Error(w, task.ErrSubtaskPlacement.Error(), http.StatusBadRequest)
+			return
+		}
+		created, err = m.tasks.CreateSubtask(
+			r.Context(), scopeFor(r, claims), request.Title, *request.ParentID,
+		)
+	} else {
+		created, err = m.tasks.Create(
+			r.Context(), scopeFor(r, claims), request.Title, request.ProjectID, request.SectionID,
+		)
+	}
 	if err != nil {
 		writeToolError(w, r, "task_create", err)
 		return
@@ -491,14 +505,16 @@ func writeToolError(w http.ResponseWriter, r *http.Request, operation string, er
 		errors.Is(err, task.ErrInvalidVersion),
 		errors.Is(err, task.ErrInvalidSearchLimit),
 		errors.Is(err, task.ErrInvalidSearchStatus),
-		errors.Is(err, task.ErrNoChanges):
+		errors.Is(err, task.ErrNoChanges),
+		errors.Is(err, task.ErrSubtaskPlacement):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, task.ErrTaskNotFound),
 		errors.Is(err, task.ErrProjectNotFound),
 		errors.Is(err, task.ErrSectionNotFound),
 		errors.Is(err, project.ErrProjectNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, task.ErrVersionConflict), errors.Is(err, project.ErrVersionConflict):
+	case errors.Is(err, task.ErrVersionConflict), errors.Is(err, project.ErrVersionConflict),
+		errors.Is(err, task.ErrActiveSubtasks), errors.Is(err, task.ErrParentCompleted):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		log.ErrorContext(r.Context(), "internal task tool failed", "operation", operation, "error", err)
