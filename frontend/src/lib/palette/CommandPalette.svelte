@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Project, ProjectSection } from '$lib/projects/client';
-	import { commandRegistry, formatShortcut, type ProductCommand } from '$lib/shortcuts/registry';
+	import { commandRegistry, formatShortcuts, type ProductCommand } from '$lib/shortcuts/registry';
 	import type { Task } from '$lib/tasks/client';
 	import { onMount, tick } from 'svelte';
 	import { searchTasks as requestTaskSearch } from './client';
@@ -271,7 +271,7 @@
 								</span>
 								{#if result.kind === 'command' && result.command.shortcut}
 									<kbd
-										>{formatShortcut(
+										>{formatShortcuts(
 											{
 												...result.command,
 												shortcut: result.command.shortcut,
@@ -279,7 +279,7 @@
 												keyLabel: result.command.shortcut.keyLabel
 											},
 											applePlatform
-										)}</kbd
+										).join(' / ')}</kbd
 									>
 								{:else if result.kind === 'project' && result.active}
 									<span class="badge">Active</span>

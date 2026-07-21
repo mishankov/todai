@@ -22,6 +22,9 @@ describe('CommandPalette', () => {
 		await expect
 			.element(page.getByRole('listbox', { name: 'Palette results' }))
 			.toHaveAttribute('aria-busy', 'false');
+		await expect
+			.element(page.getByRole('option', { name: /Quick add/ }))
+			.toHaveTextContent('Ctrl + N / Ctrl + Alt + N');
 
 		await userEvent.keyboard('{End}');
 		await expect.element(page.getByRole('option', { selected: true })).toHaveTextContent('Work');

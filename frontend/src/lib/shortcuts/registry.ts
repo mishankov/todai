@@ -15,6 +15,7 @@ export type ProductCommandId =
 export interface CommandShortcut {
 	code: string;
 	keyLabel: string;
+	allowAlt?: boolean;
 }
 
 export interface ProductCommand {
@@ -47,7 +48,7 @@ export const commandRegistry: readonly ProductCommand[] = [
 		description: 'Create a task from anywhere in the active project',
 		aliases: ['create task', 'new task'],
 		scope: 'project',
-		shortcut: { code: 'KeyN', keyLabel: 'N' }
+		shortcut: { code: 'KeyN', keyLabel: 'N', allowAlt: true }
 	},
 	{
 		id: 'toggle-chat',
@@ -150,8 +151,21 @@ export function formatShortcut(command: ShortcutCommand, applePlatform: boolean)
 	return `${platformModifierLabel(applePlatform)} + ${command.keyLabel}`;
 }
 
+export function formatShortcuts(command: ShortcutCommand, applePlatform: boolean): string[] {
+	const shortcuts = [formatShortcut(command, applePlatform)];
+	if (command.shortcut.allowAlt) {
+		shortcuts.push(
+			`${platformModifierLabel(applePlatform)} + ${applePlatform ? 'Option' : 'Alt'} + ${command.keyLabel}`
+		);
+	}
+	return shortcuts;
+}
+
 export function ariaShortcut(command: ShortcutCommand, applePlatform: boolean): string {
-	return `${applePlatform ? 'Meta' : 'Control'}+${command.keyLabel}`;
+	const modifier = applePlatform ? 'Meta' : 'Control';
+	const shortcuts = [`${modifier}+${command.keyLabel}`];
+	if (command.shortcut.allowAlt) shortcuts.push(`${modifier}+Alt+${command.keyLabel}`);
+	return shortcuts.join(' ');
 }
 
 export function matchesShortcut(
@@ -170,7 +184,8 @@ export function matchesShortcut(
 	applePlatform: boolean
 ): boolean {
 	if (event.defaultPrevented || event.isComposing || event.repeat) return false;
-	if (event.code !== command.code || event.altKey || event.shiftKey) return false;
+	if (event.code !== command.code || event.shiftKey) return false;
+	if (event.altKey && !command.shortcut.allowAlt) return false;
 	return applePlatform ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
 

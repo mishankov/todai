@@ -18,7 +18,7 @@
 	import QuickAddDialog from './QuickAddDialog.svelte';
 	import {
 		findShortcutCommand,
-		formatShortcut,
+		formatShortcuts,
 		isApplePlatform,
 		shortcutCommand,
 		type ProductCommand
@@ -215,7 +215,9 @@
 		void restoreFocus();
 	}
 
-	let quickAddLabel = $derived(formatShortcut(shortcutCommand('quick-add'), applePlatform));
+	let quickAddLabel = $derived(
+		formatShortcuts(shortcutCommand('quick-add'), applePlatform).join(' / ')
+	);
 	let activeSectionId = $derived(sectionFromPath(currentPath));
 
 	function sectionFromPath(path: string): string | null {

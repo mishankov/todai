@@ -29,8 +29,17 @@ describe('AppShell', () => {
 			.element(page.getByRole('link', { name: 'Tasks' }))
 			.toHaveAttribute('href', '/projects/work-id/tasks');
 		await expect
-			.element(page.getByRole('button', { name: /Create task \((Cmd|Ctrl) \+ N\)/ }))
-			.toHaveAttribute('title', expect.stringMatching(/Create task \((Cmd|Ctrl) \+ N\)/));
+			.element(
+				page.getByRole('button', {
+					name: /Create task \((Cmd \+ N \/ Cmd \+ Option \+ N|Ctrl \+ N \/ Ctrl \+ Alt \+ N)\)/
+				})
+			)
+			.toHaveAttribute(
+				'title',
+				expect.stringMatching(
+					/Create task \((Cmd \+ N \/ Cmd \+ Option \+ N|Ctrl \+ N \/ Ctrl \+ Alt \+ N)\)/
+				)
+			);
 		await expect
 			.element(
 				page.getByRole('button', { name: /Open command palette \((Cmd|Ctrl) \+ K\)/ }).first()

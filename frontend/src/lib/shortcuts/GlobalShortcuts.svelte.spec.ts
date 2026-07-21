@@ -35,7 +35,7 @@ describe('GlobalShortcuts', () => {
 			updateTask
 		});
 
-		dispatchShortcut('KeyN');
+		dispatchShortcut('KeyN', true);
 		const dialog = page.getByRole('dialog', { name: 'Create a task' });
 		await expect.element(dialog).toBeVisible();
 		dispatchShortcut('KeyK');
@@ -133,7 +133,7 @@ describe('GlobalShortcuts', () => {
 	});
 });
 
-function dispatchShortcut(code: string) {
+function dispatchShortcut(code: string, altKey = false) {
 	const apple = isApplePlatform(window.navigator.platform);
 	window.dispatchEvent(
 		new KeyboardEvent('keydown', {
@@ -141,6 +141,7 @@ function dispatchShortcut(code: string) {
 			cancelable: true,
 			code,
 			key: code,
+			altKey,
 			metaKey: apple,
 			ctrlKey: !apple
 		})

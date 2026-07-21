@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
 	commandRegistry,
+	ariaShortcut,
 	findShortcutCommand,
 	formatShortcut,
+	formatShortcuts,
 	isApplePlatform,
 	matchesShortcut,
 	shortcutCommand,
@@ -48,6 +50,28 @@ describe('keyboard shortcut registry', () => {
 		expect(isApplePlatform('Win32')).toBe(false);
 		expect(formatShortcut(shortcutCommand('quick-add'), true)).toBe('Cmd + N');
 		expect(formatShortcut(shortcutCommand('quick-add'), false)).toBe('Ctrl + N');
+		expect(formatShortcuts(shortcutCommand('quick-add'), true)).toEqual([
+			'Cmd + N',
+			'Cmd + Option + N'
+		]);
+		expect(formatShortcuts(shortcutCommand('quick-add'), false)).toEqual([
+			'Ctrl + N',
+			'Ctrl + Alt + N'
+		]);
+		expect(ariaShortcut(shortcutCommand('quick-add'), true)).toBe('Meta+N Meta+Alt+N');
+		expect(ariaShortcut(shortcutCommand('quick-add'), false)).toBe('Control+N Control+Alt+N');
+	});
+
+	it('accepts quick add with or without the browser-safe Alt modifier', () => {
+		const command = shortcutCommand('quick-add');
+		for (const altKey of [false, true]) {
+			expect(
+				matchesShortcut(keyboardEvent({ code: 'KeyN', metaKey: true, altKey }), command, true)
+			).toBe(true);
+			expect(
+				matchesShortcut(keyboardEvent({ code: 'KeyN', ctrlKey: true, altKey }), command, false)
+			).toBe(true);
+		}
 	});
 
 	it('matches only the exact primary modifier and physical key', () => {

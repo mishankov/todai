@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { formatShortcut, shortcutCommands } from './registry';
+	import { formatShortcuts, shortcutCommands } from './registry';
 
 	interface Props {
 		applePlatform: boolean;
@@ -61,7 +61,11 @@
 			{#each shortcutCommands as command (command.id)}
 				<li>
 					<span><strong>{command.label}</strong><small>{command.description}</small></span>
-					<kbd>{formatShortcut(command, applePlatform)}</kbd>
+					<span class="shortcut-keys">
+						{#each formatShortcuts(command, applePlatform) as shortcut (shortcut)}
+							<kbd>{shortcut}</kbd>
+						{/each}
+					</span>
 				</li>
 			{/each}
 		</ul>
@@ -142,9 +146,14 @@
 	li:last-child {
 		border-bottom: 0;
 	}
-	li span {
+	li > span:first-child {
 		display: grid;
 		gap: 0.2rem;
+	}
+	.shortcut-keys {
+		display: grid;
+		flex: none;
+		gap: 0.35rem;
 	}
 	strong {
 		font-size: 0.85rem;
