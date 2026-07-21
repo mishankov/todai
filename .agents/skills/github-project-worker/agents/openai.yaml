@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Project Worker"
+  short_description: "Implement one card and sync its status"
+  default_prompt: "Use $github-project-worker to implement this GitHub Project card and keep its status synchronized."

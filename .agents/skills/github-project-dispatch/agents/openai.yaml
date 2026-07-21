@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Project Dispatcher"
+  short_description: "Dispatch ready cards into Codex tasks"
+  default_prompt: "Use $github-project-dispatch to create a separate Codex task for every Ready for agent card in mishankov project 8."
