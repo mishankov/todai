@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
-	import type { Project } from '$lib/projects/client';
+	import type { Project, ProjectSection } from '$lib/projects/client';
 	import TaskView from './TaskView.svelte';
 
 	interface Props {
@@ -10,6 +10,8 @@
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 		remove: (taskId: string, version: number) => Promise<void>;
 		projects?: Project[];
+		sections?: ProjectSection[];
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		currentProjectId?: string;
 	}
 
@@ -20,6 +22,8 @@
 		update,
 		remove,
 		projects = [],
+		sections = [],
+		loadSections,
 		currentProjectId
 	}: Props = $props();
 	const date = new Intl.DateTimeFormat(undefined, {
@@ -36,6 +40,8 @@
 	{update}
 	{remove}
 	{projects}
+	{sections}
+	{loadSections}
 	{currentProjectId}
 	eyebrow={date}
 	heading="Today"

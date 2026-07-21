@@ -16,26 +16,26 @@ describe('TaskEditorModal relationships', () => {
 		renderModal({
 			task,
 			projects: [project],
-			sections: [section],
-			currentProjectId: project.id
+			sections: [section]
 		});
 
 		await expect.element(page.getByRole('group', { name: 'Task properties' })).toBeVisible();
-		await expect
-			.element(page.getByRole('button', { name: 'Location: Работа / Задачи' }))
-			.toBeVisible();
-		await expect.element(page.getByRole('combobox', { name: 'Priority' })).toBeVisible();
-		await expect.element(page.getByLabelText('Due date')).toBeVisible();
-		await expect.element(page.getByRole('button', { name: '+ Time' })).toBeDisabled();
+		const location = page.getByRole('button', { name: 'Location: Работа / Задачи' });
+		await expect.element(location).toBeVisible();
+		await location.click();
+		await expect.element(page.getByRole('button', { name: 'Project: Работа' })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: 'Section: Задачи' })).toBeVisible();
+		await location.click();
+		await expect.element(page.getByRole('button', { name: 'Priority: None' })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: 'Due date: No date' })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: 'Due time: + Time' })).toBeDisabled();
 
-		await page.getByRole('button', { name: 'Location: Работа / Задачи' }).click();
-		await expect.element(page.getByRole('combobox', { name: 'Project' })).toBeVisible();
-		await expect.element(page.getByRole('combobox', { name: 'Section' })).toBeVisible();
+		const properties = page.getByRole('group', { name: 'Task properties' }).element();
+		expect(properties.children).toHaveLength(4);
 
-		await page.getByLabelText('Due date').fill('2026-07-20');
-		await expect.element(page.getByRole('button', { name: '+ Time' })).toBeEnabled();
-		await page.getByRole('button', { name: '+ Time' }).click();
-		await expect.element(page.getByLabelText('Due time', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Due date: No date' }).click();
+		await page.getByRole('option', { name: /^Tomorrow/ }).click();
+		await expect.element(page.getByRole('button', { name: /^Due time:/ })).toBeEnabled();
 	});
 
 	it('loads subtasks and comments into accessible sections', async () => {
@@ -282,7 +282,7 @@ interface ModalOverrides {
 	task?: Task;
 	projects?: Project[];
 	sections?: ProjectSection[];
-	currentProjectId?: string;
+	loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 	save?: (update: TaskUpdate) => Promise<void>;
 	loadSubtasks?: (taskId: string) => Promise<Task[]>;
 	addSubtask?: (title: string) => Promise<Task>;
@@ -301,7 +301,7 @@ function renderModal(overrides: ModalOverrides = {}) {
 		task,
 		projects: overrides.projects ?? [],
 		sections: overrides.sections,
-		currentProjectId: overrides.currentProjectId,
+		loadSections: overrides.loadSections,
 		save: overrides.save ?? vi.fn(async () => {}),
 		close: vi.fn(),
 		loadSubtasks: overrides.loadSubtasks ?? vi.fn(async () => []),

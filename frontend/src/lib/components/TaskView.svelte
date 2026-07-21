@@ -1,12 +1,13 @@
 <script lang="ts">
-	import type { Project } from '$lib/projects/client';
+	import type { Project, ProjectSection } from '$lib/projects/client';
 	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
-	import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 	import TaskEditorModal from './TaskEditorModal.svelte';
+	import TaskQuickAdd from './TaskQuickAdd.svelte';
 
 	interface Props {
 		initialTasks: TaskSummary[];
-		create?: (title: string) => Promise<Task>;
+		create?: (draft: TaskCreateDraft) => Promise<Task>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
@@ -18,6 +19,8 @@
 		emptyMessage: string;
 		listLabel: string;
 		projects?: Project[];
+		sections?: ProjectSection[];
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		currentProjectId?: string | null;
 		currentSectionId?: string | null;
 	}
@@ -44,12 +47,12 @@
 		emptyMessage,
 		listLabel,
 		projects = [],
+		sections = [],
+		loadSections,
 		currentProjectId,
 		currentSectionId
 	}: Props = $props();
 	let tasks = $derived([...initialTasks]);
-	let title = $state('');
-	let creating = $state(false);
 	let busyTaskIds = $state<string[]>([]);
 	let errorMessage = $state('');
 	let editingTaskId = $state<string | null>(null);
@@ -57,22 +60,6 @@
 	let completedTasks = $derived(tasks.filter((item) => item.status === 'completed'));
 	let taskGroups = $derived(buildTaskGroups(activeTasks, completedTasks));
 	let editingTask = $derived(tasks.find((item) => item.id === editingTaskId));
-
-	async function addTask() {
-		if (!title.trim() || !create) return;
-
-		creating = true;
-		errorMessage = '';
-		try {
-			const created = await create(title);
-			tasks = [...tasks, summaryFromTask(created)];
-			title = '';
-		} catch {
-			errorMessage = 'The task could not be created. Please try again.';
-		} finally {
-			creating = false;
-		}
-	}
 
 	async function changeStatus(item: TaskSummary) {
 		const previousItem = item;
@@ -298,27 +285,12 @@
 	</header>
 
 	{#if create}
-		<form
-			class="quick-add"
-			onsubmit={(event) => {
-				event.preventDefault();
-				void addTask();
-			}}
-		>
-			<label class="sr-only" for="new-task">Task title</label>
-			<input
-				id="new-task"
-				name="title"
-				placeholder="Add task"
-				autocomplete="off"
-				maxlength="500"
-				bind:value={title}
-				disabled={creating}
-			/>
-			<button type="submit" aria-label="Add task" disabled={creating || !title.trim()}>
-				{creating ? 'Adding…' : 'Add'}
-			</button>
-		</form>
+		<TaskQuickAdd
+			{create}
+			oncreated={(created) => (tasks = [...tasks, summaryFromTask(created)])}
+			initialProjectId={currentProjectId ?? projects[0]?.id ?? ''}
+			initialSectionId={currentSectionId ?? null}
+		/>
 	{/if}
 
 	{#if errorMessage}
@@ -420,6 +392,8 @@
 	<TaskEditorModal
 		task={editingTask}
 		{projects}
+		{sections}
+		{loadSections}
 		save={(changes) => saveItem(editingTask, changes)}
 		close={() => (editingTaskId = null)}
 	/>
@@ -459,49 +433,6 @@
 		color: #8a8984;
 		font-size: 0.75rem;
 		font-weight: 650;
-	}
-
-	.quick-add {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.55rem;
-		padding: 0.25rem 0 0.7rem;
-		border-bottom: 1px solid #e7e7e4;
-	}
-
-	.quick-add input {
-		min-width: 0;
-		padding: 0.55rem 0.2rem;
-		border: 0;
-		color: #292927;
-		background: transparent;
-		outline: none;
-	}
-
-	.quick-add input::placeholder {
-		color: #85847f;
-	}
-
-	.quick-add:focus-within input::placeholder {
-		color: var(--theme-accent, #2d6540);
-	}
-
-	.quick-add button {
-		padding: 0.5rem 0.75rem;
-		border: 0;
-		border-radius: 0.35rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
-		font-size: 0.76rem;
-		font-weight: 720;
-		cursor: pointer;
-	}
-
-	.quick-add button:disabled {
-		color: #aaa7a1;
-		background: #efefec;
-		cursor: default;
 	}
 
 	.task-space {

@@ -462,15 +462,25 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.getByRole('textbox', { name: 'Add a comment' }).fill('Prefer an unsweetened option.');
 	await page.getByRole('button', { name: 'Send comment' }).click();
 	await expect(page.getByText('Prefer an unsweetened option.', { exact: true })).toBeVisible();
-	await page.getByLabel('Title', { exact: true }).fill('Buy oat milk');
-	await page.getByLabel('Description').fill('For breakfast');
-	await page.getByLabel('Priority').selectOption('3');
-	await page.getByLabel('Due date').fill(todayDate());
-	await page.getByRole('button', { name: '+ Time' }).click();
-	await page.getByLabel('Due time', { exact: true }).fill('23:59');
-	await page.getByRole('button', { name: 'Save changes' }).click();
+	const milkDialog = page.getByRole('dialog', { name: 'Edit task: Buy milk' });
+	await milkDialog.getByLabel('Title', { exact: true }).fill('Buy oat milk');
+	await milkDialog.getByLabel('Description').fill('For breakfast');
+	await milkDialog.getByRole('button', { name: 'Priority: None' }).click();
+	await milkDialog.getByRole('option', { name: 'High' }).click();
+	await milkDialog.getByRole('button', { name: 'Due date: No date' }).click();
+	await milkDialog.getByRole('option', { name: /^Tomorrow/ }).click();
+	await milkDialog.getByRole('button', { name: 'Due time: + Time' }).click();
+	await milkDialog.getByRole('option', { name: /^Morning/ }).click();
+	await milkDialog.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
-	await expect(page.getByText('High')).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'Open Buy oat milk' }).getByText('High')
+	).toBeVisible();
+	expect(tasks.find((item) => item.title === 'Buy oat milk')).toMatchObject({
+		dueDate: tomorrowDate(),
+		dueTime: '09:00',
+		priority: 3
+	});
 
 	await page.getByRole('link', { name: 'Manage projects' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
@@ -507,12 +517,11 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page.getByText('Plan sprint')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
-	await page.getByRole('button', { name: 'Location: Work' }).click();
-	await page
-		.getByRole('group', { name: 'Task location' })
-		.getByRole('combobox', { name: 'Project', exact: true })
-		.selectOption('project-1');
-	await page.getByRole('button', { name: 'Save changes' }).click();
+	const sprintDialog = page.getByRole('dialog', { name: 'Edit task: Plan sprint' });
+	await sprintDialog.getByRole('button', { name: /^Location:/ }).click();
+	await sprintDialog.getByRole('button', { name: 'Project: Work' }).click();
+	await sprintDialog.getByRole('option', { name: 'Personal' }).click();
+	await sprintDialog.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Plan sprint')).toHaveCount(0);
 
 	await page.evaluate(() =>
@@ -644,7 +653,16 @@ function testSection(overrides: Partial<ProjectSection> = {}): ProjectSection {
 }
 
 function todayDate(): string {
+	return localDate(0);
+}
+
+function tomorrowDate(): string {
+	return localDate(1);
+}
+
+function localDate(offset: number): string {
 	const date = new Date();
+	date.setDate(date.getDate() + offset);
 	const year = date.getFullYear();
 	const month = String(date.getMonth() + 1).padStart(2, '0');
 	const day = String(date.getDate()).padStart(2, '0');
