@@ -465,10 +465,11 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	const milkDialog = page.getByRole('dialog', { name: 'Edit task: Buy milk' });
 	await milkDialog.getByLabel('Title', { exact: true }).fill('Buy oat milk');
 	await milkDialog.getByLabel('Description').fill('For breakfast');
-	await milkDialog.getByRole('radio', { name: 'Priority: High' }).click();
+	await milkDialog.getByRole('button', { name: 'Priority: None' }).click();
+	await milkDialog.getByRole('option', { name: 'High' }).click();
 	await milkDialog.getByRole('button', { name: 'Due date: No date' }).click();
 	await milkDialog.getByRole('option', { name: /^Tomorrow/ }).click();
-	await milkDialog.getByRole('button', { name: 'Due time: No time' }).click();
+	await milkDialog.getByRole('button', { name: 'Due time: + Time' }).click();
 	await milkDialog.getByRole('option', { name: /^Morning/ }).click();
 	await milkDialog.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
@@ -517,6 +518,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
 	const sprintDialog = page.getByRole('dialog', { name: 'Edit task: Plan sprint' });
+	await sprintDialog.getByRole('button', { name: /^Location:/ }).click();
 	await sprintDialog.getByRole('button', { name: 'Project: Work' }).click();
 	await sprintDialog.getByRole('option', { name: 'Personal' }).click();
 	await sprintDialog.getByRole('button', { name: 'Save changes' }).click();

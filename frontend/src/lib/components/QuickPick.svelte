@@ -23,6 +23,9 @@
 		customValue?: string;
 		align?: 'start' | 'end';
 		refresh?: () => void;
+		variant?: 'default' | 'segment';
+		prefix?: string;
+		icon?: 'flag' | 'clock';
 	}
 
 	let {
@@ -37,7 +40,10 @@
 		customInput,
 		customValue = '',
 		align = 'start',
-		refresh
+		refresh,
+		variant = 'default',
+		prefix,
+		icon
 	}: Props = $props();
 	let wrapper: HTMLDivElement;
 	let trigger: HTMLButtonElement;
@@ -82,7 +88,7 @@
 	function hide(restoreFocus = false) {
 		open = false;
 		query = '';
-		if (restoreFocus) queueMicrotask(() => trigger.focus());
+		if (restoreFocus) queueMicrotask(() => trigger?.focus());
 	}
 
 	function choose(item: QuickPickItem) {
@@ -157,6 +163,7 @@
 <div
 	bind:this={wrapper}
 	class="quick-pick"
+	class:segment={variant === 'segment'}
 	onfocusout={(event) => {
 		if (!wrapper.contains(event.relatedTarget as Node | null)) hide();
 	}}
@@ -173,8 +180,23 @@
 		onkeydown={handleTriggerKeydown}
 		onclick={() => (open ? hide() : void show())}
 	>
-		<span>{buttonText}</span>
-		<svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" /></svg>
+		{#if icon === 'flag'}
+			<svg class="leading-icon" aria-hidden="true" viewBox="0 0 24 24">
+				<path d="M5 21V4m0 1h10l-1.5 3L15 11H5" />
+			</svg>
+		{:else if icon === 'clock'}
+			<svg class="leading-icon" aria-hidden="true" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="8.5" />
+				<path d="M12 7.5V12l3 2" />
+			</svg>
+		{/if}
+		<span class="trigger-copy">
+			{#if prefix}<span class="trigger-prefix">{prefix}</span>{/if}
+			<span class="trigger-value">{buttonText}</span>
+		</span>
+		<svg class="chevron" aria-hidden="true" viewBox="0 0 16 16">
+			<path d="m4 6 4 4 4-4" />
+		</svg>
 	</button>
 
 	{#if open}
@@ -263,6 +285,9 @@
 		position: relative;
 		min-width: 0;
 	}
+	.quick-pick.segment {
+		height: 100%;
+	}
 	.quick-pick-trigger {
 		display: flex;
 		width: 100%;
@@ -281,12 +306,24 @@
 		font-weight: 650;
 		cursor: pointer;
 	}
-	.quick-pick-trigger > span {
+	.trigger-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		align-items: baseline;
+		gap: 0.3rem;
+	}
+	.trigger-value {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.quick-pick-trigger svg {
+	.trigger-prefix {
+		flex: none;
+		color: #657269;
+		font-size: 0.72rem;
+	}
+	.quick-pick-trigger .chevron {
 		width: 0.8rem;
 		flex: none;
 		fill: none;
@@ -294,6 +331,16 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 		stroke-width: 1.5;
+	}
+	.quick-pick-trigger .leading-icon {
+		width: 1rem;
+		height: 1rem;
+		flex: none;
+		fill: none;
+		stroke: #657269;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.7;
 	}
 	.quick-pick-trigger:hover:not(:disabled),
 	.quick-pick-trigger:focus-visible {
@@ -305,6 +352,23 @@
 	.quick-pick-trigger:disabled {
 		cursor: not-allowed;
 		opacity: 0.48;
+	}
+	.segment .quick-pick-trigger {
+		height: 100%;
+		min-height: 2.75rem;
+		padding: 0.45rem 0.68rem;
+		border: 0;
+		border-left: 1px solid var(--theme-border, #dce4da);
+		border-radius: 0;
+		background: transparent;
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.segment .quick-pick-trigger:hover:not(:disabled),
+	.segment .quick-pick-trigger:focus-visible {
+		border-color: var(--theme-border, #dce4da);
+		background: var(--theme-hover, #f3f7f2);
+		box-shadow: none;
 	}
 	.quick-pick-panel {
 		position: fixed;
@@ -426,6 +490,13 @@
 		}
 		.quick-pick-option {
 			min-height: 2.9rem;
+		}
+	}
+	@media (max-width: 46rem) {
+		.segment .quick-pick-trigger {
+			border: 1px solid var(--theme-border, #ccd6ca);
+			border-radius: 0.7rem;
+			background: #fff;
 		}
 	}
 </style>

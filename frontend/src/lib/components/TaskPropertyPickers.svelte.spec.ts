@@ -14,9 +14,10 @@ describe('TaskPropertyPickers', () => {
 		const tomorrow = page.getByRole('option', { name: /^Tomorrow/ });
 		await expect.element(tomorrow).toHaveTextContent(/Tomorrow.+/);
 		await tomorrow.click();
-		await page.getByRole('button', { name: 'Due time: No time' }).click();
+		await page.getByRole('button', { name: 'Due time: + Time' }).click();
 		await page.getByRole('option', { name: /^Morning/ }).click();
-		await page.getByRole('radio', { name: 'Priority: High' }).click();
+		await page.getByRole('button', { name: 'Priority: None' }).click();
+		await page.getByRole('option', { name: 'High' }).click();
 
 		const draft = await readDraft();
 		expect(draft.priority).toBe(3);
@@ -61,6 +62,7 @@ describe('TaskPropertyPickers', () => {
 		);
 		renderPickers({ projects, loadSections, initialSectionId: 'old-section' });
 
+		await page.getByRole('button', { name: /^Location:/ }).click();
 		await page.getByRole('button', { name: /^Project:/ }).click();
 		await page.getByRole('searchbox', { name: 'Search projects' }).fill('work');
 		await page.getByRole('option', { name: 'Work' }).click();
@@ -101,6 +103,7 @@ describe('TaskPropertyPickers', () => {
 		);
 		renderPickers({ projects, sections, initialSectionId: sections[0].id });
 
+		await page.getByRole('button', { name: /^Location:/ }).click();
 		await page.getByRole('button', { name: 'Project: Home' }).click();
 		let labels = Array.from(document.querySelectorAll('[role="option"] strong')).map(
 			(element) => element.textContent

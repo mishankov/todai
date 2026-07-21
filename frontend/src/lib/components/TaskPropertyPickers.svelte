@@ -24,7 +24,6 @@
 		projects?: Project[];
 		sections?: ProjectSection[];
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
-		compact?: boolean;
 	}
 
 	let {
@@ -36,8 +35,7 @@
 		dueTimezone = $bindable(),
 		projects = [],
 		sections = [],
-		loadSections,
-		compact = false
+		loadSections
 	}: Props = $props();
 	let cachedSections = $state<ProjectSection[]>([]);
 	let loadedProjectIds = $state<string[]>([]);
@@ -45,6 +43,7 @@
 	let recentProjectIds = $state<string[]>([]);
 	let recentSectionIds = $state<string[]>([]);
 	let dateReference = $state(new Date());
+	let locationOpen = $state(false);
 	const projectStorageKey = 'todai.quick-picks.recent-projects';
 	const sectionStorageKeyPrefix = 'todai.quick-picks.recent-sections';
 	let currentSections = $derived(
@@ -74,6 +73,9 @@
 		{ id: '__no_time__', label: 'No time' },
 		{ id: '__custom_time__', label: 'Choose time…', custom: true }
 	]);
+	let priorityItems = $derived<QuickPickItem[]>(
+		priorityOptions.map((option) => ({ id: String(option.value), label: option.label }))
+	);
 	let projectName = $derived(
 		projects.find((project) => project.id === projectId)?.name ?? 'Choose project'
 	);
@@ -82,8 +84,12 @@
 			? 'No section (Inbox)'
 			: (currentSections.find((section) => section.id === sectionId)?.name ?? 'Choose section')
 	);
+	let locationName = $derived(`${projectName} / ${sectionName}`);
+	let priorityName = $derived(
+		priorityOptions.find((option) => option.value === priority)?.label ?? 'None'
+	);
 	let dateName = $derived(dueDate ? formatDate(dueDate) : 'No date');
-	let timeName = $derived(dueTime ? formatTime(dueTime) : 'No time');
+	let timeName = $derived(dueTime ? formatTime(dueTime) : '+ Time');
 
 	$effect(() => {
 		const incoming = sections;
@@ -184,6 +190,10 @@
 		dueDate = value;
 	}
 
+	function choosePriority(value: string) {
+		priority = Number(value);
+	}
+
 	function chooseTime(value: string) {
 		if (value === '__no_time__') {
 			dueTime = null;
@@ -197,184 +207,193 @@
 </script>
 
 <div
-	class:compact
-	class="task-property-pickers"
+	class="property-bar"
 	role="group"
 	aria-label="Task properties"
 	data-timezone={dueTimezone ?? undefined}
 >
-	<div class="location-pickers">
-		<QuickPick
-			label="Project"
-			buttonText={projectName}
-			items={projectItems}
-			value={projectId}
-			select={chooseProject}
-			searchable
-			searchPlaceholder="Search projects"
-		/>
-		<QuickPick
-			label="Section"
-			buttonText={loadingProjectIds.includes(projectId) ? 'Loading sections…' : sectionName}
-			items={sectionItems}
-			value={sectionId ?? '__inbox__'}
-			select={chooseSection}
-			searchable
-			searchPlaceholder="Search sections"
-		/>
+	<div
+		class="property-location"
+		onfocusout={(event) => {
+			const location = event.currentTarget;
+			window.setTimeout(() => {
+				if (!location.contains(document.activeElement)) locationOpen = false;
+			}, 0);
+		}}
+	>
+		<button
+			class="property-trigger"
+			type="button"
+			aria-label={`Location: ${locationName}`}
+			aria-haspopup="dialog"
+			aria-expanded={locationOpen}
+			onkeydown={(event) => {
+				if (event.key === 'Escape' && locationOpen) {
+					event.preventDefault();
+					locationOpen = false;
+				}
+			}}
+			onclick={() => (locationOpen = !locationOpen)}
+		>
+			<svg aria-hidden="true" viewBox="0 0 24 24">
+				<path d="M3.5 7.5h6l1.7 2h9.3v9h-17zM3.5 7.5V5h6l1.7 2.5" />
+			</svg>
+			<span>{locationName}</span>
+			<svg class="chevron" aria-hidden="true" viewBox="0 0 24 24">
+				<path d="m8 10 4 4 4-4" />
+			</svg>
+		</button>
+
+		{#if locationOpen}
+			<div class="location-popover" role="dialog" aria-label="Task location">
+				<QuickPick
+					label="Project"
+					buttonText={projectName}
+					items={projectItems}
+					value={projectId}
+					select={chooseProject}
+					searchable
+					searchPlaceholder="Search projects"
+				/>
+				<QuickPick
+					label="Section"
+					buttonText={loadingProjectIds.includes(projectId) ? 'Loading sections…' : sectionName}
+					items={sectionItems}
+					value={sectionId ?? '__inbox__'}
+					select={chooseSection}
+					searchable
+					searchPlaceholder="Search sections"
+				/>
+			</div>
+		{/if}
 	</div>
 
-	<div class="priority-picker" role="radiogroup" aria-label="Priority">
-		{#each priorityOptions as option (option.value)}
-			<button
-				type="button"
-				class:active={priority === option.value}
-				class={`priority-${option.value}`}
-				role="radio"
-				aria-checked={priority === option.value}
-				aria-label={`Priority: ${option.label}`}
-				title={option.label}
-				onclick={() => (priority = option.value)}
-			>
-				<span class="priority-dot" aria-hidden="true"></span>
-				<span>{option.label}</span>
-			</button>
-		{/each}
-	</div>
-
-	<div class="schedule-pickers">
-		<QuickPick
-			label="Due date"
-			buttonText={dateName}
-			items={dateItems}
-			value={dueDate ?? '__no_date__'}
-			select={chooseDate}
-			customInput="date"
-			customValue={dueDate ?? ''}
-			refresh={() => (dateReference = new Date())}
-		/>
-		<QuickPick
-			label="Due time"
-			buttonText={timeName}
-			items={dueTimeItems}
-			value={dueTime ?? '__no_time__'}
-			select={chooseTime}
-			customInput="time"
-			customValue={dueTime ?? ''}
-			disabled={!dueDate}
-			align="end"
-		/>
-	</div>
+	<QuickPick
+		label="Priority"
+		buttonText={priorityName}
+		items={priorityItems}
+		value={String(priority)}
+		select={choosePriority}
+		variant="segment"
+		prefix="Priority:"
+		icon="flag"
+	/>
+	<QuickPick
+		label="Due date"
+		buttonText={dateName}
+		items={dateItems}
+		value={dueDate ?? '__no_date__'}
+		select={chooseDate}
+		customInput="date"
+		customValue={dueDate ?? ''}
+		refresh={() => (dateReference = new Date())}
+		variant="segment"
+	/>
+	<QuickPick
+		label="Due time"
+		buttonText={timeName}
+		items={dueTimeItems}
+		value={dueTime ?? '__no_time__'}
+		select={chooseTime}
+		customInput="time"
+		customValue={dueTime ?? ''}
+		disabled={!dueDate}
+		align="end"
+		variant="segment"
+		icon="clock"
+	/>
 </div>
 
 <style>
-	.task-property-pickers {
+	.property-bar {
 		display: grid;
-		gap: 0.65rem;
-	}
-	.location-pickers,
-	.schedule-pickers {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.55rem;
-	}
-	.priority-picker {
-		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		overflow: hidden;
-		border: 1px solid var(--theme-border, #ccd6ca);
-		border-radius: 0.65rem;
-	}
-	.priority-picker button {
-		display: flex;
+		grid-template-columns: minmax(0, 1.45fr) minmax(9rem, 1fr) minmax(9.5rem, 1fr) minmax(
+				6.75rem,
+				0.7fr
+			);
 		min-width: 0;
-		min-height: 2.25rem;
-		align-items: center;
-		justify-content: center;
-		gap: 0.35rem;
-		padding: 0.42rem;
-		border: 0;
-		border-left: 1px solid var(--theme-border, #e0e6df);
-		color: #59645c;
+		min-height: 2.85rem;
+		border: 1px solid var(--theme-border, #ccd6ca);
+		border-radius: 0.75rem;
 		background: #fff;
+	}
+	.property-location {
+		position: relative;
+		min-width: 0;
+	}
+	.property-trigger {
+		display: flex;
+		width: 100%;
+		min-width: 0;
+		min-height: 2.75rem;
+		align-items: center;
+		gap: 0.48rem;
+		padding: 0.45rem 0.68rem;
+		border: 0;
+		border-radius: 0;
+		color: #29332c;
+		background: transparent;
 		font: inherit;
-		font-size: 0.7rem;
-		font-weight: 650;
+		font-size: 0.78rem;
+		font-weight: 600;
+		text-align: left;
 		cursor: pointer;
 	}
-	.priority-picker button:first-child {
-		border-left: 0;
+	.property-trigger > span {
+		min-width: 0;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
-	.priority-picker button:hover,
-	.priority-picker button:focus-visible {
+	.property-trigger svg {
+		width: 1rem;
+		height: 1rem;
+		flex: none;
+		fill: none;
+		stroke: #657269;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.7;
+	}
+	.property-trigger .chevron {
+		width: 0.85rem;
+		height: 0.85rem;
+	}
+	.property-trigger:hover,
+	.property-trigger:focus-visible {
 		background: var(--theme-hover, #f3f7f2);
 		outline: none;
 	}
-	.priority-picker button.active {
-		color: #1f2c23;
-		background: var(--theme-hover, #edf5ed);
-		box-shadow: inset 0 -2px var(--theme-accent, #477d56);
-	}
-	.priority-dot {
-		width: 0.42rem;
-		height: 0.42rem;
-		flex: none;
-		border: 1.5px solid currentColor;
-		border-radius: 50%;
-	}
-	.priority-1 .priority-dot {
-		color: #66836f;
-	}
-	.priority-2 .priority-dot {
-		color: #a3822a;
-	}
-	.priority-3 .priority-dot {
-		color: #c16a28;
-	}
-	.priority-4 .priority-dot {
-		color: #bc3e35;
-		background: currentColor;
-	}
-	.compact {
-		padding: 0.55rem;
-		border: 1px solid #e4e8e3;
+	.location-popover {
+		position: absolute;
+		z-index: 5;
+		top: calc(100% + 0.45rem);
+		left: 0;
+		display: grid;
+		width: min(19rem, calc(100vw - 3rem));
+		gap: 0.7rem;
+		padding: 0.8rem;
+		border: 1px solid var(--theme-border, #ccd6ca);
 		border-radius: 0.75rem;
-		background: #fafbf9;
+		background: #fff;
+		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 14%, transparent);
 	}
-	@container (min-width: 40rem) {
-		.task-property-pickers {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-			align-items: start;
+	@media (max-width: 46rem) {
+		.property-bar {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 			gap: 0.45rem;
+			border: 0;
+			background: transparent;
 		}
-		.location-pickers {
-			grid-row: 1;
-			grid-column: 1 / 3;
-		}
-		.schedule-pickers {
-			grid-row: 1;
-			grid-column: 3 / 5;
-		}
-		.priority-picker {
-			grid-row: 2;
-			grid-column: 1 / 3;
+		.property-location {
+			border: 1px solid var(--theme-border, #ccd6ca);
+			border-radius: 0.7rem;
+			background: #fff;
 		}
 	}
-	@media (max-width: 38rem) {
-		.priority-picker {
-			grid-template-columns: repeat(5, minmax(2.4rem, 1fr));
-		}
-		.priority-picker button span:last-child {
-			position: absolute;
-			width: 1px;
-			height: 1px;
-			overflow: hidden;
-			clip: rect(0, 0, 0, 0);
-		}
-	}
-	@media (max-width: 25rem) {
-		.location-pickers,
-		.schedule-pickers {
+	@media (max-width: 28rem) {
+		.property-bar {
 			grid-template-columns: 1fr;
 		}
 	}

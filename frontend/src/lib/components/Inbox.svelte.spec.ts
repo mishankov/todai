@@ -186,7 +186,8 @@ describe('Inbox', () => {
 		const dialog = page.getByRole('dialog', { name: 'Edit task: Draft plan' });
 		await dialog.getByLabelText('Title', { exact: true }).fill('Publish plan');
 		await dialog.getByLabelText('Description').fill('Share with the team');
-		await dialog.getByRole('radio', { name: 'Priority: High' }).click();
+		await dialog.getByRole('button', { name: 'Priority: None' }).click();
+		await dialog.getByRole('option', { name: 'High' }).click();
 		await dialog.getByRole('button', { name: /^Due date:/ }).click();
 		await dialog.getByLabelText('Choose date…').fill('2026-07-20');
 		await dialog.getByRole('button', { name: 'Save changes' }).click();

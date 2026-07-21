@@ -162,7 +162,7 @@ describe('ProjectTasks', () => {
 		await expect
 			.element(dialog.getByRole('textbox', { name: 'Description' }))
 			.toHaveValue(task.description ?? '');
-		await expect.element(dialog.getByRole('radio', { name: 'Priority: High' })).toBeChecked();
+		await expect.element(dialog.getByRole('button', { name: 'Priority: High' })).toBeVisible();
 		await expect.element(dialog.getByRole('button', { name: /^Due date:/ })).toBeVisible();
 		await expect.element(dialog.getByRole('button', { name: /^Due time:/ })).toBeVisible();
 	});

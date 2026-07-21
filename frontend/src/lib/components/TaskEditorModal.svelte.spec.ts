@@ -20,33 +20,18 @@ describe('TaskEditorModal relationships', () => {
 		});
 
 		await expect.element(page.getByRole('group', { name: 'Task properties' })).toBeVisible();
+		const location = page.getByRole('button', { name: 'Location: Работа / Задачи' });
+		await expect.element(location).toBeVisible();
+		await location.click();
 		await expect.element(page.getByRole('button', { name: 'Project: Работа' })).toBeVisible();
 		await expect.element(page.getByRole('button', { name: 'Section: Задачи' })).toBeVisible();
-		await expect.element(page.getByRole('radio', { name: 'Priority: None' })).toBeChecked();
+		await location.click();
+		await expect.element(page.getByRole('button', { name: 'Priority: None' })).toBeVisible();
 		await expect.element(page.getByRole('button', { name: 'Due date: No date' })).toBeVisible();
-		await expect.element(page.getByRole('button', { name: 'Due time: No time' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Due time: + Time' })).toBeDisabled();
 
-		const modalContent = document.querySelector<HTMLElement>('.modal-content');
-		expect(modalContent).not.toBeNull();
-		modalContent!.style.display = 'block';
-		modalContent!.style.width = '45rem';
 		const properties = page.getByRole('group', { name: 'Task properties' }).element();
-		const projectRect = page
-			.getByRole('button', { name: 'Project: Работа' })
-			.element()
-			.getBoundingClientRect();
-		const dateRect = page
-			.getByRole('button', { name: 'Due date: No date' })
-			.element()
-			.getBoundingClientRect();
-		const priorityRect = page
-			.getByRole('radiogroup', { name: 'Priority' })
-			.element()
-			.getBoundingClientRect();
-		const propertiesRect = properties.getBoundingClientRect();
-		expect(Math.abs(projectRect.top - dateRect.top)).toBeLessThan(2);
-		expect(priorityRect.top).toBeGreaterThanOrEqual(projectRect.bottom);
-		expect(priorityRect.width).toBeLessThan(propertiesRect.width * 0.6);
+		expect(properties.children).toHaveLength(4);
 
 		await page.getByRole('button', { name: 'Due date: No date' }).click();
 		await page.getByRole('option', { name: /^Tomorrow/ }).click();
