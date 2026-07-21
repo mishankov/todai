@@ -1,7 +1,7 @@
 import { page, userEvent, type Locator } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
+import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 import type { Project, ProjectSection } from './client';
 import ProjectTasks from './ProjectTasks.svelte';
 
@@ -121,7 +121,13 @@ describe('ProjectTasks', () => {
 		await page.getByRole('textbox', { name: 'Add task to Doing' }).fill('Ship the change');
 		await page.getByRole('button', { name: 'Add task to Doing' }).click();
 
-		expect(create).toHaveBeenCalledWith('Ship the change', section.id);
+		expect(create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				title: 'Ship the change',
+				projectId: section.projectId,
+				sectionId: section.id
+			})
+		);
 		await expect
 			.element(page.getByRole('region', { name: 'Doing' }).getByText('Ship the change'))
 			.toBeVisible();
@@ -156,9 +162,9 @@ describe('ProjectTasks', () => {
 		await expect
 			.element(dialog.getByRole('textbox', { name: 'Description' }))
 			.toHaveValue(task.description ?? '');
-		await expect.element(dialog.getByRole('combobox', { name: 'Priority' })).toHaveValue('3');
-		await expect.element(dialog.getByLabelText('Due date')).toHaveValue(task.dueDate ?? '');
-		await expect.element(dialog.getByLabelText(/Due time/)).toHaveValue(task.dueTime ?? '');
+		await expect.element(dialog.getByRole('radio', { name: 'Priority: High' })).toBeChecked();
+		await expect.element(dialog.getByRole('button', { name: /^Due date:/ })).toBeVisible();
+		await expect.element(dialog.getByRole('button', { name: /^Due time:/ })).toBeVisible();
 	});
 
 	it('closes task editing with Escape without updating the task', async () => {
@@ -456,7 +462,7 @@ interface RenderOptions {
 	project?: Project;
 	sections?: ProjectSection[];
 	tasks?: TaskSummary[];
-	create?: (title: string, sectionId: string | null) => Promise<Task>;
+	create?: (draft: TaskCreateDraft) => Promise<Task>;
 	complete?: (taskId: string, version: number) => Promise<Task>;
 	update?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 	remove?: (taskId: string, version: number) => Promise<void>;

@@ -23,7 +23,7 @@
 		task: Task;
 		projects: Project[];
 		sections?: ProjectSection[];
-		currentProjectId?: string;
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		save: (update: TaskUpdate) => Promise<void>;
 		close: () => void;
 		loadSubtasks?: (taskId: string) => Promise<Task[]>;
@@ -41,7 +41,7 @@
 		task,
 		projects,
 		sections,
-		currentProjectId,
+		loadSections,
 		save,
 		close,
 		loadSubtasks = (taskId) => requestSubtasks(fetch, taskId),
@@ -316,7 +316,7 @@
 					{task}
 					{projects}
 					{sections}
-					{currentProjectId}
+					{loadSections}
 					{save}
 					cancel={close}
 					variant="dialog"

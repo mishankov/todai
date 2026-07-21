@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
 	createTask,
+	createTaskWithProperties,
 	createTaskComment,
 	deleteTaskComment,
 	getAllTasks,
@@ -63,6 +64,49 @@ describe('task client relationships', () => {
 				parentId: 'parent/id'
 			})
 		});
+	});
+
+	it('persists quick-add properties only when the draft is submitted', async () => {
+		const created = testTask({ id: 'created-id', version: 1 });
+		const configured = testTask({
+			...created,
+			priority: 3,
+			dueDate: '2026-07-22',
+			dueTime: '09:00',
+			dueTimezone: 'Europe/Moscow',
+			version: 2
+		});
+		const fetcher = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse(created, 201))
+			.mockResolvedValueOnce(jsonResponse(configured)) as unknown as typeof fetch;
+
+		await expect(
+			createTaskWithProperties(fetcher, {
+				title: 'Plan release',
+				projectId: 'project-id',
+				sectionId: null,
+				priority: 3,
+				dueDate: '2026-07-22',
+				dueTime: '09:00',
+				dueTimezone: 'Europe/Moscow'
+			})
+		).resolves.toEqual(configured);
+		expect(fetcher).toHaveBeenCalledTimes(2);
+		expect(fetcher).toHaveBeenNthCalledWith(
+			2,
+			'/api/tasks/created-id',
+			expect.objectContaining({
+				method: 'PATCH',
+				body: JSON.stringify({
+					version: 1,
+					priority: 3,
+					dueDate: '2026-07-22',
+					dueTime: '09:00',
+					dueTimezone: 'Europe/Moscow'
+				})
+			})
+		);
 	});
 
 	it('loads subtasks for the selected task', async () => {
@@ -148,13 +192,14 @@ describe('task client relationships', () => {
 });
 
 function jsonFetcher(body: unknown, status = 200): typeof fetch {
-	return vi.fn(
-		async () =>
-			new Response(JSON.stringify(body), {
-				status,
-				headers: { 'Content-Type': 'application/json' }
-			})
-	) as unknown as typeof fetch;
+	return vi.fn(async () => jsonResponse(body, status)) as unknown as typeof fetch;
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
 }
 
 function statusFetcher(status: number): typeof fetch {

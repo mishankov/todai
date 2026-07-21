@@ -20,7 +20,14 @@ describe('Inbox', () => {
 		await page.getByLabelText('Task title').fill('Buy milk');
 		await page.getByRole('button', { name: 'Add task' }).click();
 
-		expect(create).toHaveBeenCalledWith('Buy milk');
+		expect(create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				title: 'Buy milk',
+				priority: 0,
+				dueDate: null,
+				dueTime: null
+			})
+		);
 		await expect.element(page.getByText('Buy milk')).toBeVisible();
 	});
 
@@ -172,11 +179,13 @@ describe('Inbox', () => {
 		});
 
 		await page.getByRole('button', { name: 'Edit Draft plan' }).click();
-		await page.getByLabelText('Title', { exact: true }).fill('Publish plan');
-		await page.getByLabelText('Description').fill('Share with the team');
-		await page.getByLabelText('Priority').selectOptions('3');
-		await page.getByLabelText('Due date').fill('2026-07-20');
-		await page.getByRole('button', { name: 'Save changes' }).click();
+		const dialog = page.getByRole('dialog', { name: 'Edit task: Draft plan' });
+		await dialog.getByLabelText('Title', { exact: true }).fill('Publish plan');
+		await dialog.getByLabelText('Description').fill('Share with the team');
+		await dialog.getByRole('radio', { name: 'Priority: High' }).click();
+		await dialog.getByRole('button', { name: /^Due date:/ }).click();
+		await dialog.getByLabelText('Choose date…').fill('2026-07-20');
+		await dialog.getByRole('button', { name: 'Save changes' }).click();
 
 		expect(update).toHaveBeenCalledWith(
 			active.id,

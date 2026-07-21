@@ -37,6 +37,16 @@ export interface TaskUpdate {
 	dueTimezone?: string | null;
 }
 
+export interface TaskCreateDraft {
+	title: string;
+	projectId: string;
+	sectionId: string | null;
+	priority: number;
+	dueDate: string | null;
+	dueTime: string | null;
+	dueTimezone: string | null;
+}
+
 export interface TaskComment {
 	id: string;
 	taskId: string;
@@ -153,6 +163,27 @@ export async function createTask(
 		},
 		'Could not create the task.'
 	);
+}
+
+export async function createTaskWithProperties(
+	fetcher: typeof fetch,
+	draft: TaskCreateDraft
+): Promise<Task> {
+	const created = await createTask(
+		fetcher,
+		draft.title,
+		draft.projectId,
+		draft.sectionId ?? undefined
+	);
+	if (draft.priority === 0 && draft.dueDate === null) return created;
+
+	return updateTask(fetcher, created.id, {
+		version: created.version,
+		priority: draft.priority,
+		dueDate: draft.dueDate,
+		dueTime: draft.dueDate ? draft.dueTime : null,
+		dueTimezone: draft.dueDate && draft.dueTime ? draft.dueTimezone : null
+	});
 }
 
 export async function getTaskSubtasks(fetcher: typeof fetch, taskId: string): Promise<Task[]> {
