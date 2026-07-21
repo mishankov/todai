@@ -21,6 +21,11 @@ describe("protocol codec", () => {
         sessionId: "session-1",
         runId: "run-1",
         message: "Plan my day",
+        context: {
+          type: "task",
+          taskId: "11111111-1111-4111-8111-111111111111",
+          action: "decompose",
+        },
         history: [
           {
             role: "assistant",
@@ -62,6 +67,11 @@ describe("protocol codec", () => {
       sessionId: "session-1",
       runId: "run-1",
       message: "Plan my day",
+      context: {
+        type: "task",
+        taskId: "11111111-1111-4111-8111-111111111111",
+        action: "decompose",
+      },
       history: [
         {
           role: "assistant",
@@ -114,6 +124,31 @@ describe("protocol codec", () => {
             allowedTools: [],
           },
           pi: { thinkingEffort: "extreme" },
+        }),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "invalid_command" }));
+  });
+
+  it("rejects an unsupported structured context", () => {
+    expect(() =>
+      decodeCommand(
+        JSON.stringify({
+          protocol: RUNNER_PROTOCOL,
+          version: RUNNER_PROTOCOL_VERSION,
+          type: "run.start",
+          requestId: "request-1",
+          sessionId: "session-1",
+          runId: "run-1",
+          message: "Plan my day",
+          context: { type: "task", taskId: "task-id", action: "delete" },
+          history: [],
+          runtimeName: "pi",
+          toolAccess: {
+            baseUrl: "http://127.0.0.1:8080",
+            token: "token",
+            allowedTools: [],
+          },
+          pi: {},
         }),
       ),
     ).toThrowError(expect.objectContaining({ code: "invalid_command" }));

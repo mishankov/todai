@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ActivityEvent } from '$lib/activity/client';
+	import { decomposeTaskWithAgent } from '$lib/agent/decompose';
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { subscribeActivityEvents } from '$lib/realtime/events';
 	import {
@@ -7,6 +8,7 @@
 		createTaskComment as requestCreateComment,
 		createTask as requestCreateTask,
 		deleteTaskComment as requestDeleteComment,
+		deleteTask as requestDeleteTask,
 		getTaskComments as requestComments,
 		getTaskSubtasks as requestSubtasks,
 		reopenTask as requestReopenTask,
@@ -31,6 +33,8 @@
 		loadComments?: (taskId: string) => Promise<TaskComment[]>;
 		addComment?: (body: string) => Promise<TaskComment>;
 		removeComment?: (commentId: string, version: number) => Promise<void>;
+		decomposeTask?: (task: Task) => Promise<void>;
+		removeSubtask?: (taskId: string, version: number) => Promise<void>;
 	}
 
 	let {
@@ -46,7 +50,10 @@
 		reopenSubtask = (taskId, version) => requestReopenTask(fetch, taskId, version),
 		loadComments = (taskId) => requestComments(fetch, taskId),
 		addComment = (body) => requestCreateComment(fetch, task.id, body),
-		removeComment = (commentId, version) => requestDeleteComment(fetch, task.id, commentId, version)
+		removeComment = (commentId, version) =>
+			requestDeleteComment(fetch, task.id, commentId, version),
+		decomposeTask = decomposeTaskWithAgent,
+		removeSubtask = (taskId, version) => requestDeleteTask(fetch, taskId, version)
 	}: Props = $props();
 
 	let dialog: HTMLElement;
@@ -62,6 +69,9 @@
 	let deletingCommentIds = $state<string[]>([]);
 	let subtaskError = $state('');
 	let commentError = $state('');
+	let decompositionError = $state('');
+	let decompositionStatus = $state('');
+	let decomposing = $state(false);
 	let reloadTimer: number | undefined;
 	let subtaskLoadVersion = 0;
 	let commentLoadVersion = 0;
@@ -176,6 +186,20 @@
 		}
 	}
 
+	async function deleteSubtask(item: Task) {
+		if (busySubtaskIds.includes(item.id)) return;
+		busySubtaskIds = [...busySubtaskIds, item.id];
+		subtaskError = '';
+		try {
+			await removeSubtask(item.id, item.version);
+			subtasks = subtasks.filter((candidate) => candidate.id !== item.id);
+		} catch {
+			subtaskError = 'The subtask could not be deleted.';
+		} finally {
+			busySubtaskIds = busySubtaskIds.filter((id) => id !== item.id);
+		}
+	}
+
 	async function submitComment() {
 		const body = newCommentBody.trim();
 		if (!body || addingComment) return;
@@ -189,6 +213,25 @@
 			commentError = 'The comment could not be added.';
 		} finally {
 			addingComment = false;
+		}
+	}
+
+	async function decompose() {
+		if (decomposing) return;
+		decomposing = true;
+		decompositionError = '';
+		decompositionStatus = '';
+		try {
+			await decomposeTask(task);
+			await refreshSubtasks(false);
+			decompositionStatus = 'Decomposition complete.';
+		} catch (error) {
+			decompositionError =
+				error instanceof Error && error.message
+					? error.message
+					: 'The task could not be decomposed.';
+		} finally {
+			decomposing = false;
 		}
 	}
 
@@ -285,12 +328,23 @@
 							<h3 id="subtasks-heading">Subtasks</h3>
 							<span>{completedSubtasks} of {subtasks.length} complete</span>
 						</div>
-						<progress
-							value={completedSubtasks}
-							max={Math.max(subtasks.length, 1)}
-							aria-label={`${completedSubtasks} of ${subtasks.length} subtasks complete`}
-						></progress>
+						<div class="subtask-actions">
+							<button
+								type="button"
+								class="decompose"
+								disabled={decomposing}
+								onclick={() => void decompose()}
+								>{decomposing ? 'Decomposing…' : 'Decompose'}</button
+							>
+							<progress
+								value={completedSubtasks}
+								max={Math.max(subtasks.length, 1)}
+								aria-label={`${completedSubtasks} of ${subtasks.length} subtasks complete`}
+							></progress>
+						</div>
 					</div>
+					{#if decompositionStatus}<p class="success" role="status">{decompositionStatus}</p>{/if}
+					{#if decompositionError}<p class="error" role="alert">{decompositionError}</p>{/if}
 
 					{#if loadingSubtasks}
 						<p class="loading" role="status">Loading subtasks…</p>
@@ -310,6 +364,13 @@
 										<span aria-hidden="true">✓</span>
 									</button>
 									<span>{item.title}</span>
+									<button
+										class="delete-subtask"
+										type="button"
+										disabled={busySubtaskIds.includes(item.id)}
+										aria-label={`Delete ${item.title}`}
+										onclick={() => void deleteSubtask(item)}>Delete</button
+									>
 								</li>
 							{/each}
 						</ul>
@@ -508,21 +569,59 @@
 	.subtasks {
 		display: grid;
 		gap: 0.9rem;
+		min-width: 0;
 		padding-top: 1.3rem;
 		border-top: 1px solid #e2e7e0;
 	}
 
 	.section-heading {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(7rem, 11rem);
+		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 1rem;
 	}
 
-	.section-heading > div {
+	.section-heading > div:first-child {
 		display: flex;
 		align-items: baseline;
 		gap: 0.6rem;
+	}
+
+	.subtask-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.subtask-actions progress {
+		min-width: 5rem;
+	}
+
+	.decompose {
+		padding: 0.35rem 0.55rem;
+		border: 1px solid #cad8c8;
+		border-radius: 0.5rem;
+		color: #315f3d;
+		background: #f7faf6;
+		font: inherit;
+		font-size: 0.76rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.decompose:hover {
+		background: #edf4eb;
+	}
+
+	.decompose:disabled {
+		cursor: wait;
+		opacity: 0.65;
+	}
+
+	.success {
+		margin: 0;
+		color: #3f7951;
+		font-size: 0.78rem;
 	}
 
 	.section-heading h3,
@@ -570,7 +669,7 @@
 
 	.subtask-list li {
 		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
+		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 0.7rem;
 		min-height: 2.55rem;
@@ -583,6 +682,25 @@
 	.subtask-list li.completed > span {
 		color: #8a908a;
 		text-decoration: line-through;
+	}
+
+	.delete-subtask {
+		padding: 0.2rem 0;
+		border: 0;
+		color: #858b84;
+		background: transparent;
+		font: inherit;
+		font-size: 0.72rem;
+		cursor: pointer;
+	}
+
+	.delete-subtask:hover {
+		color: #a34d43;
+	}
+
+	.delete-subtask:disabled {
+		cursor: wait;
+		opacity: 0.55;
 	}
 
 	.status-toggle {
@@ -630,6 +748,7 @@
 
 	.inline-composer input,
 	.comment-composer textarea {
+		box-sizing: border-box;
 		width: 100%;
 		padding: 0.66rem 0.72rem;
 		border: 1px solid #ccd6ca;

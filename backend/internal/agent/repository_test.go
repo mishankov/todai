@@ -25,7 +25,9 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	message, run, history, err := repository.CreateMessageRun(ctx, userScope, session.ID, " Triage inbox ")
+	message, run, history, err := repository.CreateMessageRun(
+		ctx, userScope, session.ID, agent.MessageInput{Content: " Triage inbox "},
+	)
 	if err != nil {
 		t.Fatalf("create message run: %v", err)
 	}
@@ -116,7 +118,9 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 	}); !errors.Is(err, agent.ErrRunFinished) {
 		t.Errorf("late event error = %v, want %v", err, agent.ErrRunFinished)
 	}
-	_, failedRun, history, err := repository.CreateMessageRun(ctx, userScope, session.ID, "Try again")
+	_, failedRun, history, err := repository.CreateMessageRun(
+		ctx, userScope, session.ID, agent.MessageInput{Content: "Try again"},
+	)
 	if err != nil {
 		t.Fatalf("create failed message run: %v", err)
 	}
@@ -124,6 +128,9 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 		history[1].Content[0].Type != "toolCall" || history[2].Role != agent.HistoryRoleToolResult ||
 		history[2].Content[0].Text != `{"id":"task-1"}` || history[3].Content[0].Text != "Inbox is clear" {
 		t.Errorf("persisted history = %#v", history)
+	}
+	if history[0].Content[0].Text != "Triage inbox" {
+		t.Errorf("first chat history message = %q", history[0].Content[0].Text)
 	}
 	recordRuntimeEvent(t, repository, agentRunScope(failedRun), failedRun.ID, agent.RuntimeEvent{
 		Type: agent.EventRunFailed, Sequence: 1,
@@ -150,6 +157,92 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 	}
 
 	_ = db
+}
+
+func TestRepositoryKeepsContextRunsOutOfConversationHistory(t *testing.T) {
+	db, repository, _ := testAgentRepository(t)
+	ctx := context.Background()
+	scope := execution.UserScope("user-id", "correlation-id")
+
+	conversation, err := repository.CreateSession(ctx, scope)
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	if _, _, _, err := repository.CreateMessageRun(
+		ctx, scope, conversation.ID, agent.MessageInput{Content: "Keep this chat isolated"},
+	); err != nil {
+		t.Fatalf("create conversation run: %v", err)
+	}
+
+	messageContext := agent.MessageContext{
+		Type: agent.ContextTask, TaskID: "11111111-1111-4111-8111-111111111111",
+		Action: agent.ContextActionDecompose,
+	}
+	actionRun, err := repository.CreateContextRun(ctx, scope, messageContext)
+	if err != nil {
+		t.Fatalf("create contextual run: %v", err)
+	}
+	if actionRun.Kind != agent.ExecutionAction || actionRun.ContextType == nil ||
+		actionRun.ContextID == nil || actionRun.ContextAction == nil ||
+		*actionRun.ContextID != messageContext.TaskID {
+		t.Errorf("contextual run = %#v", actionRun)
+	}
+	actionScope := agentRunScope(actionRun)
+	recordRuntimeEvent(t, repository, actionScope, actionRun.ID, agent.RuntimeEvent{
+		Type: agent.EventMessageDelta, Sequence: 1, Payload: map[string]any{"delta": "Created subtasks"},
+	})
+	recordRuntimeEvent(t, repository, actionScope, actionRun.ID, agent.RuntimeEvent{
+		Type: agent.EventHistoryMessage, Sequence: 2,
+		Payload: map[string]any{"message": agent.HistoryMessage{
+			Role: agent.HistoryRoleToolResult, ToolCallID: "call-1", ToolName: "task_create",
+			Content:   []agent.HistoryContent{{Type: "text", Text: `{"id":"child-id"}`}},
+			Timestamp: 1,
+		}},
+	})
+	recordRuntimeEvent(t, repository, actionScope, actionRun.ID, agent.RuntimeEvent{
+		Type: agent.EventRunCompleted, Sequence: 3, Payload: map[string]any{},
+	})
+
+	_, messages, runs, lastOffset, err := repository.GetConversation(ctx, "user-id", conversation.ID)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Content != "Keep this chat isolated" || len(runs) != 1 || lastOffset != 0 {
+		t.Errorf("conversation leaked contextual run: messages=%#v runs=%#v offset=%d", messages, runs, lastOffset)
+	}
+	_, _, history, err := repository.CreateMessageRun(
+		ctx, scope, conversation.ID, agent.MessageInput{Content: "Continue the chat"},
+	)
+	if err != nil {
+		t.Fatalf("continue conversation: %v", err)
+	}
+	if len(history) != 1 || history[0].Content[0].Text != "Keep this chat isolated" {
+		t.Errorf("conversation history = %#v", history)
+	}
+
+	var actionMessageCount int
+	if err := db.GetContext(ctx, &actionMessageCount, `
+		SELECT COUNT(*) FROM agent_messages WHERE session_id = $1
+	`, actionRun.SessionID); err != nil {
+		t.Fatalf("count contextual messages: %v", err)
+	}
+	if actionMessageCount != 0 {
+		t.Errorf("contextual agent message count = %d, want 0", actionMessageCount)
+	}
+	if _, _, _, _, err := repository.GetConversation(
+		ctx, "user-id", actionRun.SessionID,
+	); !errors.Is(err, agent.ErrSessionNotFound) {
+		t.Errorf("contextual execution exposed as conversation: %v", err)
+	}
+	events, err := repository.ListContextRunEvents(ctx, "user-id", actionRun.ID, 0, 100)
+	if err != nil || len(events) != 3 {
+		t.Errorf("contextual events = %#v, error = %v", events, err)
+	}
+	if _, err := repository.ListContextRunEvents(
+		ctx, "other-user", actionRun.ID, 0, 100,
+	); !errors.Is(err, agent.ErrRunNotFound) {
+		t.Errorf("other user contextual events error = %v", err)
+	}
 }
 
 func TestRepositoryRejectsInvalidRuntimeEventsBeforePersistence(t *testing.T) {

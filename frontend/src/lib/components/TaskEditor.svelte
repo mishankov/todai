@@ -292,6 +292,7 @@
 	input,
 	textarea,
 	select {
+		box-sizing: border-box;
 		width: 100%;
 		padding: 0.7rem 0.75rem;
 		border: 1px solid #ccd6ca;

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 	import type { Project } from '$lib/projects/client';
 	import TaskView from './TaskView.svelte';
 
 	interface Props {
-		initialTasks: Task[];
+		initialTasks: TaskSummary[];
 		create: (title: string) => Promise<Task>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;

@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { AgentRequestError, createAgentAPI, type AgentAPI, type AgentEvent } from './client';
+	import {
+		AgentRequestError,
+		agentSessionStorageKey,
+		createAgentAPI,
+		type AgentAPI,
+		type AgentEvent
+	} from './client';
 	import {
 		activeAgentRun,
 		applyAgentEvent,
@@ -15,7 +21,6 @@
 		storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 	}
 
-	const storageKey = 'todai.agent.session-id';
 	let { api = createAgentAPI(), storage }: Props = $props();
 	let chatState = $state<AgentChatState | null>(null);
 	let open = $state(false);
@@ -65,7 +70,7 @@
 	async function restoreOrCreateSession() {
 		loading = true;
 		errorMessage = '';
-		const storedSessionID = storage?.getItem(storageKey);
+		const storedSessionID = storage?.getItem(agentSessionStorageKey);
 		if (storedSessionID) {
 			try {
 				const conversation = await api.getSession(storedSessionID);
@@ -78,7 +83,7 @@
 					errorMessage = errorText(error, 'Could not load the chat.');
 					return;
 				}
-				storage?.removeItem(storageKey);
+				storage?.removeItem(agentSessionStorageKey);
 			}
 		}
 		await createConversation();
@@ -90,7 +95,7 @@
 		errorMessage = '';
 		try {
 			const session = await api.createSession();
-			storage?.setItem(storageKey, session.id);
+			storage?.setItem(agentSessionStorageKey, session.id);
 			openConversation({
 				sessionId: session.id,
 				messages: [],
@@ -159,7 +164,7 @@
 		posting = true;
 		errorMessage = '';
 		try {
-			const posted = await api.postMessage(sessionId, message);
+			const posted = await api.postMessage(sessionId, { message });
 			if (chatState?.sessionId !== sessionId) return;
 			const streamedRun = chatState.runs.find((run) => run.id === posted.run.id);
 			const mergedRun = streamedRun
@@ -196,7 +201,7 @@
 
 	async function newConversation() {
 		if (activeRun || creating) return;
-		storage?.removeItem(storageKey);
+		storage?.removeItem(agentSessionStorageKey);
 		chatState = null;
 		streamController?.abort();
 		await createConversation();
@@ -244,6 +249,7 @@
 			task_get: 'Reading a task',
 			task_search: 'Searching tasks',
 			project_list: 'Reading projects',
+			project_get: 'Reading a project',
 			view_query: 'Reading your task list',
 			task_create: 'Creating a task',
 			task_update: 'Updating a task',

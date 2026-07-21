@@ -106,6 +106,55 @@ describe('TaskEditorModal relationships', () => {
 			.toBeVisible();
 	});
 
+	it('decomposes inside the open task card and refreshes its subtasks', async () => {
+		const task = testTask({ title: 'Plan release' });
+		const child = testTask({ id: 'child-id', parentId: task.id, title: 'Define rollout' });
+		const request = deferred<void>();
+		const decomposeTask = vi.fn(() => request.promise);
+		let loaded = false;
+		const loadSubtasks = vi.fn(async () => (loaded ? [child] : []));
+
+		renderModal({ task, decomposeTask, loadSubtasks });
+		await expect.element(page.getByText('No subtasks yet.', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Decompose' }).click();
+
+		expect(decomposeTask).toHaveBeenCalledWith(task);
+		await expect.element(page.getByRole('button', { name: 'Decomposing…' })).toBeDisabled();
+		const details = document.querySelector<HTMLElement>('.details-column');
+		expect(details).not.toBeNull();
+		expect(details!.scrollWidth).toBeLessThanOrEqual(details!.clientWidth + 1);
+		await expect
+			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
+			.toBeVisible();
+
+		loaded = true;
+		request.resolve();
+		await expect.element(page.getByText(child.title, { exact: true })).toBeVisible();
+		await expect.element(page.getByText('Decomposition complete.', { exact: true })).toBeVisible();
+		expect(loadSubtasks).toHaveBeenCalledTimes(2);
+	});
+
+	it('deletes a subtask with its observed version and keeps the editor open', async () => {
+		const task = testTask({ title: 'Plan release' });
+		const child = testTask({ id: 'child-id', parentId: task.id, title: 'Draft notes' });
+		const removeSubtask = vi.fn(async () => {});
+
+		renderModal({
+			task,
+			loadSubtasks: vi.fn(async () => [child]),
+			removeSubtask
+		});
+		await expect.element(page.getByText(child.title, { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: `Delete ${child.title}` }).click();
+
+		expect(removeSubtask).toHaveBeenCalledWith(child.id, child.version);
+		await expect.element(page.getByText(child.title, { exact: true })).not.toBeInTheDocument();
+		await expect.element(page.getByText('0 of 0 complete', { exact: true })).toBeVisible();
+		await expect
+			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
+			.toBeVisible();
+	});
+
 	it('completes and reopens a subtask with its observed version', async () => {
 		const task = testTask({ title: 'Plan release' });
 		const child = testTask({ id: 'child-id', parentId: task.id, title: 'Draft notes' });
@@ -239,9 +288,11 @@ interface ModalOverrides {
 	addSubtask?: (title: string) => Promise<Task>;
 	completeSubtask?: (taskId: string, version: number) => Promise<Task>;
 	reopenSubtask?: (taskId: string, version: number) => Promise<Task>;
+	removeSubtask?: (taskId: string, version: number) => Promise<void>;
 	loadComments?: (taskId: string) => Promise<TaskComment[]>;
 	addComment?: (body: string) => Promise<TaskComment>;
 	removeComment?: (commentId: string, version: number) => Promise<void>;
+	decomposeTask?: (task: Task) => Promise<void>;
 }
 
 function renderModal(overrides: ModalOverrides = {}) {
@@ -257,9 +308,11 @@ function renderModal(overrides: ModalOverrides = {}) {
 		addSubtask: overrides.addSubtask ?? vi.fn(),
 		completeSubtask: overrides.completeSubtask ?? vi.fn(),
 		reopenSubtask: overrides.reopenSubtask ?? vi.fn(),
+		removeSubtask: overrides.removeSubtask ?? vi.fn(),
 		loadComments: overrides.loadComments ?? vi.fn(async () => []),
 		addComment: overrides.addComment ?? vi.fn(),
-		removeComment: overrides.removeComment ?? vi.fn()
+		removeComment: overrides.removeComment ?? vi.fn(),
+		decomposeTask: overrides.decomposeTask ?? vi.fn(async () => {})
 	});
 }
 

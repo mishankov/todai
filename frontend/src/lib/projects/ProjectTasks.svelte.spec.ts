@@ -1,7 +1,7 @@
 import { page, userEvent, type Locator } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import type { Task, TaskUpdate } from '$lib/tasks/client';
+import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 import type { Project, ProjectSection } from './client';
 import ProjectTasks from './ProjectTasks.svelte';
 
@@ -69,6 +69,25 @@ describe('ProjectTasks', () => {
 
 		expect(changeLayout).toHaveBeenCalledWith(project.version, 'board');
 		await expect.element(page.getByRole('button', { name: 'Board', pressed: true })).toBeVisible();
+	});
+
+	it('shows subtask progress in both project layouts', async () => {
+		const project = testProject();
+		const changed = testProject({ layout: 'board', version: 2 });
+		const task = testTask({
+			title: 'Prepare release',
+			subtaskCount: 4,
+			completedSubtaskCount: 2
+		});
+		renderProjectTasks({
+			project,
+			tasks: [task],
+			changeLayout: vi.fn(async () => changed)
+		});
+
+		await expect.element(page.getByLabelText('2 of 4 subtasks completed')).toBeVisible();
+		await page.getByRole('button', { name: 'Board' }).click();
+		await expect.element(page.getByLabelText('2 of 4 subtasks completed')).toBeVisible();
 	});
 
 	it('hides completed tasks in board layout', async () => {
@@ -436,7 +455,7 @@ describe('ProjectTasks', () => {
 interface RenderOptions {
 	project?: Project;
 	sections?: ProjectSection[];
-	tasks?: Task[];
+	tasks?: TaskSummary[];
 	create?: (title: string, sectionId: string | null) => Promise<Task>;
 	complete?: (taskId: string, version: number) => Promise<Task>;
 	update?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
@@ -446,7 +465,7 @@ interface RenderOptions {
 		version: number,
 		sectionId: string | null,
 		beforeTaskId: string | null
-	) => Promise<Task[]>;
+	) => Promise<TaskSummary[]>;
 	changeLayout?: (version: number, layout: 'list' | 'board') => Promise<Project>;
 	reorderSection?: (
 		sectionId: string,
@@ -505,7 +524,7 @@ function testSection(overrides: Partial<ProjectSection> = {}): ProjectSection {
 	};
 }
 
-function testTask(overrides: Partial<Task> = {}): Task {
+function testTask(overrides: Partial<TaskSummary> = {}): TaskSummary {
 	return {
 		id: 'task-id',
 		projectId: 'project-id',
@@ -524,6 +543,8 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		createdAt: '2026-07-17T08:00:00Z',
 		updatedAt: '2026-07-17T08:00:00Z',
 		lastModifiedBy: 'user-id',
+		subtaskCount: 0,
+		completedSubtaskCount: 0,
 		...overrides
 	};
 }

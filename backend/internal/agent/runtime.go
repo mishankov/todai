@@ -20,6 +20,7 @@ type RunRequest struct {
 	SessionID      string
 	RunID          string
 	Message        string
+	Context        *MessageContext
 	History        []HistoryMessage
 	Runtime        string
 	InternalURL    string

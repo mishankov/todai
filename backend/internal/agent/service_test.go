@@ -42,7 +42,7 @@ func TestPostMessageRunsRuntimeAndPersistsStableEvents(t *testing.T) {
 
 	posted, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", " Triage inbox ",
+		"session-id", agent.MessageInput{Content: " Triage inbox "},
 	)
 	if err != nil {
 		t.Fatalf("post message: %v", err)
@@ -61,6 +61,67 @@ func TestPostMessageRunsRuntimeAndPersistsStableEvents(t *testing.T) {
 			t.Errorf("event %d sequence = %d", index, event.Sequence)
 		}
 	}
+}
+
+func TestStartContextRunUsesPrivateExecutionWithEmptyHistory(t *testing.T) {
+	repository := newFakeRepository()
+	repository.history = []agent.HistoryMessage{{
+		Role: agent.HistoryRoleUser, Content: []agent.HistoryContent{{Type: "text", Text: "Chat history"}}, Timestamp: 1,
+	}}
+	contextReceived := make(chan agent.MessageContext, 1)
+	runtimeRequest := make(chan agent.RunRequest, 1)
+	service := agent.NewService(
+		repository,
+		runtimeFunc(func(
+			_ context.Context,
+			request agent.RunRequest,
+			_ func(context.Context, agent.RuntimeEvent) error,
+		) error {
+			runtimeRequest <- request
+			return nil
+		}),
+		tokenIssuerFunc(func(
+			context.Context, agentauth.IssueRequest,
+		) (agentauth.IssuedToken, error) {
+			return agentauth.IssuedToken{Token: "scoped-token"}, nil
+		}),
+		agent.ServiceConfig{
+			Runtime: "pi", InternalURL: "http://127.0.0.1:8080", TokenTTL: time.Minute,
+			ContextValidator: contextValidatorFunc(func(
+				_ context.Context, userID string, messageContext agent.MessageContext,
+			) error {
+				if userID != "user-id" {
+					t.Errorf("context user = %q", userID)
+				}
+				contextReceived <- messageContext
+				return nil
+			}),
+		},
+	)
+	wantContext := agent.MessageContext{
+		Type: agent.ContextTask, TaskID: "11111111-1111-4111-8111-111111111111",
+		Action: agent.ContextActionDecompose,
+	}
+
+	started, err := service.StartContextRun(
+		context.Background(), execution.UserScope("user-id", "correlation-id"), wantContext,
+	)
+	if err != nil {
+		t.Fatalf("start contextual run: %v", err)
+	}
+	if got := <-contextReceived; got != wantContext {
+		t.Errorf("validated context = %#v, want %#v", got, wantContext)
+	}
+	request := <-runtimeRequest
+	if request.SessionID != "private-execution-id" || request.RunID != started.ID ||
+		request.Message != "Decompose the attached task into clear actionable direct subtasks." ||
+		len(request.History) != 0 {
+		t.Errorf("contextual runtime request = %#v", request)
+	}
+	if request.Context == nil || *request.Context != wantContext {
+		t.Errorf("runtime context = %#v, want %#v", request.Context, wantContext)
+	}
+	waitForFinish(t, repository)
 }
 
 func TestPostMessageScopesToolAccessToTheDurableRun(t *testing.T) {
@@ -85,7 +146,7 @@ func TestPostMessageScopesToolAccessToTheDurableRun(t *testing.T) {
 
 	if _, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", "Run",
+		"session-id", agent.MessageInput{Content: "Run"},
 	); err != nil {
 		t.Fatalf("post message: %v", err)
 	}
@@ -124,7 +185,7 @@ func TestRuntimeFailureProducesOneTerminalFailure(t *testing.T) {
 
 	if _, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", "Run",
+		"session-id", agent.MessageInput{Content: "Run"},
 	); err != nil {
 		t.Fatalf("post message: %v", err)
 	}
@@ -148,7 +209,7 @@ func TestAbortCancelsRuntimeAndRecordsTerminalEventOnce(t *testing.T) {
 	}))
 	if _, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", "Run",
+		"session-id", agent.MessageInput{Content: "Run"},
 	); err != nil {
 		t.Fatalf("post message: %v", err)
 	}
@@ -190,6 +251,16 @@ func (f runtimeFunc) Run(
 type tokenIssuerFunc func(context.Context, agentauth.IssueRequest) (agentauth.IssuedToken, error)
 
 type preferencesResolverFunc func(context.Context, string) (string, string, string, error)
+
+type contextValidatorFunc func(context.Context, string, agent.MessageContext) error
+
+func (f contextValidatorFunc) ValidateMessageContext(
+	ctx context.Context,
+	userID string,
+	messageContext agent.MessageContext,
+) error {
+	return f(ctx, userID, messageContext)
+}
 
 func (f preferencesResolverFunc) ResolveAgent(
 	ctx context.Context,
@@ -250,6 +321,7 @@ type fakeRepository struct {
 	done     chan struct{}
 	doneOnce sync.Once
 	history  []agent.HistoryMessage
+	context  *agent.MessageContext
 }
 
 func newFakeRepository() *fakeRepository {
@@ -278,9 +350,24 @@ func (r *fakeRepository) CreateMessageRun(
 	_ context.Context,
 	_ execution.Scope,
 	_ string,
-	content string,
+	input agent.MessageInput,
 ) (agent.Message, agent.Run, []agent.HistoryMessage, error) {
-	return agent.Message{ID: "message-id", Content: strings.TrimSpace(content)}, r.run, r.history, nil
+	return agent.Message{
+		ID: "message-id", Content: strings.TrimSpace(input.Content),
+	}, r.run, r.history, nil
+}
+
+func (r *fakeRepository) CreateContextRun(
+	_ context.Context,
+	_ execution.Scope,
+	messageContext agent.MessageContext,
+) (agent.Run, error) {
+	r.context = &messageContext
+	r.run = agent.Run{
+		ID: "run-id", SessionID: "private-execution-id", UserID: "user-id",
+		Kind: agent.ExecutionAction, Status: agent.RunStatusQueued, CorrelationID: "correlation-id",
+	}
+	return r.run, nil
 }
 
 func (r *fakeRepository) GetRun(context.Context, string, string) (agent.Run, error) {
@@ -290,6 +377,16 @@ func (r *fakeRepository) GetRun(context.Context, string, string) (agent.Run, err
 }
 
 func (r *fakeRepository) ListRunEvents(
+	context.Context,
+	string,
+	string,
+	int64,
+	int,
+) ([]agent.RunEvent, error) {
+	return []agent.RunEvent{}, nil
+}
+
+func (r *fakeRepository) ListContextRunEvents(
 	context.Context,
 	string,
 	string,

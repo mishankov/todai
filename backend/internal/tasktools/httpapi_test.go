@@ -104,6 +104,48 @@ func TestEveryRouteRequiresItsExplicitTool(t *testing.T) {
 	}
 }
 
+func TestTaskGetReturnsRelationshipsNeededForDecomposition(t *testing.T) {
+	projectID := "project-id"
+	sectionID := "section-id"
+	parent := testTask("user-id", "parent-id")
+	parent.ProjectID = &projectID
+	parent.SectionID = &sectionID
+	child := testTask("user-id", "child-id")
+	child.ParentID = &parent.ID
+	comment := task.Comment{ID: "comment-id", TaskID: parent.ID, Body: "Keep it small"}
+	tasks := &fakeTaskService{
+		found: parent, subtasks: []task.Task{child}, comments: []task.Comment{comment},
+	}
+	projects := &fakeProjectService{
+		project:  project.Project{ID: projectID, Name: "Work"},
+		sections: []project.Section{{ID: sectionID, ProjectID: projectID, Name: "Planning"}},
+	}
+
+	response := serveJSON(
+		t, testAPI(&fakeAuthorizer{claims: testClaims()}, tasks, projects),
+		"/task_get", map[string]any{"taskId": parent.ID}, "Bearer raw-token",
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
+	}
+	var body struct {
+		ID       string           `json:"id"`
+		Subtasks []task.Task      `json:"subtasks"`
+		Comments []task.Comment   `json:"comments"`
+		Project  *project.Project `json:"project"`
+		Section  *project.Section `json:"section"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode task_get: %v", err)
+	}
+	if body.ID != parent.ID || len(body.Subtasks) != 1 || body.Subtasks[0].ID != child.ID ||
+		len(body.Comments) != 1 || body.Comments[0].ID != comment.ID ||
+		body.Project == nil || body.Project.ID != projectID ||
+		body.Section == nil || body.Section.ID != sectionID {
+		t.Errorf("task_get response = %#v", body)
+	}
+}
+
 func TestMutationUsesAgentScopeTraceAndObservedVersion(t *testing.T) {
 	service := &fakeTaskService{}
 	response := serveJSON(
@@ -362,27 +404,45 @@ type fakeTaskService struct {
 	updateCalls int
 	completeErr error
 	readUserID  string
+	found       task.Task
+	subtasks    []task.Task
+	comments    []task.Comment
 }
 
 func (s *fakeTaskService) Get(_ context.Context, userID, taskID string) (task.Task, error) {
 	s.readUserID = userID
+	if s.found.ID != "" {
+		return s.found, nil
+	}
 	return testTask(userID, taskID), nil
 }
 
-func (*fakeTaskService) ListInbox(context.Context, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (s *fakeTaskService) ListSubtasks(context.Context, string, string) ([]task.Task, error) {
+	return append([]task.Task(nil), s.subtasks...), nil
 }
 
-func (*fakeTaskService) ListAll(context.Context, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (s *fakeTaskService) ListComments(context.Context, string, string) ([]task.Comment, error) {
+	return append([]task.Comment(nil), s.comments...), nil
 }
 
-func (*fakeTaskService) ListProject(context.Context, string, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (*fakeTaskService) ListInbox(context.Context, string, bool) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
 }
 
-func (*fakeTaskService) ListToday(context.Context, string, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (*fakeTaskService) ListAll(context.Context, string, bool) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
+}
+
+func (*fakeTaskService) ListProject(
+	context.Context, string, string, bool,
+) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
+}
+
+func (*fakeTaskService) ListToday(
+	context.Context, string, string, bool,
+) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
 }
 
 func (*fakeTaskService) Search(context.Context, string, task.SearchQuery) ([]task.Task, error) {
@@ -460,11 +520,11 @@ func (s *fakeTaskService) Reorder(
 	scope execution.Scope,
 	taskID string,
 	reorder task.Reorder,
-) ([]task.Task, error) {
+) ([]task.TaskSummary, error) {
 	s.scope = scope
 	s.taskID = taskID
 	s.version = reorder.Version
-	return []task.Task{}, nil
+	return []task.TaskSummary{}, nil
 }
 
 type fakeProjectService struct {

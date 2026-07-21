@@ -24,14 +24,14 @@ type HTTPService interface {
 	CreateSubtask(context.Context, execution.Scope, string, string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListSubtasks(context.Context, string, string) ([]Task, error)
-	ListInbox(context.Context, string, bool) ([]Task, error)
-	ListAll(context.Context, string, bool) ([]Task, error)
-	ListProject(context.Context, string, string, bool) ([]Task, error)
-	ListToday(context.Context, string, string, bool) ([]Task, error)
+	ListInbox(context.Context, string, bool) ([]TaskSummary, error)
+	ListAll(context.Context, string, bool) ([]TaskSummary, error)
+	ListProject(context.Context, string, string, bool) ([]TaskSummary, error)
+	ListToday(context.Context, string, string, bool) ([]TaskSummary, error)
 	Complete(context.Context, execution.Scope, string, int64) (Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
 	Update(context.Context, execution.Scope, string, Update) (Task, error)
-	Reorder(context.Context, execution.Scope, string, Reorder) ([]Task, error)
+	Reorder(context.Context, execution.Scope, string, Reorder) ([]TaskSummary, error)
 	Delete(context.Context, execution.Scope, string, int64) error
 	ListComments(context.Context, string, string) ([]Comment, error)
 	CreateComment(context.Context, execution.Scope, string, string) (Comment, error)
@@ -110,6 +110,10 @@ func (n *nullable[T]) UnmarshalJSON(data []byte) error {
 }
 
 type taskListResponse struct {
+	Tasks []TaskSummary `json:"tasks"`
+}
+
+type subtaskListResponse struct {
 	Tasks []Task `json:"tasks"`
 }
 
@@ -197,7 +201,7 @@ func (h taskHandlers) listSubtasks(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, r, "list_subtasks", err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
+	writeJSON(w, r, http.StatusOK, subtaskListResponse{Tasks: tasks})
 }
 
 func (h taskHandlers) listComments(w http.ResponseWriter, r *http.Request) {

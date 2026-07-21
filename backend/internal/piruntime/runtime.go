@@ -105,6 +105,7 @@ func (r *Runtime) Run(
 		SessionID:   request.SessionID,
 		RunID:       request.RunID,
 		Message:     request.Message,
+		Context:     request.Context,
 		History:     append([]agent.HistoryMessage{}, request.History...),
 		RuntimeName: request.Runtime,
 		ToolAccess: &toolAccess{

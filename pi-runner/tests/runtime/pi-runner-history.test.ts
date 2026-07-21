@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   listener: undefined as ((event: unknown) => void) | undefined,
   systemPrompt: "",
   thinkingLevel: "",
+  prompt: "",
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
@@ -51,7 +52,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
           harness.listener = listener;
           return () => undefined;
         },
-        prompt: async () => {
+        prompt: async (prompt: string) => {
+          harness.prompt = prompt;
           harness.restoredMessages = structuredClone(state.messages);
           emitRunEvents(harness.listener);
         },
@@ -72,6 +74,7 @@ describe("Pi runner history", () => {
     harness.listener = undefined;
     harness.systemPrompt = "";
     harness.thinkingLevel = "";
+    harness.prompt = "";
   });
 
   it("restores messages and emits persistable tool arguments and results", async () => {
@@ -90,6 +93,11 @@ describe("Pi runner history", () => {
         sessionId: "session-1",
         runId: "run-2",
         message: "Move them",
+        context: {
+          type: "task",
+          taskId: "11111111-1111-4111-8111-111111111111",
+          action: "decompose",
+        },
         history: testHistory(),
         runtimeName: "pi",
         toolAccess: {
@@ -110,6 +118,9 @@ describe("Pi runner history", () => {
     expect(output.find((event) => event.type === "run.failed")).toBeUndefined();
     expect(harness.systemPrompt).toContain("Europe/Moscow");
     expect(harness.thinkingLevel).toBe("high");
+    expect(harness.prompt).toBe(
+      '<todai-context>{"type":"task","taskId":"11111111-1111-4111-8111-111111111111","action":"decompose"}</todai-context>\n\nMove them',
+    );
     expect(output).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

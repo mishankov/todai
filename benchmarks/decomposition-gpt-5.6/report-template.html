@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>GPT-5.6 · декомпозиция задач</title>
+	<style>
+		:root { color-scheme: light; --ink:#1f2923; --muted:#6f7c73; --line:#dbe5dc; --paper:#fbfcfa; --card:#fff; --green:#2d6b45; --green2:#65a07a; --pale:#eaf2ea; --red:#b94a48; --amber:#b97820; }
+		* { box-sizing:border-box }
+		body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+		main { width:min(1440px,calc(100% - 40px)); margin:0 auto; padding:52px 0 80px; }
+		header { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:32px; }
+		.eyebrow { color:var(--green); font-size:12px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+		h1 { margin:5px 0 5px; font-size:clamp(34px,5vw,64px); line-height:1; letter-spacing:-.045em; }
+		.subtitle { margin:0; color:var(--muted); max-width:760px; }
+		.actions { display:flex; gap:8px; flex-wrap:wrap; }
+		button,select { border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); font:inherit; padding:9px 12px; }
+		button { cursor:pointer; font-weight:700; } button:hover { border-color:var(--green2); }
+		.grid { display:grid; gap:16px; }
+		.cards { grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:24px; }
+		.card,.panel { background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 8px 24px rgba(35,72,45,.045); }
+		.card { padding:18px; min-height:122px; }
+		.card .label { color:var(--muted); font-size:12px; font-weight:750; text-transform:uppercase; letter-spacing:.08em; }
+		.card .value { margin-top:9px; font-size:28px; line-height:1.15; font-weight:800; letter-spacing:-.03em; }
+		.card .detail { color:var(--muted); margin-top:6px; font-size:13px; }
+		.panel { padding:22px; margin:16px 0; overflow:hidden; }
+		.panel-head { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; margin-bottom:18px; }
+		h2 { margin:0; font-size:21px; letter-spacing:-.02em; } .hint { color:var(--muted); font-size:13px; margin-top:4px; }
+		.filters { display:flex; gap:8px; flex-wrap:wrap; }
+		.heatmap { display:grid; gap:7px; overflow:auto; padding-bottom:4px; }
+		.heat-row { display:grid; grid-template-columns:150px repeat(7,minmax(92px,1fr)); gap:7px; min-width:860px; }
+		.heat-label { display:flex; align-items:center; font-weight:750; }
+		.heat-cell { min-height:72px; border-radius:11px; padding:10px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(45,107,69,.12); }
+		.heat-cell strong { font-size:18px; } .heat-cell span { font-size:11px; opacity:.72; }
+		.heat-head { min-height:auto; padding:0 5px 4px; color:var(--muted); font-size:12px; font-weight:750; background:none!important; border:0; }
+		.strips { min-width:760px; overflow:auto; }
+		.strip-row { display:grid; grid-template-columns:190px 1fr 76px; align-items:center; gap:12px; min-height:34px; }
+		.strip-label { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+		.strip-track { position:relative; height:22px; border-bottom:1px solid var(--line); }
+		.dot { position:absolute; top:8px; width:7px; height:7px; border-radius:50%; background:var(--green2); transform:translateX(-50%); opacity:.58; }
+		.median { position:absolute; top:2px; width:3px; height:19px; border-radius:2px; background:var(--green); transform:translateX(-50%); }
+		.strip-value { text-align:right; font-size:12px; font-weight:750; }
+		.table-wrap { overflow:auto; margin:0 -22px -22px; }
+		table { width:100%; border-collapse:collapse; white-space:nowrap; }
+		th,td { padding:11px 14px; border-top:1px solid var(--line); text-align:right; }
+		th { position:sticky; top:0; background:#f6f8f5; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; cursor:pointer; }
+		th:first-child,th:nth-child(2),td:first-child,td:nth-child(2) { text-align:left; }
+		tbody tr:hover { background:#f7faf7; }
+		.badge { display:inline-flex; padding:3px 8px; border-radius:999px; background:var(--pale); color:var(--green); font-size:11px; font-weight:800; }
+		.badge.bad { background:#fae9e7; color:var(--red); }
+		.errors { display:grid; gap:8px; } .error { border-left:3px solid var(--red); padding:9px 12px; background:#fff7f6; border-radius:0 9px 9px 0; }
+		details { border-top:1px solid var(--line); padding:12px 0; } details:first-child { border-top:0; } summary { cursor:pointer; font-weight:750; }
+		.runmeta { color:var(--muted); font-size:12px; margin-top:4px; } .titles { margin:8px 0 0 20px; }
+		.method { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; } .method dt { color:var(--muted); font-size:12px; } .method dd { margin:3px 0 14px; font-weight:650; overflow-wrap:anywhere; }
+		.empty { padding:25px; color:var(--muted); text-align:center; }
+		@media(max-width:900px){ main{width:min(100% - 24px,1440px);padding-top:28px}.cards{grid-template-columns:repeat(2,1fr)}header{align-items:flex-start;flex-direction:column}.method{grid-template-columns:1fr}.panel{padding:16px}.table-wrap{margin:0 -16px -16px} }
+		@media(max-width:520px){.cards{grid-template-columns:1fr}.card{min-height:0}.filters{display:grid;width:100%}.filters select{width:100%}}
+		@media print{body{background:#fff}main{width:100%;padding:0}.actions,.filters{display:none}.card,.panel{box-shadow:none;break-inside:avoid}}
+	</style>
+</head>
+<body>
+<main>
+	<header>
+		<div><div class="eyebrow">Todai benchmark</div><h1>Декомпозиция GPT-5.6</h1><p class="subtitle" id="subtitle"></p></div>
+		<div class="actions"><button id="csv">Скачать CSV</button><button id="json">Скачать JSON</button></div>
+	</header>
+	<section class="grid cards" id="cards"></section>
+	<section class="panel">
+		<div class="panel-head"><div><h2>Фильтры</h2><div class="hint">Все графики и таблицы ниже используют выбранный срез.</div></div><div class="filters"><select id="modelFilter"></select><select id="effortFilter"></select><select id="statusFilter"></select></div></div>
+	</section>
+	<section class="panel"><div class="panel-head"><div><h2>Медианное время</h2><div class="hint">От POST запуска до подтверждённого чтением списка подзадач. Чем темнее, тем быстрее.</div></div></div><div class="heatmap" id="heatmap"></div></section>
+	<section class="panel"><div class="panel-head"><div><h2>Все успешные прогоны</h2><div class="hint">Точки — отдельные замеры, вертикальная черта — медиана комбинации.</div></div></div><div class="strips" id="strips"></div></section>
+	<section class="panel"><div class="panel-head"><div><h2>Сводная таблица</h2><div class="hint">Нажмите на заголовок столбца для сортировки.</div></div></div><div class="table-wrap"><table><thead id="summaryHead"></thead><tbody id="summaryBody"></tbody></table></div></section>
+	<section class="panel" id="errorPanel"><div class="panel-head"><div><h2>Ошибки и неполные результаты</h2><div class="hint">В методике нет скрытых повторов: каждый сбой остаётся в статистике.</div></div></div><div class="errors" id="errors"></div></section>
+	<section class="panel"><div class="panel-head"><div><h2>Сырые прогоны</h2><div class="hint">Время, инструменты и созданные подзадачи для каждого запуска.</div></div></div><div id="raw"></div></section>
+	<section class="panel"><div class="panel-head"><div><h2>Методика</h2><div class="hint">Условия нужны для воспроизводимости и правильной интерпретации.</div></div></div><dl class="method" id="method"></dl></section>
+</main>
+<script id="benchmark-data" type="application/json">__BENCHMARK_DATA__</script>
+<script>
+const DATA=JSON.parse(document.querySelector('#benchmark-data').textContent);
+const state={model:'all',effort:'all',status:'all',sort:'p50',direction:1};
+const models=DATA.meta.models, efforts=DATA.meta.efforts;
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=ms=>ms==null?'—':ms<1000?`${Math.round(ms)} ms`:`${(ms/1000).toFixed(ms<10000?2:1)} s`;
+const pct=n=>`${(n*100).toFixed(n===1?0:1)}%`;
+const quantile=(a,q)=>{if(!a.length)return null;const v=[...a].sort((x,y)=>x-y),p=(v.length-1)*q,b=Math.floor(p),r=p-b;return v[b+1]!==undefined?v[b]+r*(v[b+1]-v[b]):v[b]};
+const median=a=>quantile(a,.5), mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+const success=r=>r.status==='completed'&&r.output.subtaskCount>0;
+const filtered=()=>DATA.runs.filter(r=>(state.model==='all'||r.model===state.model)&&(state.effort==='all'||r.effort===state.effort)&&(state.status==='all'||(state.status==='success'?success(r):!success(r))));
+const aggregate=runs=>{
+ const map=new Map(); for(const r of runs){const k=`${r.model}|${r.effort}`;if(!map.has(k))map.set(k,{model:r.model,effort:r.effort,runs:[]});map.get(k).runs.push(r)}
+ return [...map.values()].map(g=>{const ok=g.runs.filter(success),times=ok.map(r=>r.timing.totalMs).filter(Number.isFinite),subs=ok.map(r=>r.output.subtaskCount).filter(Number.isFinite),tools=ok.map(r=>r.observed.toolCalls).filter(Number.isFinite);return {...g,n:g.runs.length,success:ok.length,rate:ok.length/g.runs.length,min:times.length?Math.min(...times):null,p50:median(times),mean:mean(times),p90:quantile(times,.9),p95:quantile(times,.95),max:times.length?Math.max(...times):null,subtasks:median(subs),tools:median(tools)}});
+};
+function option(value,label){return `<option value="${esc(value)}">${esc(label)}</option>`}
+function setup(){
+ $('#modelFilter').innerHTML=option('all','Все модели')+models.map(x=>option(x,x)).join('');
+ $('#effortFilter').innerHTML=option('all','Все уровни')+efforts.map(x=>option(x,x)).join('');
+ $('#statusFilter').innerHTML=option('all','Все статусы')+option('success','Только успешные')+option('failure','Только ошибки');
+ [['#modelFilter','model'],['#effortFilter','effort'],['#statusFilter','status']].forEach(([id,key])=>$(id).addEventListener('change',e=>{state[key]=e.target.value;render()}));
+ $('#csv').onclick=()=>download('decomposition-benchmark.csv',toCSV(DATA.runs),'text/csv');
+ $('#json').onclick=()=>download('decomposition-benchmark.json',JSON.stringify(DATA,null,2),'application/json');
+ $('#subtitle').textContent=`${DATA.runs.length} измерений · ${models.length} модели · ${efforts.length} уровней размышления · ${new Date(DATA.meta.generatedAt).toLocaleString('ru-RU')}`;
+ renderMethod();render();
+}
+function render(){const runs=filtered(),groups=aggregate(runs);renderCards(runs,groups);renderHeat(groups);renderStrips(groups);renderTable(groups);renderErrors(runs);renderRaw(runs)}
+function renderCards(runs,groups){
+ const ok=runs.filter(success),fast=[...groups].filter(g=>g.p50!=null).sort((a,b)=>a.p50-b.p50)[0],steady=[...groups].filter(g=>g.p90!=null).sort((a,b)=>a.p90-b.p90)[0],reliable=[...groups].sort((a,b)=>b.rate-a.rate||a.p50-b.p50)[0];
+ const cards=[['Успешных',`${ok.length} / ${runs.length}`,runs.length?pct(ok.length/runs.length):'—'],['Самая быстрая медиана',fast?fmt(fast.p50):'—',fast?`${fast.model} · ${fast.effort}`:'нет данных'],['Лучший p90',steady?fmt(steady.p90):'—',steady?`${steady.model} · ${steady.effort}`:'нет данных'],['Надёжность',reliable?pct(reliable.rate):'—',reliable?`${reliable.model} · ${reliable.effort}`:'нет данных']];
+ $('#cards').innerHTML=cards.map(c=>`<article class="card"><div class="label">${esc(c[0])}</div><div class="value">${esc(c[1])}</div><div class="detail">${esc(c[2])}</div></article>`).join('');
+}
+function renderHeat(groups){
+ const lookup=new Map(groups.map(g=>[`${g.model}|${g.effort}`,g])),values=groups.map(g=>g.p50).filter(Number.isFinite),lo=Math.min(...values),hi=Math.max(...values);
+ let html=`<div class="heat-row"><div></div>${efforts.map(e=>`<div class="heat-cell heat-head">${esc(e)}</div>`).join('')}</div>`;
+	 for(const m of models){html+=`<div class="heat-row"><div class="heat-label">${esc(m)}</div>`;for(const e of efforts){const g=lookup.get(`${m}|${e}`),v=g?.p50,t=Number.isFinite(v)&&hi>lo?(v-lo)/(hi-lo):.5,alpha=Number.isFinite(v) ? .5-.32*t : 0;html+=`<div class="heat-cell" style="background:rgba(45,107,69,${alpha})"><strong>${fmt(v)}</strong><span>${g?pct(g.rate):'нет прогонов'}</span></div>`}html+='</div>'} $('#heatmap').innerHTML=html;
+}
+function renderStrips(groups){
+ const valid=groups.filter(g=>g.p50!=null).sort((a,b)=>a.p50-b.p50),max=Math.max(...valid.flatMap(g=>g.runs.filter(success).map(r=>r.timing.totalMs)),1);
+ $('#strips').innerHTML=valid.length?valid.map(g=>{const dots=g.runs.filter(success).map(r=>`<i class="dot" title="${fmt(r.timing.totalMs)}" style="left:${Math.min(100,r.timing.totalMs/max*100)}%"></i>`).join('');return `<div class="strip-row"><div class="strip-label">${esc(g.model)} · ${esc(g.effort)}</div><div class="strip-track">${dots}<i class="median" style="left:${g.p50/max*100}%"></i></div><div class="strip-value">${fmt(g.p50)}</div></div>`}).join(''):'<div class="empty">Нет успешных прогонов в выбранном срезе.</div>';
+}
+const columns=[['model','Модель'],['effort','Уровень'],['rate','Успех'],['min','min'],['p50','p50'],['mean','mean'],['p90','p90'],['p95','p95'],['max','max'],['subtasks','Подзадачи'],['tools','Tools']];
+function renderTable(groups){
+ $('#summaryHead').innerHTML='<tr>'+columns.map(([k,l])=>`<th data-key="${k}">${l}${state.sort===k?(state.direction>0?' ↑':' ↓'):''}</th>`).join('')+'</tr>';
+ $('#summaryHead').querySelectorAll('th').forEach(th=>th.onclick=()=>{const k=th.dataset.key;if(state.sort===k)state.direction*=-1;else{state.sort=k;state.direction=1}renderTable(groups)});
+ const sorted=[...groups].sort((a,b)=>{const x=a[state.sort],y=b[state.sort];return (typeof x==='string'?x.localeCompare(y):((x??Infinity)-(y??Infinity)))*state.direction});
+ $('#summaryBody').innerHTML=sorted.map(g=>`<tr><td>${esc(g.model)}</td><td>${esc(g.effort)}</td><td><span class="badge ${g.rate<1?'bad':''}">${g.success}/${g.n} · ${pct(g.rate)}</span></td>${['min','p50','mean','p90','p95','max'].map(k=>`<td>${fmt(g[k])}</td>`).join('')}<td>${g.subtasks??'—'}</td><td>${g.tools??'—'}</td></tr>`).join('');
+}
+function renderErrors(runs){const failed=runs.filter(r=>!success(r));$('#errorPanel').hidden=!failed.length;$('#errors').innerHTML=failed.map(r=>`<div class="error"><strong>${esc(r.model)} · ${esc(r.effort)} · #${r.iteration}</strong><div>${esc(r.status)} — ${esc(r.error||'нет описания')}</div></div>`).join('')}
+function renderRaw(runs){$('#raw').innerHTML=runs.length?[...runs].sort((a,b)=>a.id.localeCompare(b.id)).map(r=>`<details><summary>${esc(r.id)} · ${esc(r.model)} / ${esc(r.effort)} · <span class="badge ${success(r)?'':'bad'}">${esc(r.status)}</span> · ${fmt(r.timing.totalMs)}</summary><div class="runmeta">terminal ${fmt(r.timing.terminalMs)} · first tool ${fmt(r.timing.firstToolMs)} · ${r.observed.toolCalls} tool calls · ${r.output.subtaskCount??0} subtasks</div>${r.output.subtaskTitles.length?`<ol class="titles">${r.output.subtaskTitles.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`:''}</details>`).join(''):'<div class="empty">Нет прогонов.</div>'}
+function renderMethod(){const m=DATA.meta,s=m.scenario;const rows=[['Сценарий',`${s.title}. ${s.description}`],['Порядок',m.order],['Измерение','Последовательно, concurrency=1. Таймер: запуск action run → terminal SSE → подтверждающий GET подзадач.'],['Разогрев',`${m.warmupRuns??0} прогонов, не включены в сводную статистику.`],['Пауза',fmt(m.cooldownMs)],['Таймаут',fmt(m.timeoutMs)],['Провайдер',m.provider],['Машина',`${m.machine.platform}; ${m.machine.cpu}; ${m.machine.logicalCpus} logical CPU; Node ${m.machine.node}`],['Git',`${m.git.commit}${m.git.dirty?' (dirty worktree)':''}`],['Оговорка minimal','Pi принимает minimal как отдельную настройку, но адаптер провайдера сопоставляет его с low. Поэтому эти строки показывают повторяемость пользовательской настройки, а не независимый provider reasoning tier.'],['Checkpoint завершён',m.completedAt?new Date(m.completedAt).toLocaleString('ru-RU'):'нет']];$('#method').innerHTML=rows.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}
+function toCSV(runs){const fields=['id','model','effort','iteration','status','totalMs','terminalMs','serverDurationMs','firstToolMs','subtaskCount','toolCalls','error'];const lines=[fields.join(',')];for(const r of runs){const row={...r,...r.timing,...r.output,...r.observed};lines.push(fields.map(f=>`"${String(row[f]??'').replaceAll('"','""')}"`).join(','))}return '\ufeff'+lines.join('\n')}
+function download(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+setup();
+</script>
+</body>
+</html>

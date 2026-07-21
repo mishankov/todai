@@ -479,24 +479,26 @@ func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
 }
 
-func (fakeTaskService) ListInbox(context.Context, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (fakeTaskService) ListInbox(context.Context, string, bool) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
 }
 
-func (fakeTaskService) ListAll(context.Context, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (fakeTaskService) ListAll(context.Context, string, bool) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
 }
 
-func (fakeTaskService) ListProject(context.Context, string, string, bool) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (fakeTaskService) ListProject(context.Context, string, string, bool) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
 }
 
-func (fakeTaskService) ListToday(_ context.Context, _, timezone string, _ bool) ([]task.Task, error) {
+func (fakeTaskService) ListToday(
+	_ context.Context, _, timezone string, _ bool,
+) ([]task.TaskSummary, error) {
 	if timezone == "Mars/Olympus_Mons" {
 		return nil, task.ErrInvalidTimezone
 	}
 
-	return []task.Task{}, nil
+	return []task.TaskSummary{}, nil
 }
 
 func (fakeTaskService) Complete(context.Context, execution.Scope, string, int64) (task.Task, error) {
@@ -511,8 +513,10 @@ func (fakeTaskService) Update(context.Context, execution.Scope, string, task.Upd
 	return task.Task{}, task.ErrTaskNotFound
 }
 
-func (fakeTaskService) Reorder(context.Context, execution.Scope, string, task.Reorder) ([]task.Task, error) {
-	return []task.Task{}, nil
+func (fakeTaskService) Reorder(
+	context.Context, execution.Scope, string, task.Reorder,
+) ([]task.TaskSummary, error) {
+	return []task.TaskSummary{}, nil
 }
 
 func (fakeTaskService) Delete(context.Context, execution.Scope, string, int64) error {

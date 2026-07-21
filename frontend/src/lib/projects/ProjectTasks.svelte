@@ -1,6 +1,7 @@
 <script lang="ts">
 	import TaskEditorModal from '$lib/components/TaskEditorModal.svelte';
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
+	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
+	import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 	import { untrack } from 'svelte';
 	import type { Project, ProjectLayout, ProjectSection } from './client';
 
@@ -8,7 +9,7 @@
 		project: Project;
 		projects: Project[];
 		initialSections: ProjectSection[];
-		initialTasks: Task[];
+		initialTasks: TaskSummary[];
 		create: (title: string, sectionId: string | null) => Promise<Task>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
@@ -19,7 +20,7 @@
 			version: number,
 			sectionId: string | null,
 			beforeTaskId: string | null
-		) => Promise<Task[]>;
+		) => Promise<TaskSummary[]>;
 		changeLayout: (version: number, layout: ProjectLayout) => Promise<Project>;
 		createSection: (name: string) => Promise<ProjectSection>;
 		updateSection: (sectionId: string, version: number, name: string) => Promise<ProjectSection>;
@@ -35,7 +36,7 @@
 		key: string;
 		name: string;
 		section: ProjectSection | null;
-		tasks: Task[];
+		tasks: TaskSummary[];
 		completed: boolean;
 		showHeader: boolean;
 	}
@@ -134,7 +135,7 @@
 		errorMessage = '';
 		try {
 			const created = await create(title, sectionId);
-			tasks = [...tasks.filter((item) => item.id !== created.id), created];
+			tasks = [...tasks.filter((item) => item.id !== created.id), summaryFromTask(created)];
 			titles[key] = '';
 		} catch {
 			errorMessage = 'The task could not be created. Please try again.';
@@ -200,14 +201,14 @@
 		}
 	}
 
-	async function changeStatus(item: Task) {
+	async function changeStatus(item: TaskSummary) {
 		const previous = item;
 		const status = item.status === 'active' ? 'completed' : 'active';
 		const optimistic = {
 			...item,
 			status,
 			completedAt: status === 'completed' ? new Date().toISOString() : null
-		} satisfies Task;
+		} satisfies TaskSummary;
 		busyTaskIds = [...busyTaskIds, item.id];
 		tasks = tasks.map((candidate) => (candidate.id === item.id ? optimistic : candidate));
 		errorMessage = '';
@@ -216,7 +217,9 @@
 				item.status === 'active'
 					? await complete(item.id, item.version)
 					: await reopen(item.id, item.version);
-			tasks = tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+			tasks = tasks.map((candidate) =>
+				candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+			);
 		} catch {
 			tasks = tasks.map((candidate) => (candidate.id === item.id ? previous : candidate));
 			errorMessage = 'The task could not be updated. Please try again.';
@@ -225,7 +228,7 @@
 		}
 	}
 
-	async function deleteTask(item: Task) {
+	async function deleteTask(item: TaskSummary) {
 		const previous = tasks;
 		busyTaskIds = [...busyTaskIds, item.id];
 		tasks = tasks.filter((candidate) => candidate.id !== item.id);
@@ -240,17 +243,23 @@
 		}
 	}
 
-	async function saveTask(item: Task, changes: TaskUpdate) {
+	async function saveTask(item: TaskSummary, changes: TaskUpdate) {
 		const updated = await update(item.id, changes);
 		tasks =
 			updated.projectId === currentProject.id
-				? tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate))
+				? tasks.map((candidate) =>
+						candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+					)
 				: tasks.filter((candidate) => candidate.id !== updated.id);
 		editingTaskId = null;
 	}
 
-	function openTaskEditor(item: Task) {
+	function openTaskEditor(item: TaskSummary) {
 		editingTaskId = item.id;
+	}
+
+	function summaryFromTask(task: Task): TaskSummary {
+		return { ...task, subtaskCount: 0, completedSubtaskCount: 0 };
 	}
 
 	function beginTaskDrag(event: DragEvent, item: Task) {
@@ -361,7 +370,10 @@
 		}
 	}
 
-	function buildSectionGroups(allSections: ProjectSection[], allTasks: Task[]): SectionGroup[] {
+	function buildSectionGroups(
+		allSections: ProjectSection[],
+		allTasks: TaskSummary[]
+	): SectionGroup[] {
 		const orderedSections = [...allSections].sort(
 			(left, right) =>
 				left.position - right.position || left.createdAt.localeCompare(right.createdAt)
@@ -404,7 +416,7 @@
 		return groups;
 	}
 
-	function tasksForSection(allTasks: Task[], sectionId: string | null): Task[] {
+	function tasksForSection(allTasks: TaskSummary[], sectionId: string | null): TaskSummary[] {
 		return allTasks
 			.filter((item) => item.status === 'active' && item.sectionId === sectionId)
 			.sort(
@@ -414,11 +426,11 @@
 	}
 
 	function moveTaskLocally(
-		allTasks: Task[],
+		allTasks: TaskSummary[],
 		taskId: string,
 		sectionId: string | null,
 		beforeTaskId: string | null
-	): Task[] {
+	): TaskSummary[] {
 		const moved = allTasks.find((item) => item.id === taskId);
 		if (!moved) return allTasks;
 		const remaining = allTasks.filter((item) => item.id !== taskId);
@@ -677,8 +689,12 @@
 							>
 								<strong>{item.title}</strong>
 								{#if item.description}<span class="description">{item.description}</span>{/if}
-								{#if item.dueDate || item.priority > 0}
+								{#if item.dueDate || item.priority > 0 || item.subtaskCount > 0}
 									<span class="metadata">
+										<SubtaskProgress
+											completed={item.completedSubtaskCount}
+											total={item.subtaskCount}
+										/>
 										{#if item.dueDate}
 											<span class:overdue={isOverdue(item)}>{formatDue(item)}</span>
 										{/if}

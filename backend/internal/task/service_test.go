@@ -589,7 +589,7 @@ func (*fakeRepository) Get(context.Context, string, string) (task.Task, error) {
 	return task.Task{}, nil
 }
 
-func (*fakeRepository) ListInbox(context.Context, string, bool) ([]task.Task, error) {
+func (*fakeRepository) ListInbox(context.Context, string, bool) ([]task.TaskSummary, error) {
 	return nil, nil
 }
 
@@ -597,13 +597,15 @@ func (r *fakeRepository) ListAll(
 	_ context.Context,
 	userID string,
 	includeCompleted bool,
-) ([]task.Task, error) {
+) ([]task.TaskSummary, error) {
 	r.allUserID = userID
 	r.allIncludeCompleted = includeCompleted
 	return nil, nil
 }
 
-func (*fakeRepository) ListProject(context.Context, string, string, bool) ([]task.Task, error) {
+func (*fakeRepository) ListProject(
+	context.Context, string, string, bool,
+) ([]task.TaskSummary, error) {
 	return nil, nil
 }
 
@@ -614,7 +616,7 @@ func (r *fakeRepository) ListToday(
 	dayStart time.Time,
 	dayEnd time.Time,
 	includeCompleted bool,
-) ([]task.Task, error) {
+) ([]task.TaskSummary, error) {
 	r.todayUserID = userID
 	r.todayDate = date
 	r.todayStart = dayStart
@@ -676,7 +678,7 @@ func (r *fakeRepository) Reorder(
 	scope execution.Scope,
 	_ string,
 	reorder task.Reorder,
-) ([]task.Task, error) {
+) ([]task.TaskSummary, error) {
 	r.mutationCalled = true
 	r.reorderScope = scope
 	r.reorder = reorder

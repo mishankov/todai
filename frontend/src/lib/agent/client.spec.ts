@@ -5,6 +5,8 @@ import {
 	createAgentSession,
 	getAgentSession,
 	postAgentMessage,
+	startAgentContextRun,
+	streamAgentContextRunEvents,
 	streamAgentEvents,
 	type AgentEvent
 } from './client';
@@ -24,7 +26,9 @@ describe('agent client', () => {
 
 		await createAgentSession(fetcher);
 		await getAgentSession(fetcher, 'session/id');
-		await postAgentMessage(fetcher, 'session/id', 'Plan my day');
+		await postAgentMessage(fetcher, 'session/id', {
+			message: 'Plan my day'
+		});
 		await abortAgentRun(fetcher, 'run/id');
 
 		expect(fetcher).toHaveBeenNthCalledWith(
@@ -40,12 +44,52 @@ describe('agent client', () => {
 		expect(fetcher).toHaveBeenNthCalledWith(
 			3,
 			'/api/agent/sessions/session%2Fid/messages',
-			expect.objectContaining({ method: 'POST', body: JSON.stringify({ message: 'Plan my day' }) })
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({ message: 'Plan my day' })
+			})
 		);
 		expect(fetcher).toHaveBeenNthCalledWith(
 			4,
 			'/api/agent/runs/run%2Fid/abort',
 			expect.objectContaining({ method: 'POST' })
+		);
+	});
+
+	it('starts and streams an isolated contextual run', async () => {
+		const run = testRun();
+		const completed = testEvent({ type: 'agent.run.completed' });
+		const fetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(jsonResponse(run, 202))
+			.mockResolvedValueOnce(
+				new Response(textStream([`id: 1\ndata: ${JSON.stringify(completed)}\n\n`]), {
+					status: 200,
+					headers: { 'Content-Type': 'text/event-stream' }
+				})
+			);
+
+		await startAgentContextRun(fetcher, {
+			type: 'task',
+			taskId: 'task-id',
+			action: 'decompose'
+		});
+		await streamAgentContextRunEvents(fetcher, run.id, 0, vi.fn(), new AbortController().signal);
+
+		expect(fetcher).toHaveBeenNthCalledWith(
+			1,
+			'/api/agent/runs',
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({
+					context: { type: 'task', taskId: 'task-id', action: 'decompose' }
+				})
+			})
+		);
+		expect(fetcher).toHaveBeenNthCalledWith(
+			2,
+			'/api/agent/runs/run-id/events',
+			expect.objectContaining({ headers: { Accept: 'text/event-stream' } })
 		);
 	});
 
@@ -127,5 +171,19 @@ function testEvent(overrides: Partial<AgentEvent> = {}): AgentEvent {
 		occurredAt: '2026-07-18T10:00:00Z',
 		payload: {},
 		...overrides
+	};
+}
+
+function testRun() {
+	return {
+		id: 'run-id',
+		sessionId: 'private-execution-id',
+		status: 'queued' as const,
+		correlationId: 'correlation-id',
+		startedAt: null,
+		completedAt: null,
+		error: null,
+		createdAt: '2026-07-19T10:00:00Z',
+		updatedAt: '2026-07-19T10:00:00Z'
 	};
 }

@@ -12,7 +12,7 @@ import (
 
 const (
 	protocolName    = "todai.runner"
-	protocolVersion = 3
+	protocolVersion = 4
 )
 
 var (
@@ -30,6 +30,7 @@ type envelope struct {
 	SessionID      string                 `json:"sessionId,omitempty"`
 	RunID          string                 `json:"runId,omitempty"`
 	Message        string                 `json:"message,omitempty"`
+	Context        *agent.MessageContext  `json:"context,omitempty"`
 	History        []agent.HistoryMessage `json:"history"`
 	RuntimeName    string                 `json:"runtimeName,omitempty"`
 	ToolAccess     *toolAccess            `json:"toolAccess,omitempty"`

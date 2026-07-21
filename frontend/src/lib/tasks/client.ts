@@ -20,6 +20,11 @@ export interface Task {
 	lastModifiedBy: string;
 }
 
+export interface TaskSummary extends Task {
+	subtaskCount: number;
+	completedSubtaskCount: number;
+}
+
 export interface TaskUpdate {
 	version: number;
 	title?: string;
@@ -57,7 +62,10 @@ export class TaskConflictError extends TaskRequestError {
 	}
 }
 
-export async function getInbox(fetcher: typeof fetch, includeCompleted = false): Promise<Task[]> {
+export async function getInbox(
+	fetcher: typeof fetch,
+	includeCompleted = false
+): Promise<TaskSummary[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
 	return getTaskView(fetcher, `/api/views/inbox?${query}`, 'Could not load Inbox.');
 }
@@ -65,7 +73,7 @@ export async function getInbox(fetcher: typeof fetch, includeCompleted = false):
 export async function getAllTasks(
 	fetcher: typeof fetch,
 	includeCompleted = false
-): Promise<Task[]> {
+): Promise<TaskSummary[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
 	return getTaskView(fetcher, `/api/views/all?${query}`, 'Could not load all tasks.');
 }
@@ -74,7 +82,7 @@ export async function getToday(
 	fetcher: typeof fetch,
 	timezone: string,
 	includeCompleted = false
-): Promise<Task[]> {
+): Promise<TaskSummary[]> {
 	const query = new URLSearchParams({
 		timezone,
 		include_completed: String(includeCompleted)
@@ -86,7 +94,7 @@ export async function getProjectTasks(
 	fetcher: typeof fetch,
 	projectId: string,
 	includeCompleted = false
-): Promise<Task[]> {
+): Promise<TaskSummary[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
 	return getTaskView(
 		fetcher,
@@ -99,7 +107,7 @@ async function getTaskView(
 	fetcher: typeof fetch,
 	path: string,
 	errorMessage: string
-): Promise<Task[]> {
+): Promise<TaskSummary[]> {
 	const response = await fetcher(path, {
 		credentials: 'same-origin',
 		headers: { Accept: 'application/json' }
@@ -108,7 +116,7 @@ async function getTaskView(
 		throw new TaskRequestError(errorMessage);
 	}
 
-	const body = (await response.json()) as { tasks: Task[] };
+	const body = (await response.json()) as { tasks: TaskSummary[] };
 	return body.tasks;
 }
 
@@ -216,7 +224,7 @@ export async function reorderTask(
 	version: number,
 	sectionId: string | null,
 	beforeTaskId: string | null
-): Promise<Task[]> {
+): Promise<TaskSummary[]> {
 	const response = await fetcher(`/api/tasks/${encodeURIComponent(taskId)}/reorder`, {
 		method: 'POST',
 		credentials: 'same-origin',
@@ -225,7 +233,7 @@ export async function reorderTask(
 	});
 	if (response.status === 409) throw new TaskConflictError();
 	if (!response.ok) throw new TaskRequestError('Could not reorder the task.');
-	const body = (await response.json()) as { tasks: Task[] };
+	const body = (await response.json()) as { tasks: TaskSummary[] };
 	return body.tasks;
 }
 

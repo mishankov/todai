@@ -18,14 +18,20 @@ const eventPersistenceTimeout = 5 * time.Second
 var (
 	// ErrServiceStopped indicates that the application is shutting down.
 	ErrServiceStopped = errors.New("agent service is stopped")
+	// ErrMessageContextNotFound avoids starting a run for an inaccessible product resource.
+	ErrMessageContextNotFound = errors.New("agent message context not found")
+	// ErrContextValidatorRequired prevents unverified structured context from reaching a runtime.
+	ErrContextValidatorRequired = errors.New("agent message context validator is not configured")
 )
 
 type repository interface {
 	CreateSession(context.Context, execution.Scope) (Session, error)
 	GetConversation(context.Context, string, string) (Session, []Message, []Run, int64, error)
-	CreateMessageRun(context.Context, execution.Scope, string, string) (Message, Run, []HistoryMessage, error)
+	CreateMessageRun(context.Context, execution.Scope, string, MessageInput) (Message, Run, []HistoryMessage, error)
+	CreateContextRun(context.Context, execution.Scope, MessageContext) (Run, error)
 	GetRun(context.Context, string, string) (Run, error)
 	ListRunEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
+	ListContextRunEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
 	RecordRuntimeEvent(context.Context, execution.Scope, string, RuntimeEvent) (RunEvent, error)
 	FinishRun(context.Context, execution.Scope, string, string, any) (Run, error)
 }
@@ -42,17 +48,23 @@ type PreferencesResolver interface {
 	)
 }
 
+// ContextValidator verifies that a structured product resource belongs to the current user.
+type ContextValidator interface {
+	ValidateMessageContext(context.Context, string, MessageContext) error
+}
+
 // ServiceConfig controls the isolated runtime without exposing credentials globally.
 type ServiceConfig struct {
-	Runtime        string
-	InternalURL    string
-	TokenTTL       time.Duration
-	AllowedTools   []agentauth.Tool
-	AgentDir       string
-	Provider       string
-	Model          string
-	ThinkingEffort string
-	Preferences    PreferencesResolver
+	Runtime          string
+	InternalURL      string
+	TokenTTL         time.Duration
+	AllowedTools     []agentauth.Tool
+	AgentDir         string
+	Provider         string
+	Model            string
+	ThinkingEffort   string
+	Preferences      PreferencesResolver
+	ContextValidator ContextValidator
 }
 
 // Conversation contains a session and its canonical messages and runs.
@@ -140,32 +152,71 @@ func (s *Service) GetSession(ctx context.Context, userID, sessionID string) (Con
 	}, nil
 }
 
+// StartContextRun starts an isolated action that cannot read or append to chat history.
+func (s *Service) StartContextRun(
+	ctx context.Context,
+	scope execution.Scope,
+	messageContext MessageContext,
+) (Run, error) {
+	if err := s.validateRunContext(ctx, scope.UserID, &messageContext); err != nil {
+		return Run{}, err
+	}
+	timezone, model, thinkingEffort, err := s.resolvePreferences(ctx, scope.UserID)
+	if err != nil {
+		return Run{}, err
+	}
+	run, err := s.repository.CreateContextRun(ctx, scope, messageContext)
+	if err != nil {
+		return Run{}, fmt.Errorf("queue contextual agent run: %w", err)
+	}
+	if err := s.launchRun(
+		ctx, run, contextPrompt(messageContext), &messageContext, nil,
+		timezone, model, thinkingEffort,
+	); err != nil {
+		return Run{}, err
+	}
+	return run, nil
+}
+
 // PostMessage durably queues a run and starts it asynchronously.
 func (s *Service) PostMessage(
 	ctx context.Context,
 	scope execution.Scope,
 	sessionID string,
-	content string,
+	input MessageInput,
 ) (PostedMessage, error) {
 	if s.runtime == nil {
 		return PostedMessage{}, errors.New("agent runtime is not configured")
 	}
-	timezone := ""
-	model := s.config.Model
-	thinkingEffort := s.config.ThinkingEffort
-	if s.config.Preferences != nil {
-		var err error
-		timezone, model, thinkingEffort, err = s.config.Preferences.ResolveAgent(ctx, scope.UserID)
-		if err != nil {
-			return PostedMessage{}, fmt.Errorf("resolve agent preferences: %w", err)
-		}
+	timezone, model, thinkingEffort, err := s.resolvePreferences(ctx, scope.UserID)
+	if err != nil {
+		return PostedMessage{}, err
 	}
-	message, run, history, err := s.repository.CreateMessageRun(ctx, scope, sessionID, content)
+	message, run, history, err := s.repository.CreateMessageRun(ctx, scope, sessionID, input)
 	if err != nil {
 		return PostedMessage{}, fmt.Errorf("queue agent message: %w", err)
 	}
+	if err := s.launchRun(
+		ctx, run, message.Content, nil, history,
+		timezone, model, thinkingEffort,
+	); err != nil {
+		return PostedMessage{}, err
+	}
+	return PostedMessage{Message: message, Run: run}, nil
+}
+
+func (s *Service) launchRun(
+	ctx context.Context,
+	run Run,
+	message string,
+	messageContext *MessageContext,
+	history []HistoryMessage,
+	timezone string,
+	model string,
+	thinkingEffort string,
+) error {
 	if s.tokens == nil {
-		return PostedMessage{}, errors.New("agent token issuer is not configured")
+		return errors.New("agent token issuer is not configured")
 	}
 	issued, err := s.tokens.Issue(ctx, agentauth.IssueRequest{
 		UserID: run.UserID, AgentSessionID: run.SessionID, AgentRunID: run.ID,
@@ -176,7 +227,7 @@ func (s *Service) PostMessage(
 		_, _ = s.repository.FinishRun(ctx, finishScope, run.ID, EventRunFailed, map[string]any{
 			"error": "issue scoped agent token",
 		})
-		return PostedMessage{}, fmt.Errorf("issue scoped agent token: %w", err)
+		return fmt.Errorf("issue scoped agent token: %w", err)
 	}
 
 	s.mu.Lock()
@@ -187,7 +238,7 @@ func (s *Service) PostMessage(
 		_, _ = s.repository.FinishRun(ctx, finishScope, run.ID, EventRunFailed, map[string]any{
 			"error": ErrServiceStopped.Error(),
 		})
-		return PostedMessage{}, ErrServiceStopped
+		return ErrServiceStopped
 	}
 	runCtx, cancel := context.WithCancel(s.root)
 	s.active[run.ID] = activeRun{cancel: cancel}
@@ -195,9 +246,59 @@ func (s *Service) PostMessage(
 	s.mu.Unlock()
 
 	go s.execute(
-		runCtx, run, message.Content, history, issued.Token, timezone, model, thinkingEffort,
+		runCtx, run, message, messageContext, history, issued.Token,
+		timezone, model, thinkingEffort,
 	)
-	return PostedMessage{Message: message, Run: run}, nil
+	return nil
+}
+
+func (s *Service) validateRunContext(
+	ctx context.Context,
+	userID string,
+	messageContext *MessageContext,
+) error {
+	if s.runtime == nil {
+		return errors.New("agent runtime is not configured")
+	}
+	if messageContext == nil {
+		return nil
+	}
+	if err := messageContext.Validate(); err != nil {
+		return err
+	}
+	if s.config.ContextValidator == nil {
+		return ErrContextValidatorRequired
+	}
+	if err := s.config.ContextValidator.ValidateMessageContext(ctx, userID, *messageContext); err != nil {
+		return fmt.Errorf("validate agent run context: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) resolvePreferences(
+	ctx context.Context,
+	userID string,
+) (string, string, string, error) {
+	timezone := ""
+	model := s.config.Model
+	thinkingEffort := s.config.ThinkingEffort
+	if s.config.Preferences == nil {
+		return timezone, model, thinkingEffort, nil
+	}
+	timezone, model, thinkingEffort, err := s.config.Preferences.ResolveAgent(ctx, userID)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve agent preferences: %w", err)
+	}
+	return timezone, model, thinkingEffort, nil
+}
+
+func contextPrompt(messageContext MessageContext) string {
+	switch messageContext.Action {
+	case ContextActionDecompose:
+		return "Decompose the attached task into clear actionable direct subtasks."
+	default:
+		return "Perform the attached task action."
+	}
 }
 
 // ListEvents returns persisted events after a durable SSE cursor.
@@ -211,6 +312,21 @@ func (s *Service) ListEvents(
 	events, err := s.repository.ListRunEvents(ctx, userID, sessionID, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list agent events: %w", err)
+	}
+	return events, nil
+}
+
+// ListContextRunEvents returns persisted events for one isolated contextual run.
+func (s *Service) ListContextRunEvents(
+	ctx context.Context,
+	userID string,
+	runID string,
+	after int64,
+	limit int,
+) ([]RunEvent, error) {
+	events, err := s.repository.ListContextRunEvents(ctx, userID, runID, after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list contextual agent run events: %w", err)
 	}
 	return events, nil
 }
@@ -245,6 +361,7 @@ func (s *Service) execute(
 	ctx context.Context,
 	run Run,
 	message string,
+	messageContext *MessageContext,
 	history []HistoryMessage,
 	accessToken string,
 	timezone string,
@@ -272,7 +389,7 @@ func (s *Service) execute(
 	}
 	err := s.runtime.Run(ctx, RunRequest{
 		UserID: run.UserID, SessionID: run.SessionID, RunID: run.ID, Message: message,
-		History: history,
+		Context: messageContext, History: history,
 		Runtime: s.config.Runtime, InternalURL: s.config.InternalURL, AccessToken: accessToken,
 		AllowedTools: allowedTools, AgentDir: s.config.AgentDir,
 		Provider: s.config.Provider, Model: model, Timezone: timezone,

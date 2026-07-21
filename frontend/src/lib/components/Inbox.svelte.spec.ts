@@ -1,7 +1,7 @@
 import { page } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import type { Task } from '$lib/tasks/client';
+import type { Task, TaskSummary } from '$lib/tasks/client';
 import Inbox from './Inbox.svelte';
 
 describe('Inbox', () => {
@@ -133,6 +133,25 @@ describe('Inbox', () => {
 			.toHaveAttribute('aria-modal', 'true');
 	});
 
+	it('shows direct subtask progress on the collapsed task card', async () => {
+		const task = testTask({
+			title: 'Prepare release',
+			subtaskCount: 3,
+			completedSubtaskCount: 1
+		});
+		render(Inbox, {
+			initialTasks: [task],
+			create: vi.fn(),
+			complete: vi.fn(),
+			reopen: vi.fn(),
+			update: vi.fn(),
+			remove: vi.fn()
+		});
+
+		await expect.element(page.getByLabelText('1 of 3 subtasks completed')).toBeVisible();
+		await expect.element(page.getByText('1/3', { exact: true })).toBeVisible();
+	});
+
 	it('edits task fields with the observed version', async () => {
 		const active = testTask({ title: 'Draft plan' });
 		const updated = testTask({
@@ -224,7 +243,7 @@ function dateValue(value: Date): string {
 	return `${year}-${month}-${day}`;
 }
 
-function testTask(overrides: Partial<Task> = {}): Task {
+function testTask(overrides: Partial<TaskSummary> = {}): TaskSummary {
 	return {
 		id: 'task-id',
 		projectId: null,
@@ -243,6 +262,8 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		createdAt: '2026-07-16T10:00:00Z',
 		updatedAt: '2026-07-16T10:00:00Z',
 		lastModifiedBy: 'user-id',
+		subtaskCount: 0,
+		completedSubtaskCount: 0,
 		...overrides
 	};
 }

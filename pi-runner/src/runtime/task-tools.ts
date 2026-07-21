@@ -10,7 +10,10 @@ const nullableString = Type.Union([Type.String(), Type.Null()]);
 const version = Type.Integer({ minimum: 1 });
 
 const definitions = {
-  task_get: ["Get one task by ID", Type.Object({ taskId: Type.String() })],
+  task_get: [
+    "Get one task with its direct subtasks, comments, project, and section",
+    Type.Object({ taskId: Type.String() }),
+  ],
   task_search: [
     "Search tasks",
     Type.Object({

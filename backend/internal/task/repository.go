@@ -22,6 +22,14 @@ const taskColumns = `
 	last_modified_by
 `
 
+const taskSummaryColumns = taskColumns + `,
+	(SELECT COUNT(*) FROM tasks child
+		WHERE child.user_id = tasks.user_id AND child.parent_id = tasks.id) AS subtask_count,
+	(SELECT COUNT(*) FROM tasks child
+		WHERE child.user_id = tasks.user_id AND child.parent_id = tasks.id
+			AND child.status = 'completed') AS completed_subtask_count
+`
+
 //go:embed migrations/*.sql
 var migrations embed.FS
 
@@ -189,7 +197,7 @@ func (r *Repository) ListProject(
 	userID string,
 	projectID string,
 	includeCompleted bool,
-) ([]Task, error) {
+) ([]TaskSummary, error) {
 	var exists bool
 	if err := r.db.GetContext(ctx, &exists, `
 		SELECT EXISTS (
@@ -202,9 +210,9 @@ func (r *Repository) ListProject(
 		return nil, ErrProjectNotFound
 	}
 
-	tasks := make([]Task, 0)
+	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
-		SELECT `+taskColumns+`
+		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
 			AND project_id = $2
@@ -247,10 +255,10 @@ func (r *Repository) ListInbox(
 	ctx context.Context,
 	userID string,
 	includeCompleted bool,
-) ([]Task, error) {
-	tasks := make([]Task, 0)
+) ([]TaskSummary, error) {
+	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
-		SELECT `+taskColumns+`
+		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
 			AND project_id IS NULL
@@ -273,10 +281,10 @@ func (r *Repository) ListAll(
 	ctx context.Context,
 	userID string,
 	includeCompleted bool,
-) ([]Task, error) {
-	tasks := make([]Task, 0)
+) ([]TaskSummary, error) {
+	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
-		SELECT `+taskColumns+`
+		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
 			AND parent_id IS NULL
@@ -305,10 +313,10 @@ func (r *Repository) ListToday(
 	dayStart time.Time,
 	dayEnd time.Time,
 	includeCompleted bool,
-) ([]Task, error) {
-	tasks := make([]Task, 0)
+) ([]TaskSummary, error) {
+	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
-		SELECT `+taskColumns+`
+		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
 			AND parent_id IS NULL
@@ -559,7 +567,7 @@ func (r *Repository) Reorder(
 	scope execution.Scope,
 	taskID string,
 	reorder Reorder,
-) ([]Task, error) {
+) ([]TaskSummary, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin task reorder: %w", err)
@@ -696,10 +704,10 @@ func commitProjectTasks(
 	tx *sqlx.Tx,
 	userID string,
 	projectID string,
-) ([]Task, error) {
-	tasks := make([]Task, 0)
+) ([]TaskSummary, error) {
+	tasks := make([]TaskSummary, 0)
 	if err := tx.SelectContext(ctx, &tasks, `
-		SELECT `+taskColumns+`
+		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1 AND project_id = $2 AND parent_id IS NULL
 		ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, position, created_at

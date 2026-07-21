@@ -1,6 +1,8 @@
 export type AgentRole = 'user' | 'assistant';
 export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'aborted';
 
+export const agentSessionStorageKey = 'todai.agent.session-id';
+
 export interface AgentSession {
 	id: string;
 	createdAt: string;
@@ -13,8 +15,19 @@ export interface AgentMessage {
 	runId: string | null;
 	role: AgentRole;
 	content: string;
+	context?: AgentRunContext;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface AgentRunContext {
+	type: 'task';
+	taskId: string;
+	action: 'decompose';
+}
+
+export interface AgentMessageRequest {
+	message: string;
 }
 
 export interface AgentRun {
@@ -54,10 +67,17 @@ export interface AgentEvent {
 export interface AgentAPI {
 	createSession(): Promise<AgentSession>;
 	getSession(sessionId: string): Promise<AgentConversation>;
-	postMessage(sessionId: string, message: string): Promise<PostedAgentMessage>;
+	startContextRun(context: AgentRunContext): Promise<AgentRun>;
+	postMessage(sessionId: string, request: AgentMessageRequest): Promise<PostedAgentMessage>;
 	abortRun(runId: string): Promise<AgentRun>;
 	streamEvents(
 		sessionId: string,
+		after: number,
+		onEvent: (event: AgentEvent) => void | Promise<void>,
+		signal: AbortSignal
+	): Promise<number>;
+	streamContextRunEvents(
+		runId: string,
 		after: number,
 		onEvent: (event: AgentEvent) => void | Promise<void>,
 		signal: AbortSignal
@@ -78,11 +98,26 @@ export function createAgentAPI(fetcher: typeof fetch = fetch): AgentAPI {
 	return {
 		createSession: () => createAgentSession(fetcher),
 		getSession: (sessionId) => getAgentSession(fetcher, sessionId),
-		postMessage: (sessionId, message) => postAgentMessage(fetcher, sessionId, message),
+		startContextRun: (context) => startAgentContextRun(fetcher, context),
+		postMessage: (sessionId, request) => postAgentMessage(fetcher, sessionId, request),
 		abortRun: (runId) => abortAgentRun(fetcher, runId),
 		streamEvents: (sessionId, after, onEvent, signal) =>
-			streamAgentEvents(fetcher, sessionId, after, onEvent, signal)
+			streamAgentEvents(fetcher, sessionId, after, onEvent, signal),
+		streamContextRunEvents: (runId, after, onEvent, signal) =>
+			streamAgentContextRunEvents(fetcher, runId, after, onEvent, signal)
 	};
+}
+
+export async function startAgentContextRun(
+	fetcher: typeof fetch,
+	context: AgentRunContext
+): Promise<AgentRun> {
+	return requestJSON(
+		fetcher,
+		'/api/agent/runs',
+		{ method: 'POST', body: JSON.stringify({ context }) },
+		'Could not start the agent action.'
+	);
 }
 
 export async function createAgentSession(fetcher: typeof fetch): Promise<AgentSession> {
@@ -104,12 +139,12 @@ export async function getAgentSession(
 export async function postAgentMessage(
 	fetcher: typeof fetch,
 	sessionId: string,
-	message: string
+	request: AgentMessageRequest
 ): Promise<PostedAgentMessage> {
 	return requestJSON(
 		fetcher,
 		`/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`,
-		{ method: 'POST', body: JSON.stringify({ message }) },
+		{ method: 'POST', body: JSON.stringify(request) },
 		'Could not send the message.'
 	);
 }
@@ -130,9 +165,41 @@ export async function streamAgentEvents(
 	onEvent: (event: AgentEvent) => void | Promise<void>,
 	signal: AbortSignal
 ): Promise<number> {
+	return streamAgentEventSource(
+		fetcher,
+		`/api/agent/sessions/${encodeURIComponent(sessionId)}/events`,
+		after,
+		onEvent,
+		signal
+	);
+}
+
+export async function streamAgentContextRunEvents(
+	fetcher: typeof fetch,
+	runId: string,
+	after: number,
+	onEvent: (event: AgentEvent) => void | Promise<void>,
+	signal: AbortSignal
+): Promise<number> {
+	return streamAgentEventSource(
+		fetcher,
+		`/api/agent/runs/${encodeURIComponent(runId)}/events`,
+		after,
+		onEvent,
+		signal
+	);
+}
+
+async function streamAgentEventSource(
+	fetcher: typeof fetch,
+	path: string,
+	after: number,
+	onEvent: (event: AgentEvent) => void | Promise<void>,
+	signal: AbortSignal
+): Promise<number> {
 	const headers: Record<string, string> = { Accept: 'text/event-stream' };
 	if (after > 0) headers['Last-Event-ID'] = String(after);
-	const response = await fetcher(`/api/agent/sessions/${encodeURIComponent(sessionId)}/events`, {
+	const response = await fetcher(path, {
 		credentials: 'same-origin',
 		headers,
 		signal

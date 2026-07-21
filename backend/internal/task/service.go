@@ -72,15 +72,15 @@ type repository interface {
 	Create(context.Context, execution.Scope, string, *string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListSubtasks(context.Context, string, string) ([]Task, error)
-	ListInbox(context.Context, string, bool) ([]Task, error)
-	ListAll(context.Context, string, bool) ([]Task, error)
-	ListProject(context.Context, string, string, bool) ([]Task, error)
-	ListToday(context.Context, string, Date, time.Time, time.Time, bool) ([]Task, error)
+	ListInbox(context.Context, string, bool) ([]TaskSummary, error)
+	ListAll(context.Context, string, bool) ([]TaskSummary, error)
+	ListProject(context.Context, string, string, bool) ([]TaskSummary, error)
+	ListToday(context.Context, string, Date, time.Time, time.Time, bool) ([]TaskSummary, error)
 	Search(context.Context, string, SearchQuery) ([]Task, error)
 	Complete(context.Context, execution.Scope, string, int64) (Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
 	Update(context.Context, execution.Scope, string, Update) (Task, error)
-	Reorder(context.Context, execution.Scope, string, Reorder) ([]Task, error)
+	Reorder(context.Context, execution.Scope, string, Reorder) ([]TaskSummary, error)
 	Delete(context.Context, execution.Scope, string, int64) error
 	ListComments(context.Context, string, string) ([]Comment, error)
 	CreateComment(context.Context, execution.Scope, string, string) (Comment, error)
@@ -273,7 +273,7 @@ func (s *Service) ListProject(
 	userID string,
 	projectID string,
 	includeCompleted bool,
-) ([]Task, error) {
+) ([]TaskSummary, error) {
 	tasks, err := s.repository.ListProject(ctx, userID, projectID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("list project tasks: %w", err)
@@ -293,7 +293,9 @@ func (s *Service) Get(ctx context.Context, userID, taskID string) (Task, error) 
 }
 
 // ListInbox returns top-level tasks without a project.
-func (s *Service) ListInbox(ctx context.Context, userID string, includeCompleted bool) ([]Task, error) {
+func (s *Service) ListInbox(
+	ctx context.Context, userID string, includeCompleted bool,
+) ([]TaskSummary, error) {
 	tasks, err := s.repository.ListInbox(ctx, userID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("list Inbox: %w", err)
@@ -303,7 +305,9 @@ func (s *Service) ListInbox(ctx context.Context, userID string, includeCompleted
 }
 
 // ListAll returns all top-level tasks owned by the user.
-func (s *Service) ListAll(ctx context.Context, userID string, includeCompleted bool) ([]Task, error) {
+func (s *Service) ListAll(
+	ctx context.Context, userID string, includeCompleted bool,
+) ([]TaskSummary, error) {
 	tasks, err := s.repository.ListAll(ctx, userID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("list all tasks: %w", err)
@@ -319,7 +323,7 @@ func (s *Service) ListToday(
 	userID string,
 	timezone string,
 	includeCompleted bool,
-) ([]Task, error) {
+) ([]TaskSummary, error) {
 	timezone = strings.TrimSpace(timezone)
 	location, err := time.LoadLocation(timezone)
 	if timezone == "" || err != nil {
@@ -406,7 +410,7 @@ func (s *Service) Reorder(
 	scope execution.Scope,
 	taskID string,
 	reorder Reorder,
-) ([]Task, error) {
+) ([]TaskSummary, error) {
 	if err := scope.Validate(); err != nil {
 		return nil, fmt.Errorf("validate execution scope: %w", err)
 	}

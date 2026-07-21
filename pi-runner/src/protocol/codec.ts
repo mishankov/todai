@@ -66,6 +66,7 @@ export function decodeCommand(line: string): RunnerCommand {
         sessionId: requiredString(value, "sessionId", requestId),
         runId: requiredString(value, "runId", requestId),
         message: requiredString(value, "message", requestId),
+        ...optionalContext(value, requestId),
         history: requiredHistory(value, requestId),
         runtimeName,
         toolAccess: requiredToolAccess(value, requestId),
@@ -87,6 +88,41 @@ export function decodeCommand(line: string): RunnerCommand {
         requestId,
       );
   }
+}
+
+function optionalContext(
+  value: Record<string, unknown>,
+  requestId?: string,
+): Pick<RunStartCommand, "context"> {
+  if (value.context === undefined) return {};
+  if (!isRecord(value.context)) {
+    throw new ProtocolError(
+      "invalid_command",
+      "context must be an object",
+      requestId,
+    );
+  }
+  const context = value.context;
+  if (
+    context.type !== "task" ||
+    context.action !== "decompose" ||
+    Object.keys(context).some(
+      (key) => !["type", "taskId", "action"].includes(key),
+    )
+  ) {
+    throw new ProtocolError(
+      "invalid_command",
+      "context must describe a task decomposition",
+      requestId,
+    );
+  }
+  return {
+    context: {
+      type: "task",
+      taskId: requiredString(context, "taskId", requestId),
+      action: "decompose",
+    },
+  };
 }
 
 function requiredHistory(

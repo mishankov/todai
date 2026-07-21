@@ -185,7 +185,7 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		os.Exit(7)
 	}
 	writeProtocolLine(map[string]any{
-		"protocol": "todai.runner", "version": 3, "type": "runner.ready",
+		"protocol": "todai.runner", "version": 4, "type": "runner.ready",
 		"runtime": map[string]any{"name": "fake", "version": "0.1.0"},
 	})
 	scanner := bufio.NewScanner(os.Stdin)
@@ -199,14 +199,16 @@ func TestRuntimeHelperProcess(t *testing.T) {
 	toolAccess, ok := start["toolAccess"].(map[string]any)
 	history, historyOK := start["history"].([]any)
 	pi, piOK := start["pi"].(map[string]any)
+	messageContext, contextOK := start["context"].(map[string]any)
 	if !ok || toolAccess["token"] != "scoped-token" || start["runtimeName"] != "fake" ||
 		!historyOK || len(history) != 1 || !piOK || pi["timezone"] != "Europe/Moscow" ||
-		pi["model"] != "selected-model" || pi["thinkingEffort"] != "high" {
+		pi["model"] != "selected-model" || pi["thinkingEffort"] != "high" || !contextOK ||
+		messageContext["type"] != "task" || messageContext["action"] != "decompose" {
 		os.Exit(6)
 	}
 	runID, _ := start["runId"].(string)
 	writeProtocolLine(map[string]any{
-		"protocol": "todai.runner", "version": 3, "type": "run.started",
+		"protocol": "todai.runner", "version": 4, "type": "run.started",
 		"runId": runID, "sequence": 1, "model": "selected-model", "thinkingEffort": "high",
 	})
 	if scenario == "invalid" {
@@ -222,7 +224,7 @@ func TestRuntimeHelperProcess(t *testing.T) {
 			os.Exit(5)
 		}
 		writeProtocolLine(map[string]any{
-			"protocol": "todai.runner", "version": 3, "type": "run.aborted",
+			"protocol": "todai.runner", "version": 4, "type": "run.aborted",
 			"runId": runID, "sequence": 2,
 		})
 		os.Exit(0)
@@ -231,20 +233,20 @@ func TestRuntimeHelperProcess(t *testing.T) {
 	nextSequence := 2
 	if scenario == "tools" {
 		writeProtocolLine(map[string]any{
-			"protocol": "todai.runner", "version": 3, "type": "tool.started",
+			"protocol": "todai.runner", "version": 4, "type": "tool.started",
 			"runId": runID, "sequence": nextSequence, "toolCallId": "call-1", "toolName": "task_get",
 			"arguments": map[string]any{"taskId": "task-1"},
 		})
 		nextSequence++
 		writeProtocolLine(map[string]any{
-			"protocol": "todai.runner", "version": 3, "type": "tool.completed",
+			"protocol": "todai.runner", "version": 4, "type": "tool.completed",
 			"runId": runID, "sequence": nextSequence, "toolCallId": "call-1", "toolName": "task_get", "isError": false,
 			"result": map[string]any{"content": []any{map[string]any{"type": "text", "text": `{\"id\":\"task-1\"}`}}, "details": map[string]any{"status": 200}},
 		})
 		nextSequence++
 	}
 	delta := protocolLine(map[string]any{
-		"protocol": "todai.runner", "version": 3, "type": "assistant.delta",
+		"protocol": "todai.runner", "version": 4, "type": "assistant.delta",
 		"runId": runID, "sequence": nextSequence, "messageId": "message-" + runID,
 		"delta": "Deterministic response",
 	})
@@ -257,7 +259,7 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		_, _ = os.Stdout.WriteString(delta)
 	}
 	writeProtocolLine(map[string]any{
-		"protocol": "todai.runner", "version": 3, "type": "history.message",
+		"protocol": "todai.runner", "version": 4, "type": "history.message",
 		"runId": runID, "sequence": nextSequence + 1,
 		"historyMessage": map[string]any{
 			"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "Deterministic response"}},
@@ -265,7 +267,7 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		},
 	})
 	writeProtocolLine(map[string]any{
-		"protocol": "todai.runner", "version": 3, "type": "run.completed",
+		"protocol": "todai.runner", "version": 4, "type": "run.completed",
 		"runId": runID, "sequence": nextSequence + 2,
 	})
 	os.Exit(0)
@@ -288,6 +290,10 @@ func helperRuntime(t *testing.T, scenario string) *piruntime.Runtime {
 func testRunRequest() agent.RunRequest {
 	return agent.RunRequest{
 		UserID: "user-id", SessionID: "session-id", RunID: "run-id", Message: "Plan my day",
+		Context: &agent.MessageContext{
+			Type: agent.ContextTask, TaskID: "11111111-1111-4111-8111-111111111111",
+			Action: agent.ContextActionDecompose,
+		},
 		History: []agent.HistoryMessage{{
 			Role: agent.HistoryRoleUser, Content: []agent.HistoryContent{{Type: "text", Text: "Earlier"}}, Timestamp: 1,
 		}},

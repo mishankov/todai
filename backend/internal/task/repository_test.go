@@ -132,6 +132,15 @@ func TestRepositoryPersistsSubtasksCommentsAndHierarchyInvariants(t *testing.T) 
 	if err != nil {
 		t.Fatalf("complete first child: %v", err)
 	}
+	summaries, err := repository.ListProject(ctx, "user-id", secondProject.ID, true)
+	if err != nil {
+		t.Fatalf("list project task summaries: %v", err)
+	}
+	parentSummary := findTaskSummary(t, summaries, parent.ID)
+	if parentSummary.SubtaskCount != 2 || parentSummary.CompletedSubtaskCount != 1 {
+		t.Errorf("parent subtask progress = %d/%d, want 1/2",
+			parentSummary.CompletedSubtaskCount, parentSummary.SubtaskCount)
+	}
 	if _, err := repository.Complete(ctx, scope, secondChild.ID, 2); err != nil {
 		t.Fatalf("complete second child: %v", err)
 	}
@@ -207,6 +216,17 @@ func TestRepositoryPersistsSubtasksCommentsAndHierarchyInvariants(t *testing.T) 
 			t.Errorf("activity event %q not found", eventType)
 		}
 	}
+}
+
+func findTaskSummary(t *testing.T, summaries []task.TaskSummary, taskID string) task.TaskSummary {
+	t.Helper()
+	for _, summary := range summaries {
+		if summary.ID == taskID {
+			return summary
+		}
+	}
+	t.Fatalf("task summary %q not found in %#v", taskID, summaries)
+	return task.TaskSummary{}
 }
 
 func taskRepositoryDatabase(t *testing.T) *sqlx.DB {

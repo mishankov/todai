@@ -17,6 +17,7 @@
 		reopenTask,
 		reorderTask,
 		type Task,
+		type TaskSummary,
 		type TaskUpdate,
 		updateTask
 	} from '$lib/tasks/client';
@@ -44,7 +45,7 @@
 		version: number,
 		sectionId: string | null,
 		beforeTaskId: string | null
-	): Promise<Task[]> {
+	): Promise<TaskSummary[]> {
 		return reorderTask(fetch, taskId, version, sectionId, beforeTaskId);
 	}
 	function changeLayout(version: number, layout: ProjectLayout): Promise<Project> {

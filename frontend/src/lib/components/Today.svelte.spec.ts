@@ -1,7 +1,7 @@
 import { page } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import type { Task } from '$lib/tasks/client';
+import type { TaskSummary } from '$lib/tasks/client';
 import Today from './Today.svelte';
 
 describe('Today', () => {
@@ -24,7 +24,7 @@ describe('Today', () => {
 	});
 });
 
-function testTask(overrides: Partial<Task> = {}): Task {
+function testTask(overrides: Partial<TaskSummary> = {}): TaskSummary {
 	return {
 		id: 'task-id',
 		projectId: null,
@@ -43,6 +43,8 @@ function testTask(overrides: Partial<Task> = {}): Task {
 		createdAt: '2026-07-16T10:00:00Z',
 		updatedAt: '2026-07-16T10:00:00Z',
 		lastModifiedBy: 'user-id',
+		subtaskCount: 0,
+		completedSubtaskCount: 0,
 		...overrides
 	};
 }

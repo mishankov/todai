@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	sessionColumns = `id, user_id, created_at, updated_at`
-	messageColumns = `id, session_id, run_id, role, content, created_at, updated_at`
-	runColumns     = `id, session_id, user_id, status, correlation_id, started_at,
+	sessionColumns = `id, user_id, kind, created_at, updated_at`
+	messageColumns = `id, session_id, run_id, role, content, context_type, context_id, context_action,
+		created_at, updated_at`
+	runColumns = `id, session_id, user_id, kind, context_type, context_id, context_action,
+		status, correlation_id, started_at,
 		completed_at, error, created_at, updated_at`
 	runEventColumns = `stream_offset, run_id, session_id, runtime_sequence, type,
 		occurred_at, payload`
@@ -35,6 +37,8 @@ var (
 	ErrRunFinished = errors.New("agent run is already finished")
 	// ErrMessageRequired indicates that a submitted user message is blank.
 	ErrMessageRequired = errors.New("agent message is required")
+	// ErrInvalidMessageContext indicates an unsupported or incomplete product context.
+	ErrInvalidMessageContext = errors.New("agent message context is invalid")
 	// ErrInvalidEvent indicates that a runtime event violates the product protocol.
 	ErrInvalidEvent = errors.New("agent runtime event is invalid")
 	// ErrInvalidEventCursor indicates a negative SSE replay cursor.
@@ -82,10 +86,10 @@ func (r *Repository) CreateSession(ctx context.Context, scope execution.Scope) (
 
 	var created Session
 	if err := tx.GetContext(ctx, &created, `
-		INSERT INTO agent_sessions (id, user_id)
-		VALUES ($1, $2)
+		INSERT INTO agent_sessions (id, user_id, kind)
+		VALUES ($1, $2, $3)
 		RETURNING `+sessionColumns,
-		uuid.NewString(), scope.UserID,
+		uuid.NewString(), scope.UserID, ExecutionConversation,
 	); err != nil {
 		return Session{}, fmt.Errorf("insert agent session: %w", err)
 	}
@@ -107,8 +111,8 @@ func (r *Repository) GetSession(ctx context.Context, userID, sessionID string) (
 	if err := r.db.GetContext(ctx, &found, `
 		SELECT `+sessionColumns+`
 		FROM agent_sessions
-		WHERE id = $1 AND user_id = $2
-	`, sessionID, userID); errors.Is(err, sql.ErrNoRows) {
+		WHERE id = $1 AND user_id = $2 AND kind = $3
+	`, sessionID, userID, ExecutionConversation); errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrSessionNotFound
 	} else if err != nil {
 		return Session{}, fmt.Errorf("select agent session: %w", err)
@@ -132,8 +136,8 @@ func (r *Repository) GetConversation(
 	if err := tx.GetContext(ctx, &session, `
 		SELECT `+sessionColumns+`
 		FROM agent_sessions
-		WHERE id = $1 AND user_id = $2
-	`, sessionID, userID); errors.Is(err, sql.ErrNoRows) {
+		WHERE id = $1 AND user_id = $2 AND kind = $3
+	`, sessionID, userID, ExecutionConversation); errors.Is(err, sql.ErrNoRows) {
 		return Session{}, nil, nil, 0, ErrSessionNotFound
 	} else if err != nil {
 		return Session{}, nil, nil, 0, fmt.Errorf("select agent session: %w", err)
@@ -143,17 +147,21 @@ func (r *Repository) GetConversation(
 		SELECT `+messageColumns+`
 		FROM agent_messages
 		WHERE session_id = $1
+			AND (run_id IS NULL OR run_id IN (
+				SELECT id FROM agent_runs WHERE kind = $2
+			))
 		ORDER BY created_at, id
-	`, sessionID); err != nil {
+	`, sessionID, ExecutionConversation); err != nil {
 		return Session{}, nil, nil, 0, fmt.Errorf("select agent messages: %w", err)
 	}
+	hydrateMessageContexts(messages)
 	runs := make([]Run, 0)
 	if err := tx.SelectContext(ctx, &runs, `
 		SELECT `+runColumns+`
 		FROM agent_runs
-		WHERE session_id = $1 AND user_id = $2
+		WHERE session_id = $1 AND user_id = $2 AND kind = $3
 		ORDER BY created_at, id
-	`, sessionID, userID); err != nil {
+	`, sessionID, userID, ExecutionConversation); err != nil {
 		return Session{}, nil, nil, 0, fmt.Errorf("select agent runs: %w", err)
 	}
 	var lastStreamOffset int64
@@ -161,7 +169,8 @@ func (r *Repository) GetConversation(
 		SELECT COALESCE(MAX(stream_offset), 0)
 		FROM agent_run_events
 		WHERE session_id = $1
-	`, sessionID); err != nil {
+			AND run_id IN (SELECT id FROM agent_runs WHERE kind = $2)
+	`, sessionID, ExecutionConversation); err != nil {
 		return Session{}, nil, nil, 0, fmt.Errorf("select agent stream offset: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -175,16 +184,15 @@ func (r *Repository) CreateMessageRun(
 	ctx context.Context,
 	scope execution.Scope,
 	sessionID string,
-	content string,
+	input MessageInput,
 ) (Message, Run, []HistoryMessage, error) {
 	if err := scope.Validate(); err != nil {
 		return Message{}, Run{}, nil, fmt.Errorf("validate message execution: %w", err)
 	}
-	content = strings.TrimSpace(content)
+	content := strings.TrimSpace(input.Content)
 	if content == "" {
 		return Message{}, Run{}, nil, ErrMessageRequired
 	}
-
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return Message{}, Run{}, nil, fmt.Errorf("begin agent message: %w", err)
@@ -193,8 +201,10 @@ func (r *Repository) CreateMessageRun(
 
 	var ownedID string
 	if err := tx.GetContext(ctx, &ownedID, `
-		SELECT id FROM agent_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE
-	`, sessionID, scope.UserID); errors.Is(err, sql.ErrNoRows) {
+		SELECT id FROM agent_sessions
+		WHERE id = $1 AND user_id = $2 AND kind = $3
+		FOR UPDATE
+	`, sessionID, scope.UserID, ExecutionConversation); errors.Is(err, sql.ErrNoRows) {
 		return Message{}, Run{}, nil, ErrSessionNotFound
 	} else if err != nil {
 		return Message{}, Run{}, nil, fmt.Errorf("lock agent session: %w", err)
@@ -225,6 +235,7 @@ func (r *Repository) CreateMessageRun(
 	); err != nil {
 		return Message{}, Run{}, nil, fmt.Errorf("insert agent message: %w", err)
 	}
+	hydrateMessageContext(&message)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE agent_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = $1
 	`, sessionID); err != nil {
@@ -254,14 +265,71 @@ func (r *Repository) CreateMessageRun(
 	return message, run, history, nil
 }
 
+// CreateContextRun atomically creates a private execution context and queued run without messages.
+func (r *Repository) CreateContextRun(
+	ctx context.Context,
+	scope execution.Scope,
+	messageContext MessageContext,
+) (Run, error) {
+	if err := scope.Validate(); err != nil {
+		return Run{}, fmt.Errorf("validate contextual run execution: %w", err)
+	}
+	contextType, contextID, contextAction, err := normalizeMessageContext(&messageContext)
+	if err != nil {
+		return Run{}, err
+	}
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return Run{}, fmt.Errorf("begin contextual agent run: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	executionID := uuid.NewString()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO agent_sessions (id, user_id, kind)
+		VALUES ($1, $2, $3)
+	`, executionID, scope.UserID, ExecutionAction); err != nil {
+		return Run{}, fmt.Errorf("insert contextual agent execution: %w", err)
+	}
+
+	var run Run
+	if err := tx.GetContext(ctx, &run, `
+		INSERT INTO agent_runs (
+			id, session_id, user_id, kind, context_type, context_id, context_action,
+			status, correlation_id
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING `+runColumns,
+		uuid.NewString(), executionID, scope.UserID, ExecutionAction,
+		contextType, contextID, contextAction, RunStatusQueued, scope.CorrelationID,
+	); err != nil {
+		return Run{}, fmt.Errorf("insert contextual agent run: %w", err)
+	}
+	if err := r.appendLifecycle(ctx, tx, scope, "agent.run.queued", "agent_run", run.ID, map[string]any{
+		"schemaVersion": 1,
+		"runId":         run.ID,
+		"status":        RunStatusQueued,
+		"contextType":   contextType,
+		"contextId":     contextID,
+		"contextAction": contextAction,
+	}); err != nil {
+		return Run{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Run{}, fmt.Errorf("commit contextual agent run: %w", err)
+	}
+	return run, nil
+}
+
 func loadHistory(ctx context.Context, tx *sqlx.Tx, sessionID string) ([]HistoryMessage, error) {
 	var runs []Run
 	if err := tx.SelectContext(ctx, &runs, `
 		SELECT `+runColumns+`
 		FROM agent_runs
-		WHERE session_id = $1
+		WHERE session_id = $1 AND kind = $2
 		ORDER BY created_at, id
-	`, sessionID); err != nil {
+	`, sessionID, ExecutionConversation); err != nil {
 		return nil, fmt.Errorf("select agent history runs: %w", err)
 	}
 	var messages []Message
@@ -269,10 +337,14 @@ func loadHistory(ctx context.Context, tx *sqlx.Tx, sessionID string) ([]HistoryM
 		SELECT `+messageColumns+`
 		FROM agent_messages
 		WHERE session_id = $1
+			AND (run_id IS NULL OR run_id IN (
+				SELECT id FROM agent_runs WHERE kind = $2
+			))
 		ORDER BY created_at, id
-	`, sessionID); err != nil {
+	`, sessionID, ExecutionConversation); err != nil {
 		return nil, fmt.Errorf("select agent history messages: %w", err)
 	}
+	hydrateMessageContexts(messages)
 	type historyEvent struct {
 		RunID   string          `db:"run_id"`
 		Payload json.RawMessage `db:"payload"`
@@ -282,8 +354,9 @@ func loadHistory(ctx context.Context, tx *sqlx.Tx, sessionID string) ([]HistoryM
 		SELECT run_id, payload
 		FROM agent_run_events
 		WHERE session_id = $1 AND type = $2
+			AND run_id IN (SELECT id FROM agent_runs WHERE kind = $3)
 		ORDER BY stream_offset
-	`, sessionID, EventHistoryMessage); err != nil {
+	`, sessionID, EventHistoryMessage, ExecutionConversation); err != nil {
 		return nil, fmt.Errorf("select agent history events: %w", err)
 	}
 
@@ -329,9 +402,57 @@ func canonicalHistoryMessage(message Message) HistoryMessage {
 		role = HistoryRoleAssistant
 	}
 	return HistoryMessage{
-		Role: role, Content: []HistoryContent{{Type: "text", Text: message.Content}},
+		Role: role, Content: []HistoryContent{{Type: "text", Text: modelVisibleContent(message)}},
 		Timestamp: message.CreatedAt.UnixMilli(),
 	}
+}
+
+func normalizeMessageContext(context *MessageContext) (*ContextType, *string, *ContextAction, error) {
+	if context == nil {
+		return nil, nil, nil, nil
+	}
+	if err := context.Validate(); err != nil {
+		return nil, nil, nil, err
+	}
+	contextID := strings.TrimSpace(context.TaskID)
+	contextType := context.Type
+	contextAction := context.Action
+	return &contextType, &contextID, &contextAction, nil
+}
+
+func modelVisibleContent(message Message) string {
+	context := messageContext(message)
+	if context == nil {
+		return message.Content
+	}
+	contextJSON, err := json.Marshal(context)
+	if err != nil {
+		return message.Content
+	}
+	return "<todai-context>" + string(contextJSON) + "</todai-context>\n\n" + message.Content
+}
+
+func messageContext(message Message) *MessageContext {
+	if message.Context != nil {
+		copy := *message.Context
+		return &copy
+	}
+	if message.ContextType == nil || message.ContextID == nil || message.ContextAction == nil {
+		return nil
+	}
+	return &MessageContext{
+		Type: *message.ContextType, TaskID: *message.ContextID, Action: *message.ContextAction,
+	}
+}
+
+func hydrateMessageContexts(messages []Message) {
+	for index := range messages {
+		hydrateMessageContext(&messages[index])
+	}
+}
+
+func hydrateMessageContext(message *Message) {
+	message.Context = messageContext(*message)
 }
 
 // GetRun returns one run only when it belongs to the user.
@@ -369,10 +490,47 @@ func (r *Repository) ListRunEvents(
 		SELECT `+runEventColumns+`
 		FROM agent_run_events
 		WHERE session_id = $1 AND stream_offset > $2
+			AND run_id IN (SELECT id FROM agent_runs WHERE kind = $4)
 		ORDER BY stream_offset
 		LIMIT $3
-	`, sessionID, after, limit); err != nil {
+	`, sessionID, after, limit, ExecutionConversation); err != nil {
 		return nil, fmt.Errorf("select agent run events: %w", err)
+	}
+	return events, nil
+}
+
+// ListContextRunEvents returns replayable events for an owned isolated contextual run.
+func (r *Repository) ListContextRunEvents(
+	ctx context.Context,
+	userID string,
+	runID string,
+	after int64,
+	limit int,
+) ([]RunEvent, error) {
+	if after < 0 {
+		return nil, ErrInvalidEventCursor
+	}
+	if limit < 1 || limit > 200 {
+		return nil, ErrInvalidEventLimit
+	}
+	var ownedID string
+	if err := r.db.GetContext(ctx, &ownedID, `
+		SELECT id FROM agent_runs
+		WHERE id = $1 AND user_id = $2 AND kind = $3
+	`, runID, userID, ExecutionAction); errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrRunNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("select contextual agent run: %w", err)
+	}
+	events := make([]RunEvent, 0)
+	if err := r.db.SelectContext(ctx, &events, `
+		SELECT `+runEventColumns+`
+		FROM agent_run_events
+		WHERE run_id = $1 AND stream_offset > $2
+		ORDER BY stream_offset
+		LIMIT $3
+	`, runID, after, limit); err != nil {
+		return nil, fmt.Errorf("select contextual agent run events: %w", err)
 	}
 	return events, nil
 }
@@ -535,7 +693,7 @@ func (r *Repository) recordEventTx(
 		return RunEvent{}, Run{}, fmt.Errorf("update agent run state: %w", err)
 	}
 
-	if eventType == EventMessageDelta {
+	if eventType == EventMessageDelta && run.Kind == ExecutionConversation {
 		if err := appendAssistantDelta(ctx, tx, run, payload); err != nil {
 			return RunEvent{}, Run{}, err
 		}

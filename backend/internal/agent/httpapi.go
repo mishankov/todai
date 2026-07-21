@@ -28,8 +28,10 @@ const (
 type HTTPService interface {
 	CreateSession(context.Context, execution.Scope) (Session, error)
 	GetSession(context.Context, string, string) (Conversation, error)
-	PostMessage(context.Context, execution.Scope, string, string) (PostedMessage, error)
+	StartContextRun(context.Context, execution.Scope, MessageContext) (Run, error)
+	PostMessage(context.Context, execution.Scope, string, MessageInput) (PostedMessage, error)
 	ListEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
+	ListContextRunEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
 	Abort(context.Context, execution.Scope, string) (Run, error)
 }
 
@@ -47,6 +49,10 @@ type postMessageRequest struct {
 	Message string `json:"message"`
 }
 
+type startContextRunRequest struct {
+	Context MessageContext `json:"context"`
+}
+
 // NewHTTPModule constructs the agent HTTP module.
 func NewHTTPModule(authDomain *auth.Domain, service HTTPService) *HTTPModule {
 	return &HTTPModule{authDomain: authDomain, service: service}
@@ -61,8 +67,27 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	agentAPI.HandleFunc("GET /sessions/{id}", handlers.getSession)
 	agentAPI.HandleFunc("POST /sessions/{id}/messages", handlers.postMessage)
 	agentAPI.HandleFunc("GET /sessions/{id}/events", handlers.events)
+	agentAPI.HandleFunc("POST /runs", handlers.startContextRun)
+	agentAPI.HandleFunc("GET /runs/{id}/events", handlers.contextRunEvents)
 	agentAPI.HandleFunc("POST /runs/{id}/abort", handlers.abort)
 	api.Mount("/agent", agentAPI)
+}
+
+func (h agentHandlers) startContextRun(w http.ResponseWriter, r *http.Request) {
+	var request startContextRunRequest
+	if !decodeAgentRequest(w, r, &request) {
+		return
+	}
+	scope, ok := webScope(w, r)
+	if !ok {
+		return
+	}
+	started, err := h.service.StartContextRun(r.Context(), scope, request.Context)
+	if err != nil {
+		writeAgentError(w, r, "start_context_run", err)
+		return
+	}
+	writeAgentJSON(w, r, http.StatusAccepted, started)
 }
 
 func (h agentHandlers) createSession(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +126,9 @@ func (h agentHandlers) postMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	posted, err := h.service.PostMessage(r.Context(), scope, r.PathValue("id"), request.Message)
+	posted, err := h.service.PostMessage(r.Context(), scope, r.PathValue("id"), MessageInput{
+		Content: request.Message,
+	})
 	if err != nil {
 		writeAgentError(w, r, "post_message", err)
 		return
@@ -128,15 +155,41 @@ func (h agentHandlers) events(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	streamAgentEvents(w, r, "list_events", func(
+		ctx context.Context, after int64, limit int,
+	) ([]RunEvent, error) {
+		return h.service.ListEvents(ctx, user.ID, r.PathValue("id"), after, limit)
+	})
+}
+
+func (h agentHandlers) contextRunEvents(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	streamAgentEvents(w, r, "list_context_run_events", func(
+		ctx context.Context, after int64, limit int,
+	) ([]RunEvent, error) {
+		return h.service.ListContextRunEvents(ctx, user.ID, r.PathValue("id"), after, limit)
+	})
+}
+
+func streamAgentEvents(
+	w http.ResponseWriter,
+	r *http.Request,
+	operation string,
+	load func(context.Context, int64, int) ([]RunEvent, error),
+) {
 	after, err := parseLastEventID(r.Header.Get("Last-Event-ID"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	events, err := h.service.ListEvents(r.Context(), user.ID, r.PathValue("id"), after, eventPageSize)
+	events, err := load(r.Context(), after, eventPageSize)
 	if err != nil {
-		writeAgentError(w, r, "list_events", err)
+		writeAgentError(w, r, operation, err)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -172,9 +225,7 @@ func (h agentHandlers) events(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		case <-poll.C:
-			events, err := h.service.ListEvents(
-				r.Context(), user.ID, r.PathValue("id"), after, eventPageSize,
-			)
+			events, err := load(r.Context(), after, eventPageSize)
 			if err != nil {
 				log.ErrorContext(r.Context(), "poll agent event stream", "error", err)
 				return
@@ -262,7 +313,10 @@ func writeAgentError(w http.ResponseWriter, r *http.Request, operation string, e
 	switch {
 	case errors.Is(err, ErrSessionNotFound), errors.Is(err, ErrRunNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrMessageRequired), errors.Is(err, ErrInvalidEventCursor),
+	case errors.Is(err, ErrMessageContextNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrMessageRequired), errors.Is(err, ErrInvalidMessageContext),
+		errors.Is(err, ErrInvalidEventCursor),
 		errors.Is(err, ErrInvalidEventLimit), errors.Is(err, ErrInvalidEvent):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrRunFinished), errors.Is(err, ErrServiceStopped):

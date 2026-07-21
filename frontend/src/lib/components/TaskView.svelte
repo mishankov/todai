@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { Project } from '$lib/projects/client';
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
+	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
+	import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 	import TaskEditorModal from './TaskEditorModal.svelte';
 
 	interface Props {
-		initialTasks: Task[];
+		initialTasks: TaskSummary[];
 		create?: (title: string) => Promise<Task>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
@@ -25,7 +26,7 @@
 		label: string;
 		tone: 'overdue' | 'today' | 'upcoming' | 'undated' | 'completed';
 		sortTime: number;
-		tasks: Task[];
+		tasks: TaskSummary[];
 	}
 
 	let {
@@ -62,7 +63,7 @@
 		errorMessage = '';
 		try {
 			const created = await create(title);
-			tasks = [...tasks, created];
+			tasks = [...tasks, summaryFromTask(created)];
 			title = '';
 		} catch {
 			errorMessage = 'The task could not be created. Please try again.';
@@ -71,10 +72,10 @@
 		}
 	}
 
-	async function changeStatus(item: Task) {
+	async function changeStatus(item: TaskSummary) {
 		const previousItem = item;
 		const nextStatus = item.status === 'active' ? 'completed' : 'active';
-		const optimisticItem: Task = {
+		const optimisticItem: TaskSummary = {
 			...item,
 			status: nextStatus,
 			completedAt: nextStatus === 'completed' ? new Date().toISOString() : null
@@ -88,7 +89,9 @@
 				item.status === 'active'
 					? await complete(item.id, item.version)
 					: await reopen(item.id, item.version);
-			tasks = tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+			tasks = tasks.map((candidate) =>
+				candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+			);
 		} catch {
 			tasks = tasks.map((candidate) => (candidate.id === item.id ? previousItem : candidate));
 			errorMessage = 'The task could not be updated. Please try again.';
@@ -97,7 +100,7 @@
 		}
 	}
 
-	async function deleteItem(item: Task) {
+	async function deleteItem(item: TaskSummary) {
 		const previousIndex = tasks.findIndex((candidate) => candidate.id === item.id);
 
 		busyTaskIds = [...busyTaskIds, item.id];
@@ -117,20 +120,22 @@
 		}
 	}
 
-	async function saveItem(item: Task, changes: TaskUpdate) {
+	async function saveItem(item: TaskSummary, changes: TaskUpdate) {
 		const updated = await update(item.id, changes);
 		tasks =
 			currentProjectId === undefined || updated.projectId === currentProjectId
-				? tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate))
+				? tasks.map((candidate) =>
+						candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+					)
 				: tasks.filter((candidate) => candidate.id !== updated.id);
 		editingTaskId = null;
 	}
 
-	function openTaskEditor(item: Task) {
+	function openTaskEditor(item: TaskSummary) {
 		editingTaskId = item.id;
 	}
 
-	function dueTime(item: Task): string {
+	function dueTime(item: TaskSummary): string {
 		if (!item.dueTime) return '';
 
 		const [hours, minutes] = item.dueTime.split(':').map(Number);
@@ -140,7 +145,7 @@
 		}).format(new Date(2000, 0, 1, hours, minutes));
 	}
 
-	function isOverdue(item: Task): boolean {
+	function isOverdue(item: TaskSummary): boolean {
 		if (item.status !== 'active' || item.dueDate === null) return false;
 
 		const now = new Date();
@@ -162,7 +167,11 @@
 		return projects.find((project) => project.id === projectId)?.name ?? '';
 	}
 
-	function buildTaskGroups(active: Task[], completed: Task[]): TaskGroup[] {
+	function summaryFromTask(task: Task): TaskSummary {
+		return { ...task, subtaskCount: 0, completedSubtaskCount: 0 };
+	}
+
+	function buildTaskGroups(active: TaskSummary[], completed: TaskSummary[]): TaskGroup[] {
 		const now = new Date();
 		const today = startOfDay(now);
 		const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -230,7 +239,7 @@
 		return result;
 	}
 
-	function addToGroup(groups: Map<string, TaskGroup>, group: TaskGroup, item: Task) {
+	function addToGroup(groups: Map<string, TaskGroup>, group: TaskGroup, item: TaskSummary) {
 		const existing = groups.get(group.key);
 		if (existing) {
 			existing.tasks.push(item);
@@ -241,7 +250,7 @@
 		groups.set(group.key, group);
 	}
 
-	function compareTasks(left: Task, right: Task): number {
+	function compareTasks(left: TaskSummary, right: TaskSummary): number {
 		const timeDifference = timeOfDayMinutes(left.dueTime) - timeOfDayMinutes(right.dueTime);
 		return timeDifference || right.priority - left.priority || left.position - right.position;
 	}
@@ -347,8 +356,12 @@
 										{#if item.description}
 											<span class="task-description">{item.description}</span>
 										{/if}
-										{#if item.dueTime || item.priority > 0 || projectName(item.projectId)}
+										{#if item.dueTime || item.priority > 0 || projectName(item.projectId) || item.subtaskCount > 0}
 											<span class="task-metadata">
+												<SubtaskProgress
+													completed={item.completedSubtaskCount}
+													total={item.subtaskCount}
+												/>
 												{#if item.dueTime}
 													<span class:overdue={isOverdue(item)} class="due">{dueTime(item)}</span>
 												{/if}

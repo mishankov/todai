@@ -63,6 +63,10 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 		db.Connection(), activityDomain.Repository, cfg.PiModel, cfg.PiModels,
 	)
 	productApp.RegisterDomain("user_settings", databaseName, settingsDomain)
+	taskDomain := task.New(db.Connection(), activityDomain.Repository)
+	productApp.RegisterDomain("task", databaseName, taskDomain)
+	projectDomain := project.New(db.Connection(), activityDomain.Repository)
+	productApp.RegisterDomain("project", databaseName, projectDomain)
 	runnerRuntime := piruntime.New(piruntime.Config{
 		Executable:     cfg.RunnerExecutable,
 		Args:           []string{cfg.RunnerEntry},
@@ -77,15 +81,12 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 			Runtime: cfg.AgentRuntime, InternalURL: cfg.InternalAPIURL,
 			TokenTTL: cfg.AgentTokenTTL, AllowedTools: agentTools(),
 			AgentDir: cfg.PiAgentDirectory, Provider: cfg.PiProvider, Model: cfg.PiModel,
-			ThinkingEffort: usersettings.DefaultAgentThinkingEffort,
-			Preferences:    settingsDomain.Service,
+			ThinkingEffort:   usersettings.DefaultAgentThinkingEffort,
+			Preferences:      settingsDomain.Service,
+			ContextValidator: agentContextValidator{tasks: taskDomain.Service},
 		},
 	)
 	productApp.RegisterDomain("agent", databaseName, agentDomain)
-	taskDomain := task.New(db.Connection(), activityDomain.Repository)
-	productApp.RegisterDomain("task", databaseName, taskDomain)
-	projectDomain := project.New(db.Connection(), activityDomain.Repository)
-	productApp.RegisterDomain("project", databaseName, projectDomain)
 
 	server := httpserver.New(cfg.HTTPPort, 5*time.Second)
 	server.Use(log.NewTraceIDMiddleware(nil, ""))

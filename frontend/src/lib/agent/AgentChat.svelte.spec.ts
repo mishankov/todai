@@ -57,7 +57,7 @@ describe('AgentChat', () => {
 			testEvent({ type: 'agent.run.completed', streamOffset: 4, sequence: 4, payload: {} })
 		);
 		await expect.element(page.getByLabelText('Message the assistant')).toBeEnabled();
-		expect(api.postMessage).toHaveBeenCalledWith('session-id', 'Is my inbox clear?');
+		expect(api.postMessage).toHaveBeenCalledWith('session-id', { message: 'Is my inbox clear?' });
 	});
 
 	it('replaces a missing stored session', async () => {
@@ -135,10 +135,17 @@ function testAPI(overrides: Partial<AgentAPI> = {}): AgentAPI {
 	return {
 		createSession: vi.fn().mockResolvedValue(testSession()),
 		getSession: vi.fn().mockResolvedValue(testConversation()),
+		startContextRun: vi.fn().mockResolvedValue(testRun()),
 		postMessage: vi.fn().mockResolvedValue({ message: userMessage(), run: testRun() }),
 		abortRun: vi.fn().mockResolvedValue(testRun({ status: 'aborted' })),
 		streamEvents: vi.fn(
 			async (_sessionId, _after, _onEvent, signal) =>
+				new Promise<number>((resolve) =>
+					signal.addEventListener('abort', () => resolve(0), { once: true })
+				)
+		),
+		streamContextRunEvents: vi.fn(
+			async (_runId, _after, _onEvent, signal) =>
 				new Promise<number>((resolve) =>
 					signal.addEventListener('abort', () => resolve(0), { once: true })
 				)

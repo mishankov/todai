@@ -26,17 +26,19 @@ type Authorizer interface {
 // TaskService describes task operations shared by product HTTP and internal tools.
 type TaskService interface {
 	Get(context.Context, string, string) (task.Task, error)
-	ListInbox(context.Context, string, bool) ([]task.Task, error)
-	ListAll(context.Context, string, bool) ([]task.Task, error)
-	ListProject(context.Context, string, string, bool) ([]task.Task, error)
-	ListToday(context.Context, string, string, bool) ([]task.Task, error)
+	ListSubtasks(context.Context, string, string) ([]task.Task, error)
+	ListComments(context.Context, string, string) ([]task.Comment, error)
+	ListInbox(context.Context, string, bool) ([]task.TaskSummary, error)
+	ListAll(context.Context, string, bool) ([]task.TaskSummary, error)
+	ListProject(context.Context, string, string, bool) ([]task.TaskSummary, error)
+	ListToday(context.Context, string, string, bool) ([]task.TaskSummary, error)
 	Search(context.Context, string, task.SearchQuery) ([]task.Task, error)
 	Create(context.Context, execution.Scope, string, *string, *string) (task.Task, error)
 	CreateSubtask(context.Context, execution.Scope, string, string) (task.Task, error)
 	Update(context.Context, execution.Scope, string, task.Update) (task.Task, error)
 	Complete(context.Context, execution.Scope, string, int64) (task.Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (task.Task, error)
-	Reorder(context.Context, execution.Scope, string, task.Reorder) ([]task.Task, error)
+	Reorder(context.Context, execution.Scope, string, task.Reorder) ([]task.TaskSummary, error)
 }
 
 // ProjectService describes project reads exposed to internal tools.
@@ -149,7 +151,19 @@ func (n *nullable[T]) UnmarshalJSON(data []byte) error {
 }
 
 type taskListResponse struct {
+	Tasks []task.TaskSummary `json:"tasks"`
+}
+
+type taskSearchResponse struct {
 	Tasks []task.Task `json:"tasks"`
+}
+
+type taskGetResponse struct {
+	task.Task
+	Subtasks []task.Task      `json:"subtasks"`
+	Comments []task.Comment   `json:"comments"`
+	Project  *project.Project `json:"project"`
+	Section  *project.Section `json:"section"`
 }
 
 type projectListResponse struct {
@@ -215,7 +229,39 @@ func (m *HTTPModule) taskGet(w http.ResponseWriter, r *http.Request, claims agen
 		writeToolError(w, r, "task_get", err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, found)
+	subtasks, err := m.tasks.ListSubtasks(r.Context(), claims.UserID, request.TaskID)
+	if err != nil {
+		writeToolError(w, r, "task_get", err)
+		return
+	}
+	comments, err := m.tasks.ListComments(r.Context(), claims.UserID, request.TaskID)
+	if err != nil {
+		writeToolError(w, r, "task_get", err)
+		return
+	}
+	response := taskGetResponse{Task: found, Subtasks: subtasks, Comments: comments}
+	if found.ProjectID != nil {
+		foundProject, err := m.projects.Get(r.Context(), claims.UserID, *found.ProjectID)
+		if err != nil {
+			writeToolError(w, r, "task_get", err)
+			return
+		}
+		response.Project = &foundProject
+		if found.SectionID != nil {
+			sections, err := m.projects.ListSections(r.Context(), claims.UserID, *found.ProjectID)
+			if err != nil {
+				writeToolError(w, r, "task_get", err)
+				return
+			}
+			for index := range sections {
+				if sections[index].ID == *found.SectionID {
+					response.Section = &sections[index]
+					break
+				}
+			}
+		}
+	}
+	writeJSON(w, r, http.StatusOK, response)
 }
 
 func (m *HTTPModule) viewQuery(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {
@@ -225,7 +271,7 @@ func (m *HTTPModule) viewQuery(w http.ResponseWriter, r *http.Request, claims ag
 	}
 
 	var (
-		tasks []task.Task
+		tasks []task.TaskSummary
 		err   error
 	)
 	switch request.View {
@@ -306,7 +352,7 @@ func (m *HTTPModule) taskSearch(w http.ResponseWriter, r *http.Request, claims a
 		writeToolError(w, r, "task_search", err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: results})
+	writeJSON(w, r, http.StatusOK, taskSearchResponse{Tasks: results})
 }
 
 func (m *HTTPModule) taskCreate(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {

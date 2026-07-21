@@ -1,8 +1,14 @@
 export const RUNNER_PROTOCOL = "todai.runner" as const;
-export const RUNNER_PROTOCOL_VERSION = 3 as const;
+export const RUNNER_PROTOCOL_VERSION = 4 as const;
 
 export type ThinkingEffort =
   "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface TaskMessageContext {
+  type: "task";
+  taskId: string;
+  action: "decompose";
+}
 
 export interface HistoryTextContent {
   type: "text";
@@ -51,6 +57,7 @@ export interface RunStartCommand extends RunnerEnvelope {
   sessionId: string;
   runId: string;
   message: string;
+  context?: TaskMessageContext;
   history: HistoryMessage[];
   runtimeName: "fake" | "pi";
   toolAccess: {

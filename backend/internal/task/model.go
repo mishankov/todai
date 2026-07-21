@@ -33,6 +33,13 @@ type Task struct {
 	LastModifiedBy string     `db:"last_modified_by" json:"lastModifiedBy"`
 }
 
+// TaskSummary augments a top-level task with direct-subtask progress for list views.
+type TaskSummary struct {
+	Task
+	SubtaskCount          int `db:"subtask_count" json:"subtaskCount"`
+	CompletedSubtaskCount int `db:"completed_subtask_count" json:"completedSubtaskCount"`
+}
+
 // Comment is a user-owned note attached to a task.
 type Comment struct {
 	ID             string    `db:"id" json:"id"`
