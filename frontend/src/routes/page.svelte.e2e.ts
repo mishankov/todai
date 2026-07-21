@@ -262,6 +262,31 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 			body: JSON.stringify(created)
 		});
 	});
+	await page.route('**/api/tasks/search?*', async (route) => {
+		const parameters = new URL(route.request().url()).searchParams;
+		const query = (parameters.get('query') ?? '').trim().toLocaleLowerCase();
+		const projectId = parameters.get('project_id');
+		const status = parameters.get('status');
+		const limit = Number(parameters.get('limit') ?? 20);
+		const results = tasks
+			.filter(
+				(item) =>
+					item.parentId === null &&
+					item.projectId === projectId &&
+					(status === null || item.status === status) &&
+					(item.title.toLocaleLowerCase().includes(query) ||
+						(item.description ?? '').toLocaleLowerCase().includes(query))
+			)
+			.sort(
+				(left, right) => Number(left.status === 'completed') - Number(right.status === 'completed')
+			)
+			.slice(0, limit);
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ tasks: results })
+		});
+	});
 	await page.route('**/api/tasks/*/complete', async (route) => {
 		const taskId = new URL(route.request().url()).pathname.split('/').at(-2);
 		const updated = tasks.find((item) => item.id === taskId)!;
@@ -515,6 +540,32 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks');
 	await expect(page.getByText('Buy oat milk')).toHaveCount(0);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
+
+	await page.keyboard.press(`${primaryModifier}+K`);
+	await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+	await page.keyboard.type('Today');
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/projects\/project-2\/today$/);
+
+	await page.keyboard.press(`${primaryModifier}+K`);
+	await page.keyboard.type('Personal');
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/projects\/project-1/);
+
+	await page.keyboard.press(`${primaryModifier}+K`);
+	await page.keyboard.type('Buy oat milk');
+	await expect(page.getByRole('option', { name: /Buy oat milk/ })).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('dialog', { name: 'Edit task: Buy oat milk' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	await page.keyboard.press(`${primaryModifier}+K`);
+	await page.keyboard.type('Work');
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/projects\/project-2\/today$/);
+	await page.keyboard.press(`${primaryModifier}+4`);
+	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
 
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
 	const sprintDialog = page.getByRole('dialog', { name: 'Edit task: Plan sprint' });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	commandRegistry,
 	ariaShortcut,
 	findShortcutCommand,
 	formatShortcut,
@@ -13,7 +14,22 @@ import {
 
 describe('keyboard shortcut registry', () => {
 	it('contains every product command in one registry', () => {
+		expect(commandRegistry.map((command) => command.id)).toEqual([
+			'command-palette',
+			'quick-add',
+			'toggle-chat',
+			'project-overview',
+			'project-inbox',
+			'project-today',
+			'project-tasks',
+			'project-activity',
+			'project-settings',
+			'manage-projects',
+			'account-settings',
+			'toggle-help'
+		]);
 		expect(shortcutCommands.map((command) => command.id)).toEqual([
+			'command-palette',
 			'quick-add',
 			'toggle-chat',
 			'project-overview',
@@ -27,6 +43,7 @@ describe('keyboard shortcut registry', () => {
 		expect(new Set(shortcutCommands.map((command) => command.code)).size).toBe(
 			shortcutCommands.length
 		);
+		expect(new Set(commandRegistry.map((command) => command.id)).size).toBe(commandRegistry.length);
 	});
 
 	it('detects the platform modifier and formats it for help', () => {

@@ -385,6 +385,12 @@ func (r *Repository) Search(
 	userID string,
 	query SearchQuery,
 ) ([]Task, error) {
+	if query.ProjectID != nil {
+		if err := r.requireActiveProject(ctx, userID, *query.ProjectID); err != nil {
+			return nil, err
+		}
+	}
+
 	tasks := make([]Task, 0)
 	if err := r.db.SelectContext(ctx, &tasks, `
 		SELECT `+taskColumns+`

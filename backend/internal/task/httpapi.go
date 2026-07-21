@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/platforma-dev/platforma/auth"
 	"github.com/platforma-dev/platforma/httpserver"
@@ -28,6 +29,7 @@ type HTTPService interface {
 	ListAll(context.Context, string, string, bool) ([]TaskSummary, error)
 	ListProject(context.Context, string, string, bool) ([]TaskSummary, error)
 	ListToday(context.Context, string, string, string, bool) ([]TaskSummary, error)
+	Search(context.Context, string, SearchQuery) ([]Task, error)
 	Complete(context.Context, execution.Scope, string, int64) (Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
 	Update(context.Context, execution.Scope, string, Update) (Task, error)
@@ -133,6 +135,7 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	tasksAPI := httpserver.NewHandlerGroup()
 	tasksAPI.Use(m.authDomain.Middleware)
 	tasksAPI.HandleFunc("POST /", handlers.create)
+	tasksAPI.HandleFunc("GET /search", handlers.search)
 	tasksAPI.HandleFunc("GET /{id}", handlers.get)
 	tasksAPI.HandleFunc("GET /{id}/subtasks", handlers.listSubtasks)
 	tasksAPI.HandleFunc("GET /{id}/comments", handlers.listComments)
@@ -153,6 +156,57 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 	viewsAPI.HandleFunc("GET /projects/{id}/inbox", handlers.listInbox)
 	viewsAPI.HandleFunc("GET /projects/{id}/today", handlers.listToday)
 	api.Mount("/views", viewsAPI)
+}
+
+func (h taskHandlers) search(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	query := r.URL.Query()
+	text := query.Get("query")
+	projectID := strings.TrimSpace(query.Get("project_id"))
+	if len(query["query"]) != 1 || len(query["project_id"]) != 1 || projectID == "" {
+		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(text) == "" {
+		http.Error(w, ErrSearchQueryRequired.Error(), http.StatusBadRequest)
+		return
+	}
+
+	limit := 20
+	if len(query["limit"]) > 1 || len(query["status"]) > 1 {
+		http.Error(w, "search parameters must not be repeated", http.StatusBadRequest)
+		return
+	}
+	if value := query.Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			http.Error(w, ErrInvalidSearchLimit.Error(), http.StatusBadRequest)
+			return
+		}
+		limit = parsed
+	}
+
+	var status *Status
+	if value := query.Get("status"); value != "" {
+		parsed := Status(value)
+		status = &parsed
+	}
+
+	tasks, err := h.service.Search(r.Context(), user.ID, SearchQuery{
+		Query: text, ProjectID: &projectID, Status: status, Limit: limit,
+	})
+	if err != nil {
+		writeTaskError(w, r, "search", err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, struct {
+		Tasks []Task `json:"tasks"`
+	}{Tasks: tasks})
 }
 
 func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
@@ -570,7 +624,10 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 		errors.Is(err, ErrNoChanges),
 		errors.Is(err, ErrSubtaskPlacement),
 		errors.Is(err, ErrCommentRequired),
-		errors.Is(err, ErrCommentTooLong):
+		errors.Is(err, ErrCommentTooLong),
+		errors.Is(err, ErrSearchQueryRequired),
+		errors.Is(err, ErrInvalidSearchLimit),
+		errors.Is(err, ErrInvalidSearchStatus):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrTaskNotFound):
 		http.Error(w, ErrTaskNotFound.Error(), http.StatusNotFound)

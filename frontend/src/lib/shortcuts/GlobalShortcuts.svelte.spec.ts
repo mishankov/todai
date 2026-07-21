@@ -38,6 +38,10 @@ describe('GlobalShortcuts', () => {
 		dispatchShortcut('KeyN', true);
 		const dialog = page.getByRole('dialog', { name: 'Create a task' });
 		await expect.element(dialog).toBeVisible();
+		dispatchShortcut('KeyK');
+		await expect
+			.element(page.getByRole('dialog', { name: 'Command palette' }))
+			.not.toBeInTheDocument();
 		expect(document.activeElement).toBe(dialog.getByLabelText('Title').element());
 		dispatchShortcut('KeyN');
 		expect(
@@ -103,6 +107,29 @@ describe('GlobalShortcuts', () => {
 			.element(page.getByRole('dialog', { name: 'Keyboard shortcuts' }))
 			.not.toBeInTheDocument();
 		expect(navigate).not.toHaveBeenCalled();
+	});
+
+	it('toggles the palette on authenticated routes and restores the previous focus', async () => {
+		const previous = document.createElement('button');
+		previous.textContent = 'Before palette';
+		document.body.append(previous);
+		previous.focus();
+		try {
+			render(GlobalShortcuts, { projects: [testProject()], currentPath: '/settings' });
+
+			dispatchShortcut('KeyK');
+			const palette = page.getByRole('dialog', { name: 'Command palette' });
+			await expect.element(palette).toBeVisible();
+			expect(document.activeElement).toBe(
+				palette.getByRole('combobox', { name: 'Search commands, projects, and tasks' }).element()
+			);
+
+			dispatchShortcut('KeyK');
+			await expect.element(palette).not.toBeInTheDocument();
+			await vi.waitFor(() => expect(document.activeElement).toBe(previous));
+		} finally {
+			previous.remove();
+		}
 	});
 
 	it('shows shortcut hints only while the platform modifier is held', () => {

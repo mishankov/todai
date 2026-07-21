@@ -298,8 +298,9 @@ func TestSearchRejectsInvalidFilters(t *testing.T) {
 		query task.SearchQuery
 		want  error
 	}{
-		{name: "limit", query: task.SearchQuery{Limit: 101}, want: task.ErrInvalidSearchLimit},
-		{name: "status", query: task.SearchQuery{Status: &invalidStatus}, want: task.ErrInvalidSearchStatus},
+		{name: "empty query", query: task.SearchQuery{Query: " \t "}, want: task.ErrSearchQueryRequired},
+		{name: "limit", query: task.SearchQuery{Query: "milk", Limit: 101}, want: task.ErrInvalidSearchLimit},
+		{name: "status", query: task.SearchQuery{Query: "milk", Status: &invalidStatus}, want: task.ErrInvalidSearchStatus},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

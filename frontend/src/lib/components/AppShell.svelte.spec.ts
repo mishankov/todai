@@ -46,6 +46,11 @@ describe('AppShell', () => {
 					/Create task \((Cmd \+ N \/ Cmd \+ Option \+ N|Ctrl \+ N \/ Ctrl \+ Alt \+ N)\)/
 				)
 			);
+		await expect
+			.element(
+				page.getByRole('button', { name: /Open command palette \((Cmd|Ctrl) \+ K\)/ }).first()
+			)
+			.toHaveAttribute('aria-keyshortcuts', expect.stringMatching(/(Meta|Control)\+K/));
 		await expect.element(page.getByRole('link', { name: 'Sections' })).not.toBeInTheDocument();
 		await expect.element(page.getByText('Organize', { exact: true })).not.toBeInTheDocument();
 	});

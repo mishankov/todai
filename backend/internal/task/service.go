@@ -54,6 +54,8 @@ var (
 	ErrInvalidSearchLimit = errors.New("task search limit must be between 1 and 100")
 	// ErrInvalidSearchStatus indicates that a search contains an unsupported task status.
 	ErrInvalidSearchStatus = errors.New("task search status is invalid")
+	// ErrSearchQueryRequired prevents product search from accidentally returning every task.
+	ErrSearchQueryRequired = errors.New("task search query is required")
 	// ErrActiveSubtasks indicates that completing a parent would hide active child work.
 	ErrActiveSubtasks = errors.New("task has active subtasks")
 	// ErrSubtaskPlacement indicates that a child must inherit placement from its parent.
@@ -93,6 +95,9 @@ type repository interface {
 // Search returns user-owned tasks matching a text query and optional filters.
 func (s *Service) Search(ctx context.Context, userID string, query SearchQuery) ([]Task, error) {
 	query.Query = strings.TrimSpace(query.Query)
+	if query.Query == "" {
+		return nil, ErrSearchQueryRequired
+	}
 	if query.Limit == 0 {
 		query.Limit = 50
 	}
