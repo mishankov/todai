@@ -1,5 +1,13 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { chatToggleRequestEvent } from '$lib/shortcuts/events';
+	import {
+		ariaShortcut,
+		formatShortcut,
+		formatShortcutHint,
+		isApplePlatform,
+		shortcutCommand
+	} from '$lib/shortcuts/registry';
 	import {
 		AgentRequestError,
 		agentSessionStorageKey,
@@ -36,6 +44,13 @@
 	let streamController: AbortController | null = null;
 	let composer: HTMLTextAreaElement;
 	let conversationLog: HTMLDivElement;
+	let previousFocus: HTMLElement | null = null;
+	let applePlatform = $state(
+		typeof window !== 'undefined' && isApplePlatform(window.navigator.platform)
+	);
+	let chatCommand = shortcutCommand('toggle-chat');
+	let chatShortcutLabel = $derived(formatShortcut(chatCommand, applePlatform));
+	let chatShortcutHint = $derived(formatShortcutHint(chatCommand, applePlatform));
 
 	let messages = $derived(chatState ? visibleAgentMessages(chatState) : []);
 	let activeRun = $derived(chatState ? activeAgentRun(chatState) : null);
@@ -46,10 +61,18 @@
 
 	onMount(() => {
 		storage ??= window.localStorage;
-		return () => streamController?.abort();
+		applePlatform = isApplePlatform(window.navigator.platform);
+		const toggleChat = () => (open ? closeChat() : void openChat());
+		window.addEventListener(chatToggleRequestEvent, toggleChat);
+		return () => {
+			window.removeEventListener(chatToggleRequestEvent, toggleChat);
+			streamController?.abort();
+		};
 	});
 
 	async function openChat() {
+		if (!open)
+			previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		open = true;
 		if (!initialized) {
 			initialized = true;
@@ -60,12 +83,21 @@
 		if (open) composer?.focus();
 	}
 
-	function closeChat() {
+	async function closeChat() {
 		open = false;
+		const target = previousFocus;
+		previousFocus = null;
+		await tick();
+		if (target?.isConnected) target.focus();
 	}
 
 	function handleWindowKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && open) closeChat();
+		if (event.key === 'Escape' && open && !event.defaultPrevented) {
+			if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			void closeChat();
+		}
 	}
 
 	async function restoreOrCreateSession() {
@@ -285,6 +317,10 @@
 	class:hidden={open}
 	type="button"
 	aria-label="Open assistant"
+	title={`Open assistant (${chatShortcutLabel})`}
+	aria-keyshortcuts={ariaShortcut(chatCommand, applePlatform)}
+	data-shortcut-hint={chatShortcutHint}
+	data-shortcut-hint-position="left"
 	aria-haspopup="dialog"
 	aria-expanded={open}
 	aria-controls="assistant-popup"
@@ -323,7 +359,15 @@
 			>
 				{creating ? 'Starting…' : 'New chat'}
 			</button>
-			<button class="close-chat" type="button" aria-label="Close assistant" onclick={closeChat}>
+			<button
+				class="close-chat"
+				type="button"
+				aria-label="Close assistant"
+				aria-keyshortcuts={ariaShortcut(chatCommand, applePlatform)}
+				data-shortcut-hint={chatShortcutHint}
+				data-shortcut-hint-position="below"
+				onclick={closeChat}
+			>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
 			</button>
 		</div>
@@ -577,6 +621,7 @@
 		opacity: 0.55;
 	}
 	.close-chat {
+		position: relative;
 		display: grid;
 		width: 2rem;
 		height: 2rem;
