@@ -161,6 +161,11 @@ export function formatShortcuts(command: ShortcutCommand, applePlatform: boolean
 	return shortcuts;
 }
 
+export function formatShortcutHint(command: ShortcutCommand, applePlatform: boolean): string {
+	if (!command.shortcut.allowAlt) return command.keyLabel;
+	return `${command.keyLabel} / ${applePlatform ? 'Option' : 'Alt'} + ${command.keyLabel}`;
+}
+
 export function ariaShortcut(command: ShortcutCommand, applePlatform: boolean): string {
 	const modifier = applePlatform ? 'Meta' : 'Control';
 	const shortcuts = [`${modifier}+${command.keyLabel}`];

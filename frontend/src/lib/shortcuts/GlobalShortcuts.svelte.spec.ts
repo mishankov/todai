@@ -131,6 +131,21 @@ describe('GlobalShortcuts', () => {
 			previous.remove();
 		}
 	});
+
+	it('shows shortcut hints only while the platform modifier is held', () => {
+		render(GlobalShortcuts, { projects: [], currentPath: '/projects' });
+		const modifier = isApplePlatform(window.navigator.platform) ? 'Meta' : 'Control';
+
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: modifier, bubbles: true }));
+		expect(document.documentElement.dataset.shortcutHints).toBe('visible');
+
+		window.dispatchEvent(new KeyboardEvent('keyup', { key: modifier, bubbles: true }));
+		expect(document.documentElement.dataset.shortcutHints).toBeUndefined();
+
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: modifier, bubbles: true }));
+		window.dispatchEvent(new Event('blur'));
+		expect(document.documentElement.dataset.shortcutHints).toBeUndefined();
+	});
 });
 
 function dispatchShortcut(code: string, altKey = false) {

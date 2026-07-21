@@ -4,6 +4,7 @@ import {
 	ariaShortcut,
 	findShortcutCommand,
 	formatShortcut,
+	formatShortcutHint,
 	formatShortcuts,
 	isApplePlatform,
 	matchesShortcut,
@@ -60,6 +61,9 @@ describe('keyboard shortcut registry', () => {
 		]);
 		expect(ariaShortcut(shortcutCommand('quick-add'), true)).toBe('Meta+N Meta+Alt+N');
 		expect(ariaShortcut(shortcutCommand('quick-add'), false)).toBe('Control+N Control+Alt+N');
+		expect(formatShortcutHint(shortcutCommand('quick-add'), true)).toBe('N / Option + N');
+		expect(formatShortcutHint(shortcutCommand('quick-add'), false)).toBe('N / Alt + N');
+		expect(formatShortcutHint(shortcutCommand('project-today'), true)).toBe('3');
 	});
 
 	it('accepts quick add with or without the browser-safe Alt modifier', () => {

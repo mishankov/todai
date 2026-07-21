@@ -4,6 +4,7 @@
 	import {
 		ariaShortcut,
 		formatShortcut,
+		formatShortcutHint,
 		isApplePlatform,
 		shortcutCommand
 	} from '$lib/shortcuts/registry';
@@ -49,6 +50,7 @@
 	);
 	let chatCommand = shortcutCommand('toggle-chat');
 	let chatShortcutLabel = $derived(formatShortcut(chatCommand, applePlatform));
+	let chatShortcutHint = $derived(formatShortcutHint(chatCommand, applePlatform));
 
 	let messages = $derived(chatState ? visibleAgentMessages(chatState) : []);
 	let activeRun = $derived(chatState ? activeAgentRun(chatState) : null);
@@ -317,6 +319,8 @@
 	aria-label="Open assistant"
 	title={`Open assistant (${chatShortcutLabel})`}
 	aria-keyshortcuts={ariaShortcut(chatCommand, applePlatform)}
+	data-shortcut-hint={chatShortcutHint}
+	data-shortcut-hint-position="left"
 	aria-haspopup="dialog"
 	aria-expanded={open}
 	aria-controls="assistant-popup"
@@ -355,7 +359,15 @@
 			>
 				{creating ? 'Starting…' : 'New chat'}
 			</button>
-			<button class="close-chat" type="button" aria-label="Close assistant" onclick={closeChat}>
+			<button
+				class="close-chat"
+				type="button"
+				aria-label="Close assistant"
+				aria-keyshortcuts={ariaShortcut(chatCommand, applePlatform)}
+				data-shortcut-hint={chatShortcutHint}
+				data-shortcut-hint-position="below"
+				onclick={closeChat}
+			>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
 			</button>
 		</div>
@@ -609,6 +621,7 @@
 		opacity: 0.55;
 	}
 	.close-chat {
+		position: relative;
 		display: grid;
 		width: 2rem;
 		height: 2rem;
