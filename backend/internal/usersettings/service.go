@@ -45,7 +45,7 @@ type Service struct {
 func NewService(repository repository, defaultAgentModel string, availableAgentModels []string) *Service {
 	return &Service{
 		repository: repository, defaultAgentModel: strings.TrimSpace(defaultAgentModel),
-		availableAgentModels: append([]string(nil), availableAgentModels...),
+		availableAgentModels: append([]string{}, availableAgentModels...),
 	}
 }
 
@@ -111,7 +111,7 @@ func (s *Service) ResolveAgent(ctx context.Context, userID string) (string, stri
 func (s *Service) view(settings Settings) View {
 	return View{
 		Settings:                      settings,
-		AvailableAgentModels:          append([]string(nil), s.availableAgentModels...),
+		AvailableAgentModels:          append([]string{}, s.availableAgentModels...),
 		AvailableAgentThinkingEfforts: append([]string(nil), availableAgentThinkingEfforts...),
 	}
 }

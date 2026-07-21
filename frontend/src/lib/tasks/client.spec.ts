@@ -3,8 +3,11 @@ import {
 	createTask,
 	createTaskComment,
 	deleteTaskComment,
+	getAllTasks,
+	getInbox,
 	getTaskComments,
 	getTaskSubtasks,
+	getToday,
 	TaskConflictError,
 	TaskRequestError,
 	type Task,
@@ -13,18 +16,52 @@ import {
 } from './client';
 
 describe('task client relationships', () => {
+	it('loads built-in views only inside the selected project', async () => {
+		const fetcher = jsonFetcher({ tasks: [] });
+
+		await getInbox(fetcher, 'project/id', true);
+		await getToday(fetcher, 'project/id', 'Europe/Moscow', true);
+		await getAllTasks(fetcher, 'project/id', true);
+
+		expect(fetcher).toHaveBeenNthCalledWith(
+			1,
+			'/api/views/projects/project%2Fid/inbox?include_completed=true',
+			expect.any(Object)
+		);
+		expect(fetcher).toHaveBeenNthCalledWith(
+			2,
+			'/api/views/projects/project%2Fid/today?timezone=Europe%2FMoscow&include_completed=true',
+			expect.any(Object)
+		);
+		expect(fetcher).toHaveBeenNthCalledWith(
+			3,
+			'/api/views/projects/project%2Fid/all?include_completed=true',
+			expect.any(Object)
+		);
+	});
+
 	it('creates a subtask with its parent identity', async () => {
 		const created = testTask({ id: 'child-id', parentId: 'parent/id', title: 'Draft outline' });
 		const fetcher = jsonFetcher(created, 201);
 
 		await expect(
-			createTask(fetcher, created.title, undefined, undefined, created.parentId ?? undefined)
+			createTask(
+				fetcher,
+				created.title,
+				created.projectId,
+				undefined,
+				created.parentId ?? undefined
+			)
 		).resolves.toEqual(created);
 		expect(fetcher).toHaveBeenCalledWith('/api/tasks', {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title: created.title, parentId: 'parent/id' })
+			body: JSON.stringify({
+				title: created.title,
+				projectId: 'project-id',
+				parentId: 'parent/id'
+			})
 		});
 	});
 
@@ -127,7 +164,7 @@ function statusFetcher(status: number): typeof fetch {
 function testTask(overrides: Partial<Task> = {}): Task {
 	return {
 		id: 'task-id',
-		projectId: null,
+		projectId: 'project-id',
 		sectionId: null,
 		parentId: null,
 		title: 'Subtask',

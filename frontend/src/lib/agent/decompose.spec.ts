@@ -6,7 +6,7 @@ describe('task decomposition', () => {
 	it('uses an isolated contextual run and never touches chat state', async () => {
 		const api = testAPI();
 
-		await decomposeTaskWithAgent({ id: 'task-id' }, api);
+		await decomposeTaskWithAgent({ id: 'task-id', projectId: 'project-id' }, api);
 
 		expect(api.startContextRun).toHaveBeenCalledWith({
 			type: 'task',
@@ -34,7 +34,7 @@ describe('task decomposition', () => {
 			lastStreamOffset: 12
 		}));
 
-		await decomposeTaskWithAgent({ id: 'task-id' }, api);
+		await decomposeTaskWithAgent({ id: 'task-id', projectId: 'project-id' }, api);
 
 		expect(api.startContextRun).toHaveBeenCalledOnce();
 		expect(api.getSession).not.toHaveBeenCalled();

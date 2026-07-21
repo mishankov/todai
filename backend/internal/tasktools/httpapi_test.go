@@ -71,15 +71,15 @@ func TestEveryRouteRequiresItsExplicitTool(t *testing.T) {
 		wantStatus int
 	}{
 		{path: "/task_get", body: map[string]any{"taskId": "task-id"}, wantTool: agentauth.ToolTaskGet, wantStatus: http.StatusOK},
-		{path: "/view_query", body: map[string]any{"view": "all"}, wantTool: agentauth.ToolViewQuery, wantStatus: http.StatusOK},
+		{path: "/view_query", body: map[string]any{"view": "all", "projectId": "project-id"}, wantTool: agentauth.ToolViewQuery, wantStatus: http.StatusOK},
 		{path: "/project_get", body: map[string]any{"projectId": "project-id"}, wantTool: agentauth.ToolProjectGet, wantStatus: http.StatusOK},
 		{path: "/project_list", body: map[string]any{}, wantTool: agentauth.ToolProjectList, wantStatus: http.StatusOK},
 		{path: "/task_search", body: map[string]any{"query": "milk"}, wantTool: agentauth.ToolTaskSearch, wantStatus: http.StatusOK},
-		{path: "/task_create", body: map[string]any{"title": "Buy milk"}, wantTool: agentauth.ToolTaskCreate, wantStatus: http.StatusCreated},
+		{path: "/task_create", body: map[string]any{"title": "Buy milk", "projectId": "project-id"}, wantTool: agentauth.ToolTaskCreate, wantStatus: http.StatusCreated},
 		{path: "/task_update", body: map[string]any{"taskId": "task-id", "version": 4, "title": "Buy oat milk"}, wantTool: agentauth.ToolTaskUpdate, wantStatus: http.StatusOK},
 		{path: "/task_complete", body: map[string]any{"taskId": "task-id", "version": 4}, wantTool: agentauth.ToolTaskComplete, wantStatus: http.StatusOK},
 		{path: "/task_reopen", body: map[string]any{"taskId": "task-id", "version": 4}, wantTool: agentauth.ToolTaskReopen, wantStatus: http.StatusOK},
-		{path: "/task_move", body: map[string]any{"taskId": "task-id", "version": 4, "projectId": nil, "sectionId": nil}, wantTool: agentauth.ToolTaskMove, wantStatus: http.StatusOK},
+		{path: "/task_move", body: map[string]any{"taskId": "task-id", "version": 4, "projectId": "project-id", "sectionId": nil}, wantTool: agentauth.ToolTaskMove, wantStatus: http.StatusOK},
 		{path: "/task_reorder", body: map[string]any{"taskId": "task-id", "version": 4, "sectionId": nil, "beforeTaskId": nil}, wantTool: agentauth.ToolTaskReorder, wantStatus: http.StatusOK},
 	}
 
@@ -167,6 +167,7 @@ func TestMutationUsesAgentScopeTraceAndObservedVersion(t *testing.T) {
 		t.Errorf("mutation = (%q, %d), want (%q, %d)", service.taskID, service.version, "task-id", 7)
 	}
 	if service.scope.UserID != "user-id" || service.scope.ActorType != execution.ActorBuiltInAgent ||
+		service.scope.ProjectID == nil || *service.scope.ProjectID != "project-id" ||
 		service.scope.ActorID == nil || *service.scope.ActorID != "session-id" ||
 		service.scope.Source != execution.SourceInternalAPI ||
 		service.scope.AgentRunID == nil || *service.scope.AgentRunID != "run-id" ||
@@ -244,6 +245,54 @@ func TestReadsAreScopedToTokenUser(t *testing.T) {
 	if projects.userID != "user-id" || projects.getProjectID != "project-id" ||
 		projects.sectionsProjectID != "project-id" {
 		t.Errorf("project read scope = %#v", projects)
+	}
+}
+
+func TestTokenProjectCannotAccessAnotherProject(t *testing.T) {
+	otherProjectID := "other-project"
+	foreign := testTask("user-id", "foreign-task")
+	foreign.ProjectID = &otherProjectID
+	tasks := &fakeTaskService{found: foreign}
+	handler := testAPI(&fakeAuthorizer{claims: testClaims()}, tasks, &fakeProjectService{})
+
+	for _, request := range []struct {
+		path string
+		body map[string]any
+	}{
+		{path: "/task_get", body: map[string]any{"taskId": foreign.ID}},
+		{path: "/task_complete", body: map[string]any{"taskId": foreign.ID, "version": 1}},
+		{path: "/task_move", body: map[string]any{
+			"taskId": foreign.ID, "version": 1, "projectId": "project-id", "sectionId": nil,
+		}},
+	} {
+		response := serveJSON(t, handler, request.path, request.body, "Bearer raw-token")
+		if response.Code != http.StatusNotFound {
+			t.Errorf("%s status = %d, want %d", request.path, response.Code, http.StatusNotFound)
+		}
+	}
+	if tasks.updateCalls != 0 || tasks.taskID != "" {
+		t.Errorf("foreign task was mutated: updateCalls=%d taskID=%q", tasks.updateCalls, tasks.taskID)
+	}
+
+	response := serveJSON(
+		t, handler, "/project_get", map[string]any{"projectId": otherProjectID}, "Bearer raw-token",
+	)
+	if response.Code != http.StatusNotFound {
+		t.Errorf("foreign project_get status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestSearchAlwaysUsesTokenProject(t *testing.T) {
+	tasks := &fakeTaskService{}
+	response := serveJSON(
+		t, testAPI(&fakeAuthorizer{claims: testClaims()}, tasks, &fakeProjectService{}),
+		"/task_search", map[string]any{"query": "milk"}, "Bearer raw-token",
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
+	}
+	if tasks.searchQuery.ProjectID == nil || *tasks.searchQuery.ProjectID != "project-id" {
+		t.Errorf("search query = %#v", tasks.searchQuery)
 	}
 }
 
@@ -372,7 +421,8 @@ func serveJSON(
 
 func testClaims() agentauth.Claims {
 	return agentauth.Claims{
-		UserID: "user-id", AgentSessionID: "session-id", AgentRunID: "run-id",
+		UserID: "user-id", ProjectID: "project-id",
+		AgentSessionID: "session-id", AgentRunID: "run-id",
 	}
 }
 
@@ -407,6 +457,7 @@ type fakeTaskService struct {
 	found       task.Task
 	subtasks    []task.Task
 	comments    []task.Comment
+	searchQuery task.SearchQuery
 }
 
 func (s *fakeTaskService) Get(_ context.Context, userID, taskID string) (task.Task, error) {
@@ -425,11 +476,11 @@ func (s *fakeTaskService) ListComments(context.Context, string, string) ([]task.
 	return append([]task.Comment(nil), s.comments...), nil
 }
 
-func (*fakeTaskService) ListInbox(context.Context, string, bool) ([]task.TaskSummary, error) {
+func (*fakeTaskService) ListInbox(context.Context, string, string, bool) ([]task.TaskSummary, error) {
 	return []task.TaskSummary{}, nil
 }
 
-func (*fakeTaskService) ListAll(context.Context, string, bool) ([]task.TaskSummary, error) {
+func (*fakeTaskService) ListAll(context.Context, string, string, bool) ([]task.TaskSummary, error) {
 	return []task.TaskSummary{}, nil
 }
 
@@ -440,12 +491,17 @@ func (*fakeTaskService) ListProject(
 }
 
 func (*fakeTaskService) ListToday(
-	context.Context, string, string, bool,
+	context.Context, string, string, string, bool,
 ) ([]task.TaskSummary, error) {
 	return []task.TaskSummary{}, nil
 }
 
-func (*fakeTaskService) Search(context.Context, string, task.SearchQuery) ([]task.Task, error) {
+func (s *fakeTaskService) Search(
+	_ context.Context,
+	_ string,
+	query task.SearchQuery,
+) ([]task.Task, error) {
+	s.searchQuery = query
 	return []task.Task{}, nil
 }
 
@@ -565,7 +621,9 @@ func (s *fakeProjectService) ListSections(
 }
 
 func testTask(userID, taskID string) task.Task {
+	projectID := "project-id"
 	return task.Task{
-		ID: taskID, UserID: userID, Title: "Task", Status: task.StatusActive, Version: 1,
+		ID: taskID, UserID: userID, ProjectID: &projectID,
+		Title: "Task", Status: task.StatusActive, Version: 1,
 	}
 }

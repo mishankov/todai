@@ -131,6 +131,7 @@ type Run struct {
 	ID            string         `db:"id" json:"id"`
 	SessionID     string         `db:"session_id" json:"sessionId"`
 	UserID        string         `db:"user_id" json:"-"`
+	ProjectID     *string        `db:"project_id" json:"-"`
 	Kind          ExecutionKind  `db:"kind" json:"-"`
 	ContextType   *ContextType   `db:"context_type" json:"-"`
 	ContextID     *string        `db:"context_id" json:"-"`

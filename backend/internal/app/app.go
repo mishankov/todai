@@ -63,10 +63,12 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 		db.Connection(), activityDomain.Repository, cfg.PiModel, cfg.PiModels,
 	)
 	productApp.RegisterDomain("user_settings", databaseName, settingsDomain)
+	projectDomain := project.New(
+		db.Connection(), activityDomain.Repository, cfg.PiModel, cfg.PiModels,
+	)
+	productApp.RegisterDomain("project", databaseName, projectDomain)
 	taskDomain := task.New(db.Connection(), activityDomain.Repository)
 	productApp.RegisterDomain("task", databaseName, taskDomain)
-	projectDomain := project.New(db.Connection(), activityDomain.Repository)
-	productApp.RegisterDomain("project", databaseName, projectDomain)
 	runnerRuntime := piruntime.New(piruntime.Config{
 		Executable:     cfg.RunnerExecutable,
 		Args:           []string{cfg.RunnerEntry},
@@ -81,8 +83,11 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 			Runtime: cfg.AgentRuntime, InternalURL: cfg.InternalAPIURL,
 			TokenTTL: cfg.AgentTokenTTL, AllowedTools: agentTools(),
 			AgentDir: cfg.PiAgentDirectory, Provider: cfg.PiProvider, Model: cfg.PiModel,
-			ThinkingEffort:   usersettings.DefaultAgentThinkingEffort,
-			Preferences:      settingsDomain.Service,
+			ThinkingEffort: usersettings.DefaultAgentThinkingEffort,
+			Preferences: agentPreferencesResolver{
+				account: settingsDomain.Service, projects: projectDomain.Service,
+			},
+			ProjectValidator: agentProjectValidator{projects: projectDomain.Service},
 			ContextValidator: agentContextValidator{tasks: taskDomain.Service},
 		},
 	)
@@ -118,7 +123,6 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 func agentTools() []agentauth.Tool {
 	return []agentauth.Tool{
 		agentauth.ToolTaskGet, agentauth.ToolTaskSearch, agentauth.ToolProjectGet,
-		agentauth.ToolProjectList,
 		agentauth.ToolViewQuery, agentauth.ToolTaskCreate, agentauth.ToolTaskUpdate,
 		agentauth.ToolTaskComplete, agentauth.ToolTaskReopen, agentauth.ToolTaskMove,
 		agentauth.ToolTaskReorder,

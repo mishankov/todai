@@ -24,10 +24,10 @@ type HTTPService interface {
 	CreateSubtask(context.Context, execution.Scope, string, string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListSubtasks(context.Context, string, string) ([]Task, error)
-	ListInbox(context.Context, string, bool) ([]TaskSummary, error)
-	ListAll(context.Context, string, bool) ([]TaskSummary, error)
+	ListInbox(context.Context, string, string, bool) ([]TaskSummary, error)
+	ListAll(context.Context, string, string, bool) ([]TaskSummary, error)
 	ListProject(context.Context, string, string, bool) ([]TaskSummary, error)
-	ListToday(context.Context, string, string, bool) ([]TaskSummary, error)
+	ListToday(context.Context, string, string, string, bool) ([]TaskSummary, error)
 	Complete(context.Context, execution.Scope, string, int64) (Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
 	Update(context.Context, execution.Scope, string, Update) (Task, error)
@@ -148,10 +148,10 @@ func (m *HTTPModule) Mount(api *httpserver.HandlerGroup) {
 
 	viewsAPI := httpserver.NewHandlerGroup()
 	viewsAPI.Use(m.authDomain.Middleware)
-	viewsAPI.HandleFunc("GET /all", handlers.listAll)
-	viewsAPI.HandleFunc("GET /inbox", handlers.listInbox)
-	viewsAPI.HandleFunc("GET /today", handlers.listToday)
 	viewsAPI.HandleFunc("GET /projects/{id}", handlers.listProject)
+	viewsAPI.HandleFunc("GET /projects/{id}/all", handlers.listAll)
+	viewsAPI.HandleFunc("GET /projects/{id}/inbox", handlers.listInbox)
+	viewsAPI.HandleFunc("GET /projects/{id}/today", handlers.listToday)
 	api.Mount("/views", viewsAPI)
 }
 
@@ -178,6 +178,10 @@ func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
 		}
 		created, err = h.service.CreateSubtask(r.Context(), scope, request.Title, *request.ParentID)
 	} else {
+		if request.ProjectID == nil {
+			writeTaskError(w, r, "create", ErrProjectRequired)
+			return
+		}
 		created, err = h.service.Create(
 			r.Context(), scope, request.Title, request.ProjectID, request.SectionID,
 		)
@@ -373,7 +377,7 @@ func (h taskHandlers) listInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := h.service.ListInbox(r.Context(), user.ID, includeCompleted)
+	tasks, err := h.service.ListInbox(r.Context(), user.ID, r.PathValue("id"), includeCompleted)
 	if err != nil {
 		writeTaskError(w, r, "list_inbox", err)
 		return
@@ -395,7 +399,7 @@ func (h taskHandlers) listAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := h.service.ListAll(r.Context(), user.ID, includeCompleted)
+	tasks, err := h.service.ListAll(r.Context(), user.ID, r.PathValue("id"), includeCompleted)
 	if err != nil {
 		writeTaskError(w, r, "list_all", err)
 		return
@@ -422,7 +426,9 @@ func (h taskHandlers) listToday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := h.service.ListToday(r.Context(), user.ID, timezone, includeCompleted)
+	tasks, err := h.service.ListToday(
+		r.Context(), user.ID, r.PathValue("id"), timezone, includeCompleted,
+	)
 	if err != nil {
 		writeTaskError(w, r, "list_today", err)
 		return
@@ -552,6 +558,7 @@ func writeTaskError(w http.ResponseWriter, r *http.Request, operation string, er
 	switch {
 	case errors.Is(err, ErrTitleRequired),
 		errors.Is(err, ErrTitleTooLong),
+		errors.Is(err, ErrProjectRequired),
 		errors.Is(err, ErrDescriptionTooLong),
 		errors.Is(err, ErrInvalidPriority),
 		errors.Is(err, ErrInvalidDueDate),

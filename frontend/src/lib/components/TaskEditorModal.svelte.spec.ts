@@ -321,6 +321,9 @@ function testProject(overrides: Partial<Project> = {}): Project {
 		id: 'project-id',
 		name: 'Project',
 		layout: 'list',
+		colorTheme: 'sage',
+		agentModel: 'gpt-default',
+		agentThinkingEffort: 'medium',
 		position: 1024,
 		version: 1,
 		archivedAt: null,
@@ -359,7 +362,7 @@ function deferred<T>(): {
 function testTask(overrides: Partial<Task> = {}): Task {
 	return {
 		id: 'task-id',
-		projectId: null,
+		projectId: 'project-id',
 		sectionId: null,
 		parentId: null,
 		title: 'Task',

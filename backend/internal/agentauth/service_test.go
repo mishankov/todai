@@ -40,6 +40,7 @@ func TestIssueStoresOnlyHashAndReturnsRawTokenOnce(t *testing.T) {
 		t.Errorf("stored hash length = %d, want %d", len(repository.createdHash), sha256.Size)
 	}
 	if repository.createdClaims.UserID != request.UserID ||
+		repository.createdClaims.ProjectID != request.ProjectID ||
 		repository.createdClaims.AgentSessionID != request.AgentSessionID ||
 		repository.createdClaims.AgentRunID != request.AgentRunID {
 		t.Errorf("stored claims = %#v", repository.createdClaims)
@@ -66,6 +67,7 @@ func TestIssueRejectsInvalidRequest(t *testing.T) {
 		want    error
 	}{
 		{name: "user", request: issueRequestWithoutUser(), want: agentauth.ErrUserIDRequired},
+		{name: "project", request: issueRequestWithoutProject(), want: agentauth.ErrProjectIDRequired},
 		{name: "session", request: issueRequestWithoutSession(), want: agentauth.ErrAgentSessionIDRequired},
 		{name: "run", request: issueRequestWithoutRun(), want: agentauth.ErrAgentRunIDRequired},
 		{name: "tools", request: issueRequestWithoutTools(), want: agentauth.ErrAllowedToolsRequired},
@@ -105,7 +107,8 @@ func TestAuthenticateReturnsClaimsForAllowedTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate token: %v", err)
 	}
-	if claims.UserID != "user-id" || claims.AgentSessionID != "session-id" || claims.AgentRunID != "run-id" {
+	if claims.UserID != "user-id" || claims.ProjectID != "project-id" ||
+		claims.AgentSessionID != "session-id" || claims.AgentRunID != "run-id" {
 		t.Errorf("claims = %#v", claims)
 	}
 	claims.AllowedTools[0] = agentauth.ToolTaskMove
@@ -171,6 +174,7 @@ func TestClaimsBuildBuiltInAgentExecutionScope(t *testing.T) {
 		t.Fatalf("validate execution scope: %v", err)
 	}
 	if scope.UserID != claims.UserID || scope.ActorType != execution.ActorBuiltInAgent ||
+		scope.ProjectID == nil || *scope.ProjectID != claims.ProjectID ||
 		scope.ActorID == nil || *scope.ActorID != claims.AgentSessionID ||
 		scope.Source != execution.SourceInternalAPI ||
 		scope.AgentRunID == nil || *scope.AgentRunID != claims.AgentRunID {
@@ -237,6 +241,7 @@ func cloneClaims(claims agentauth.Claims) agentauth.Claims {
 func validIssueRequest() agentauth.IssueRequest {
 	return agentauth.IssueRequest{
 		UserID:         "user-id",
+		ProjectID:      "project-id",
 		AgentSessionID: "session-id",
 		AgentRunID:     "run-id",
 		AllowedTools: []agentauth.Tool{
@@ -246,6 +251,12 @@ func validIssueRequest() agentauth.IssueRequest {
 		},
 		TTL: time.Minute,
 	}
+}
+
+func issueRequestWithoutProject() agentauth.IssueRequest {
+	request := validIssueRequest()
+	request.ProjectID = " "
+	return request
 }
 
 func issueRequestWithoutUser() agentauth.IssueRequest {
@@ -287,6 +298,7 @@ func issueRequestWithTTL(ttl time.Duration) agentauth.IssueRequest {
 func claimsWithExpiry(expiresAt time.Time) *agentauth.Claims {
 	return &agentauth.Claims{
 		UserID:         "user-id",
+		ProjectID:      "project-id",
 		AgentSessionID: "session-id",
 		AgentRunID:     "run-id",
 		AllowedTools:   []agentauth.Tool{agentauth.ToolTaskGet},

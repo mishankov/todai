@@ -64,6 +64,31 @@ func TestProjectMutationRequiresSession(t *testing.T) {
 	}
 }
 
+func TestProjectPatchDecodesWorkspaceSettings(t *testing.T) {
+	t.Parallel()
+
+	service := &projectUpdateRecordingService{}
+	handler := projectTestAPI(&auth.User{ID: "user-id", Username: "owner"}, service)
+	request := projectJSONRequest(t, http.MethodPatch, "/projects/project-id", map[string]any{
+		"version": 3, "colorTheme": "ocean", "agentModel": "provider/model",
+		"agentThinkingEffort": "high",
+	})
+	request.AddCookie(projectAuthenticatedCookie())
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("patch project status = %d, want %d; body = %q", response.Code, http.StatusOK, response.Body.String())
+	}
+	if service.update.Version != 3 || service.update.ColorTheme == nil ||
+		*service.update.ColorTheme != project.ColorThemeOcean || service.update.AgentModel == nil ||
+		*service.update.AgentModel != "provider/model" || service.update.AgentThinkingEffort == nil ||
+		*service.update.AgentThinkingEffort != "high" {
+		t.Errorf("project update = %#v", service.update)
+	}
+}
+
 func projectTestAPI(user *auth.User, projectService project.HTTPService) http.Handler {
 	repository := fakeProjectAuthRepository{user: user}
 	storage := &fakeProjectSessionStorage{sessions: make(map[string]string)}
@@ -173,6 +198,21 @@ func (fakeProjectHTTPService) ReorderSection(
 type scopeRecordingProjectService struct {
 	fakeProjectHTTPService
 	scopes chan execution.Scope
+}
+
+type projectUpdateRecordingService struct {
+	fakeProjectHTTPService
+	update project.Update
+}
+
+func (s *projectUpdateRecordingService) Update(
+	_ context.Context,
+	_ execution.Scope,
+	_ string,
+	update project.Update,
+) (project.Project, error) {
+	s.update = update
+	return project.Project{ID: "project-id", Version: update.Version + 1}, nil
 }
 
 func (s *scopeRecordingProjectService) Create(

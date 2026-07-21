@@ -11,9 +11,19 @@
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 		remove: (taskId: string, version: number) => Promise<void>;
 		projects?: Project[];
+		currentProjectId?: string;
 	}
 
-	let { initialTasks, create, complete, reopen, update, remove, projects = [] }: Props = $props();
+	let {
+		initialTasks,
+		create,
+		complete,
+		reopen,
+		update,
+		remove,
+		projects = [],
+		currentProjectId
+	}: Props = $props();
 </script>
 
 <TaskView
@@ -24,8 +34,9 @@
 	{update}
 	{remove}
 	{projects}
-	currentProjectId={null}
-	eyebrow="My tasks"
+	{currentProjectId}
+	currentSectionId={null}
+	eyebrow="Project"
 	heading="Inbox"
 	emptyTitle="Inbox clear."
 	emptyMessage="Add something above when it needs your attention."

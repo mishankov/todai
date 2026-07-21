@@ -192,6 +192,7 @@ func (r *Repository) appendCommentEvent(
 	aggregateID := comment.ID
 	if _, err := r.events.Append(ctx, executor, scope, activity.NewEvent{
 		Type:          eventType,
+		ProjectID:     parent.ProjectID,
 		AggregateType: &aggregateType,
 		AggregateID:   &aggregateID,
 		Payload: map[string]any{

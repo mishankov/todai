@@ -28,6 +28,7 @@ type envelope struct {
 	Type           string                 `json:"type"`
 	RequestID      string                 `json:"requestId,omitempty"`
 	SessionID      string                 `json:"sessionId,omitempty"`
+	ProjectID      string                 `json:"projectId,omitempty"`
 	RunID          string                 `json:"runId,omitempty"`
 	Message        string                 `json:"message,omitempty"`
 	Context        *agent.MessageContext  `json:"context,omitempty"`

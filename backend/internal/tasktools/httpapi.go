@@ -28,10 +28,10 @@ type TaskService interface {
 	Get(context.Context, string, string) (task.Task, error)
 	ListSubtasks(context.Context, string, string) ([]task.Task, error)
 	ListComments(context.Context, string, string) ([]task.Comment, error)
-	ListInbox(context.Context, string, bool) ([]task.TaskSummary, error)
-	ListAll(context.Context, string, bool) ([]task.TaskSummary, error)
+	ListInbox(context.Context, string, string, bool) ([]task.TaskSummary, error)
+	ListAll(context.Context, string, string, bool) ([]task.TaskSummary, error)
 	ListProject(context.Context, string, string, bool) ([]task.TaskSummary, error)
-	ListToday(context.Context, string, string, bool) ([]task.TaskSummary, error)
+	ListToday(context.Context, string, string, string, bool) ([]task.TaskSummary, error)
 	Search(context.Context, string, task.SearchQuery) ([]task.Task, error)
 	Create(context.Context, execution.Scope, string, *string, *string) (task.Task, error)
 	CreateSubtask(context.Context, execution.Scope, string, string) (task.Task, error)
@@ -229,11 +229,16 @@ func (m *HTTPModule) taskGet(w http.ResponseWriter, r *http.Request, claims agen
 		writeToolError(w, r, "task_get", err)
 		return
 	}
+	if !taskBelongsToProject(found, claims.ProjectID) {
+		writeToolError(w, r, "task_get", task.ErrTaskNotFound)
+		return
+	}
 	subtasks, err := m.tasks.ListSubtasks(r.Context(), claims.UserID, request.TaskID)
 	if err != nil {
 		writeToolError(w, r, "task_get", err)
 		return
 	}
+	subtasks = filterTasks(subtasks, claims.ProjectID)
 	comments, err := m.tasks.ListComments(r.Context(), claims.UserID, request.TaskID)
 	if err != nil {
 		writeToolError(w, r, "task_get", err)
@@ -241,14 +246,14 @@ func (m *HTTPModule) taskGet(w http.ResponseWriter, r *http.Request, claims agen
 	}
 	response := taskGetResponse{Task: found, Subtasks: subtasks, Comments: comments}
 	if found.ProjectID != nil {
-		foundProject, err := m.projects.Get(r.Context(), claims.UserID, *found.ProjectID)
+		foundProject, err := m.projects.Get(r.Context(), claims.UserID, claims.ProjectID)
 		if err != nil {
 			writeToolError(w, r, "task_get", err)
 			return
 		}
 		response.Project = &foundProject
 		if found.SectionID != nil {
-			sections, err := m.projects.ListSections(r.Context(), claims.UserID, *found.ProjectID)
+			sections, err := m.projects.ListSections(r.Context(), claims.UserID, claims.ProjectID)
 			if err != nil {
 				writeToolError(w, r, "task_get", err)
 				return
@@ -269,6 +274,11 @@ func (m *HTTPModule) viewQuery(w http.ResponseWriter, r *http.Request, claims ag
 	if !decodeRequest(w, r, &request) {
 		return
 	}
+	if request.ProjectID != "" && request.ProjectID != claims.ProjectID {
+		writeToolError(w, r, "view_query", project.ErrProjectNotFound)
+		return
+	}
+	request.ProjectID = claims.ProjectID
 
 	var (
 		tasks []task.TaskSummary
@@ -276,22 +286,23 @@ func (m *HTTPModule) viewQuery(w http.ResponseWriter, r *http.Request, claims ag
 	)
 	switch request.View {
 	case "inbox":
-		tasks, err = m.tasks.ListInbox(r.Context(), claims.UserID, request.IncludeCompleted)
+		tasks, err = m.tasks.ListInbox(
+			r.Context(), claims.UserID, request.ProjectID, request.IncludeCompleted,
+		)
 	case "all":
-		tasks, err = m.tasks.ListAll(r.Context(), claims.UserID, request.IncludeCompleted)
+		tasks, err = m.tasks.ListAll(
+			r.Context(), claims.UserID, request.ProjectID, request.IncludeCompleted,
+		)
 	case "today":
 		if strings.TrimSpace(request.Timezone) == "" {
 			http.Error(w, "timezone is required for Today", http.StatusBadRequest)
 			return
 		}
 		tasks, err = m.tasks.ListToday(
-			r.Context(), claims.UserID, request.Timezone, request.IncludeCompleted,
+			r.Context(), claims.UserID, request.ProjectID, request.Timezone,
+			request.IncludeCompleted,
 		)
 	case "project":
-		if strings.TrimSpace(request.ProjectID) == "" {
-			http.Error(w, "projectId is required for a project view", http.StatusBadRequest)
-			return
-		}
 		tasks, err = m.tasks.ListProject(
 			r.Context(), claims.UserID, request.ProjectID, request.IncludeCompleted,
 		)
@@ -303,6 +314,7 @@ func (m *HTTPModule) viewQuery(w http.ResponseWriter, r *http.Request, claims ag
 		writeToolError(w, r, "view_query", err)
 		return
 	}
+	tasks = filterTaskSummaries(tasks, claims.ProjectID)
 	writeJSON(w, r, http.StatusOK, taskListResponse{Tasks: tasks})
 }
 
@@ -312,19 +324,24 @@ func (m *HTTPModule) projectList(w http.ResponseWriter, r *http.Request, claims 
 		return
 	}
 
-	projects, err := m.projects.List(r.Context(), claims.UserID, request.IncludeArchived)
+	found, err := m.projects.Get(r.Context(), claims.UserID, claims.ProjectID)
 	if err != nil {
 		writeToolError(w, r, "project_list", err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, projectListResponse{Projects: projects})
+	writeJSON(w, r, http.StatusOK, projectListResponse{Projects: []project.Project{found}})
 }
 
 func (m *HTTPModule) projectGet(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {
 	var request projectGetRequest
-	if !decodeRequest(w, r, &request) || !requireProjectID(w, request.ProjectID) {
+	if !decodeRequest(w, r, &request) {
 		return
 	}
+	if request.ProjectID != "" && request.ProjectID != claims.ProjectID {
+		writeToolError(w, r, "project_get", project.ErrProjectNotFound)
+		return
+	}
+	request.ProjectID = claims.ProjectID
 
 	found, err := m.projects.Get(r.Context(), claims.UserID, request.ProjectID)
 	if err != nil {
@@ -344,15 +361,20 @@ func (m *HTTPModule) taskSearch(w http.ResponseWriter, r *http.Request, claims a
 	if !decodeRequest(w, r, &request) {
 		return
 	}
+	if request.ProjectID != nil && *request.ProjectID != claims.ProjectID {
+		writeToolError(w, r, "task_search", project.ErrProjectNotFound)
+		return
+	}
+	projectID := claims.ProjectID
 
 	results, err := m.tasks.Search(r.Context(), claims.UserID, task.SearchQuery{
-		Query: request.Query, ProjectID: request.ProjectID, Status: request.Status, Limit: request.Limit,
+		Query: request.Query, ProjectID: &projectID, Status: request.Status, Limit: request.Limit,
 	})
 	if err != nil {
 		writeToolError(w, r, "task_search", err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, taskSearchResponse{Tasks: results})
+	writeJSON(w, r, http.StatusOK, taskSearchResponse{Tasks: filterTasks(results, claims.ProjectID)})
 }
 
 func (m *HTTPModule) taskCreate(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {
@@ -368,12 +390,26 @@ func (m *HTTPModule) taskCreate(w http.ResponseWriter, r *http.Request, claims a
 			http.Error(w, task.ErrSubtaskPlacement.Error(), http.StatusBadRequest)
 			return
 		}
+		parent, getErr := m.tasks.Get(r.Context(), claims.UserID, *request.ParentID)
+		if getErr != nil {
+			writeToolError(w, r, "task_create", getErr)
+			return
+		}
+		if !taskBelongsToProject(parent, claims.ProjectID) {
+			writeToolError(w, r, "task_create", task.ErrTaskNotFound)
+			return
+		}
 		created, err = m.tasks.CreateSubtask(
 			r.Context(), scopeFor(r, claims), request.Title, *request.ParentID,
 		)
 	} else {
+		if request.ProjectID != nil && *request.ProjectID != claims.ProjectID {
+			writeToolError(w, r, "task_create", project.ErrProjectNotFound)
+			return
+		}
+		projectID := claims.ProjectID
 		created, err = m.tasks.Create(
-			r.Context(), scopeFor(r, claims), request.Title, request.ProjectID, request.SectionID,
+			r.Context(), scopeFor(r, claims), request.Title, &projectID, request.SectionID,
 		)
 	}
 	if err != nil {
@@ -386,6 +422,9 @@ func (m *HTTPModule) taskCreate(w http.ResponseWriter, r *http.Request, claims a
 func (m *HTTPModule) taskUpdate(w http.ResponseWriter, r *http.Request, claims agentauth.Claims) {
 	var request updateTaskRequest
 	if !decodeRequest(w, r, &request) || !requireVersionedTask(w, request.TaskID, request.Version) {
+		return
+	}
+	if !m.requireScopedTask(w, r, claims, "task_update", request.TaskID) {
 		return
 	}
 
@@ -421,6 +460,9 @@ func (m *HTTPModule) changeStatus(
 	if !decodeRequest(w, r, &request) || !requireVersionedTask(w, request.TaskID, request.Version) {
 		return
 	}
+	if !m.requireScopedTask(w, r, claims, operation, request.TaskID) {
+		return
+	}
 
 	updated, err := change(r.Context(), scopeFor(r, claims), request.TaskID, *request.Version)
 	if err != nil {
@@ -439,10 +481,18 @@ func (m *HTTPModule) taskMove(w http.ResponseWriter, r *http.Request, claims age
 		http.Error(w, "projectId and sectionId are required", http.StatusBadRequest)
 		return
 	}
+	if !m.requireScopedTask(w, r, claims, "task_move", request.TaskID) {
+		return
+	}
+	if request.ProjectID.Value != nil && *request.ProjectID.Value != claims.ProjectID {
+		writeToolError(w, r, "task_move", project.ErrProjectNotFound)
+		return
+	}
+	projectID := claims.ProjectID
 
 	updated, err := m.tasks.Update(r.Context(), scopeFor(r, claims), request.TaskID, task.Update{
 		Version:   *request.Version,
-		ProjectID: &task.Nullable[string]{Value: request.ProjectID.Value},
+		ProjectID: &task.Nullable[string]{Value: &projectID},
 		SectionID: &task.Nullable[string]{Value: request.SectionID.Value},
 	})
 	if err != nil {
@@ -459,6 +509,13 @@ func (m *HTTPModule) taskReorder(w http.ResponseWriter, r *http.Request, claims 
 	}
 	if !request.SectionID.Set {
 		http.Error(w, "sectionId is required", http.StatusBadRequest)
+		return
+	}
+	if !m.requireScopedTask(w, r, claims, "task_reorder", request.TaskID) {
+		return
+	}
+	if request.BeforeTaskID != nil &&
+		!m.requireScopedTask(w, r, claims, "task_reorder", *request.BeforeTaskID) {
 		return
 	}
 
@@ -521,6 +578,49 @@ func scopeFor(r *http.Request, claims agentauth.Claims) execution.Scope {
 	return claims.ExecutionScope(correlationID)
 }
 
+func (m *HTTPModule) requireScopedTask(
+	w http.ResponseWriter,
+	r *http.Request,
+	claims agentauth.Claims,
+	operation string,
+	taskID string,
+) bool {
+	found, err := m.tasks.Get(r.Context(), claims.UserID, taskID)
+	if err != nil {
+		writeToolError(w, r, operation, err)
+		return false
+	}
+	if !taskBelongsToProject(found, claims.ProjectID) {
+		writeToolError(w, r, operation, task.ErrTaskNotFound)
+		return false
+	}
+	return true
+}
+
+func taskBelongsToProject(found task.Task, projectID string) bool {
+	return found.ProjectID != nil && *found.ProjectID == projectID
+}
+
+func filterTasks(tasks []task.Task, projectID string) []task.Task {
+	filtered := make([]task.Task, 0, len(tasks))
+	for _, found := range tasks {
+		if taskBelongsToProject(found, projectID) {
+			filtered = append(filtered, found)
+		}
+	}
+	return filtered
+}
+
+func filterTaskSummaries(tasks []task.TaskSummary, projectID string) []task.TaskSummary {
+	filtered := make([]task.TaskSummary, 0, len(tasks))
+	for _, found := range tasks {
+		if taskBelongsToProject(found.Task, projectID) {
+			filtered = append(filtered, found)
+		}
+	}
+	return filtered
+}
+
 func decodeRequest(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -540,14 +640,6 @@ func requireTaskID(w http.ResponseWriter, taskID string) bool {
 		return true
 	}
 	http.Error(w, "taskId is required", http.StatusBadRequest)
-	return false
-}
-
-func requireProjectID(w http.ResponseWriter, projectID string) bool {
-	if strings.TrimSpace(projectID) != "" {
-		return true
-	}
-	http.Error(w, "projectId is required", http.StatusBadRequest)
 	return false
 }
 

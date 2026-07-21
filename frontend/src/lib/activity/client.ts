@@ -23,9 +23,13 @@ export class ActivityRequestError extends Error {
 	}
 }
 
-export async function getActivity(fetcher: typeof fetch, limit = 100): Promise<ActivityEvent[]> {
-	const query = new URLSearchParams({ limit: String(limit) });
-	const response = await fetcher(`/api/activity/?${query}`, {
+export async function getActivity(
+	fetcher: typeof fetch,
+	projectId: string,
+	limit = 100
+): Promise<ActivityEvent[]> {
+	const query = new URLSearchParams({ project_id: projectId, limit: String(limit) });
+	const response = await fetcher(`/api/activity?${query}`, {
 		credentials: 'same-origin',
 		headers: { Accept: 'application/json' }
 	});

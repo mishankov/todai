@@ -239,7 +239,7 @@
 
 	.eyebrow {
 		margin: 0 0 0.55rem;
-		color: #427052;
+		color: var(--theme-accent, #427052);
 		font-size: 0.72rem;
 		font-weight: 800;
 		letter-spacing: 0.13em;
@@ -304,7 +304,7 @@
 		bottom: -0.2rem;
 		left: 1.1rem;
 		width: 1px;
-		background: #dfe6dc;
+		background: var(--theme-border, #dfe6dc);
 		content: '';
 	}
 
@@ -315,10 +315,10 @@
 		width: 2.25rem;
 		height: 2.25rem;
 		place-items: center;
-		border: 1px solid #d6e0d3;
+		border: 1px solid var(--theme-border, #d6e0d3);
 		border-radius: 50%;
-		color: #3c6e4d;
-		background: #f4f8f2;
+		color: var(--theme-accent, #3c6e4d);
+		background: var(--theme-accent-soft, #f4f8f2);
 	}
 
 	.event-icon.project {
@@ -400,8 +400,8 @@
 	.event-meta > span:first-child {
 		padding: 0.15rem 0.4rem;
 		border-radius: 0.25rem;
-		color: #587260;
-		background: #edf3eb;
+		color: var(--theme-accent, #587260);
+		background: var(--theme-accent-soft, #edf3eb);
 		font-weight: 680;
 	}
 
@@ -420,7 +420,7 @@
 		gap: 0.35rem 0.8rem;
 		margin: 0.65rem 0 0;
 		padding: 0.65rem 0.75rem;
-		border: 1px solid #e1e5df;
+		border: 1px solid var(--theme-border, #e1e5df);
 		border-radius: 0.45rem;
 		background: #fff;
 	}
@@ -441,7 +441,7 @@
 		display: grid;
 		justify-items: center;
 		padding: 5rem 1rem;
-		border: 1px dashed #d7dfd4;
+		border: 1px dashed var(--theme-border, #d7dfd4);
 		border-radius: 0.8rem;
 		text-align: center;
 	}
@@ -452,8 +452,8 @@
 		height: 3rem;
 		place-items: center;
 		border-radius: 50%;
-		color: #557760;
-		background: #edf3eb;
+		color: var(--theme-accent, #557760);
+		background: var(--theme-accent-soft, #edf3eb);
 	}
 
 	.empty-icon svg {

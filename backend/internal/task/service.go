@@ -44,6 +44,8 @@ var (
 	ErrDueDateRequired = errors.New("task due date is required when due time is set")
 	// ErrProjectNotFound indicates that a requested destination project is unavailable to the user.
 	ErrProjectNotFound = errors.New("task project not found")
+	// ErrProjectRequired indicates that top-level work must belong to a project workspace.
+	ErrProjectRequired = errors.New("task project is required")
 	// ErrSectionNotFound indicates that a requested project section is unavailable.
 	ErrSectionNotFound = errors.New("task project section not found")
 	// ErrTaskNotReorderable indicates that a task cannot participate in project ordering.
@@ -72,10 +74,10 @@ type repository interface {
 	Create(context.Context, execution.Scope, string, *string, *string, *string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListSubtasks(context.Context, string, string) ([]Task, error)
-	ListInbox(context.Context, string, bool) ([]TaskSummary, error)
-	ListAll(context.Context, string, bool) ([]TaskSummary, error)
+	ListInbox(context.Context, string, string, bool) ([]TaskSummary, error)
+	ListAll(context.Context, string, string, bool) ([]TaskSummary, error)
 	ListProject(context.Context, string, string, bool) ([]TaskSummary, error)
-	ListToday(context.Context, string, Date, time.Time, time.Time, bool) ([]TaskSummary, error)
+	ListToday(context.Context, string, string, Date, time.Time, time.Time, bool) ([]TaskSummary, error)
 	Search(context.Context, string, SearchQuery) ([]Task, error)
 	Complete(context.Context, execution.Scope, string, int64) (Task, error)
 	Reopen(context.Context, execution.Scope, string, int64) (Task, error)
@@ -119,7 +121,7 @@ func NewService(repository repository) *Service {
 	return &Service{repository: repository}
 }
 
-// Create creates an active top-level task in the user's Inbox or a project.
+// Create creates an active top-level task in a project's Inbox or section.
 func (s *Service) Create(
 	ctx context.Context,
 	scope execution.Scope,
@@ -138,8 +140,8 @@ func (s *Service) Create(
 		return Task{}, ErrTitleTooLong
 	}
 
-	if sectionID != nil && projectID == nil {
-		return Task{}, ErrSectionNotFound
+	if projectID == nil || strings.TrimSpace(*projectID) == "" {
+		return Task{}, ErrProjectRequired
 	}
 
 	created, err := s.repository.Create(ctx, scope, title, projectID, sectionID, nil)
@@ -292,11 +294,14 @@ func (s *Service) Get(ctx context.Context, userID, taskID string) (Task, error) 
 	return found, nil
 }
 
-// ListInbox returns top-level tasks without a project.
+// ListInbox returns top-level unsectioned tasks in one project workspace.
 func (s *Service) ListInbox(
-	ctx context.Context, userID string, includeCompleted bool,
+	ctx context.Context, userID string, projectID string, includeCompleted bool,
 ) ([]TaskSummary, error) {
-	tasks, err := s.repository.ListInbox(ctx, userID, includeCompleted)
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	tasks, err := s.repository.ListInbox(ctx, userID, projectID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("list Inbox: %w", err)
 	}
@@ -304,11 +309,14 @@ func (s *Service) ListInbox(
 	return tasks, nil
 }
 
-// ListAll returns all top-level tasks owned by the user.
+// ListAll returns all top-level tasks in one project workspace.
 func (s *Service) ListAll(
-	ctx context.Context, userID string, includeCompleted bool,
+	ctx context.Context, userID string, projectID string, includeCompleted bool,
 ) ([]TaskSummary, error) {
-	tasks, err := s.repository.ListAll(ctx, userID, includeCompleted)
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	tasks, err := s.repository.ListAll(ctx, userID, projectID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("list all tasks: %w", err)
 	}
@@ -321,6 +329,7 @@ func (s *Service) ListAll(
 func (s *Service) ListToday(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	timezone string,
 	includeCompleted bool,
 ) ([]TaskSummary, error) {
@@ -329,12 +338,15 @@ func (s *Service) ListToday(
 	if timezone == "" || err != nil {
 		return nil, ErrInvalidTimezone
 	}
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 
 	now := time.Now().In(location)
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	end := start.AddDate(0, 0, 1)
 	tasks, err := s.repository.ListToday(
-		ctx, userID, Date(start.Format(dateLayout)), start, end, includeCompleted,
+		ctx, userID, projectID, Date(start.Format(dateLayout)), start, end, includeCompleted,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list Today: %w", err)
@@ -470,6 +482,10 @@ func validateUpdate(update *Update) error {
 	if update.Description != nil && update.Description.Value != nil &&
 		utf8.RuneCountInString(*update.Description.Value) > maxDescriptionLength {
 		return ErrDescriptionTooLong
+	}
+	if update.ProjectID != nil && (update.ProjectID.Value == nil ||
+		strings.TrimSpace(*update.ProjectID.Value) == "") {
+		return ErrProjectRequired
 	}
 	if update.Priority != nil && (*update.Priority < 0 || *update.Priority > 4) {
 		return ErrInvalidPriority

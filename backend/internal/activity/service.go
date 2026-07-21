@@ -6,9 +6,9 @@ import (
 )
 
 type repository interface {
-	List(context.Context, string, int) ([]Event, error)
-	LatestOffset(context.Context, string) (int64, error)
-	ListAfter(context.Context, string, int64, int) ([]Event, error)
+	List(context.Context, string, string, int) ([]Event, error)
+	LatestOffset(context.Context, string, string) (int64, error)
+	ListAfter(context.Context, string, string, int64, int) ([]Event, error)
 }
 
 // Service provides user-scoped activity operations.
@@ -22,11 +22,11 @@ func NewService(repository repository) *Service {
 }
 
 // List returns the user's newest events first.
-func (s *Service) List(ctx context.Context, userID string, limit int) ([]Event, error) {
+func (s *Service) List(ctx context.Context, userID, projectID string, limit int) ([]Event, error) {
 	if limit < 1 || limit > 200 {
 		return nil, ErrInvalidLimit
 	}
-	events, err := s.repository.List(ctx, userID, limit)
+	events, err := s.repository.List(ctx, userID, projectID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list activity events: %w", err)
 	}
@@ -34,8 +34,8 @@ func (s *Service) List(ctx context.Context, userID string, limit int) ([]Event, 
 }
 
 // LatestOffset returns the newest durable event offset visible to a user.
-func (s *Service) LatestOffset(ctx context.Context, userID string) (int64, error) {
-	offset, err := s.repository.LatestOffset(ctx, userID)
+func (s *Service) LatestOffset(ctx context.Context, userID, projectID string) (int64, error) {
+	offset, err := s.repository.LatestOffset(ctx, userID, projectID)
 	if err != nil {
 		return 0, fmt.Errorf("get latest activity offset: %w", err)
 	}
@@ -45,7 +45,7 @@ func (s *Service) LatestOffset(ctx context.Context, userID string) (int64, error
 // ListAfter returns the user's events after a durable stream cursor.
 func (s *Service) ListAfter(
 	ctx context.Context,
-	userID string,
+	userID, projectID string,
 	after int64,
 	limit int,
 ) ([]Event, error) {
@@ -55,7 +55,7 @@ func (s *Service) ListAfter(
 	if limit < 1 || limit > 200 {
 		return nil, ErrInvalidLimit
 	}
-	events, err := s.repository.ListAfter(ctx, userID, after, limit)
+	events, err := s.repository.ListAfter(ctx, userID, projectID, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list activity stream events: %w", err)
 	}

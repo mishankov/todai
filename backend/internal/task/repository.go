@@ -59,7 +59,7 @@ func (r *Repository) Migrations() fs.FS {
 	return migrationsFS
 }
 
-// Create inserts an active top-level Inbox or project task.
+// Create inserts an active task in a project workspace.
 func (r *Repository) Create(
 	ctx context.Context,
 	scope execution.Scope,
@@ -68,6 +68,9 @@ func (r *Repository) Create(
 	sectionID *string,
 	parentID *string,
 ) (Task, error) {
+	if parentID == nil && (projectID == nil || *projectID == "") {
+		return Task{}, ErrProjectRequired
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return Task{}, fmt.Errorf("begin task creation: %w", err)
@@ -250,25 +253,30 @@ func (r *Repository) Get(ctx context.Context, userID, taskID string) (Task, erro
 	return found, nil
 }
 
-// ListInbox returns the user's top-level tasks without a project.
+// ListInbox returns the user's unsectioned top-level tasks in one project.
 func (r *Repository) ListInbox(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	includeCompleted bool,
 ) ([]TaskSummary, error) {
+	if err := r.requireActiveProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
 	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
 		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
-			AND project_id IS NULL
+			AND project_id = $2
+			AND section_id IS NULL
 			AND parent_id IS NULL
-			AND ($2 OR status = 'active')
+			AND ($3 OR status = 'active')
 		ORDER BY
 			CASE status WHEN 'active' THEN 0 ELSE 1 END,
 			position,
 			created_at
-	`, userID, includeCompleted)
+	`, userID, projectID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("select Inbox tasks: %w", err)
 	}
@@ -276,19 +284,24 @@ func (r *Repository) ListInbox(
 	return tasks, nil
 }
 
-// ListAll returns all of the user's top-level tasks.
+// ListAll returns all of the user's top-level tasks in one project.
 func (r *Repository) ListAll(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	includeCompleted bool,
 ) ([]TaskSummary, error) {
+	if err := r.requireActiveProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
 	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
 		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
+			AND project_id = $2
 			AND parent_id IS NULL
-			AND ($2 OR status = 'active')
+			AND ($3 OR status = 'active')
 		ORDER BY
 			CASE status WHEN 'active' THEN 0 ELSE 1 END,
 			due_date NULLS LAST,
@@ -296,7 +309,7 @@ func (r *Repository) ListAll(
 			priority DESC,
 			position,
 			created_at
-	`, userID, includeCompleted)
+	`, userID, projectID, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("select all tasks: %w", err)
 	}
@@ -309,26 +322,31 @@ func (r *Repository) ListAll(
 func (r *Repository) ListToday(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	date Date,
 	dayStart time.Time,
 	dayEnd time.Time,
 	includeCompleted bool,
 ) ([]TaskSummary, error) {
+	if err := r.requireActiveProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
 	tasks := make([]TaskSummary, 0)
 	err := r.db.SelectContext(ctx, &tasks, `
 		SELECT `+taskSummaryColumns+`
 		FROM tasks
 		WHERE user_id = $1
+			AND project_id = $2
 			AND parent_id IS NULL
 			AND due_date IS NOT NULL
-			AND due_date <= $2::DATE
+			AND due_date <= $3::DATE
 			AND (
 				status = 'active'
 				OR (
-					$5
+					$6
 					AND status = 'completed'
-					AND completed_at >= $3
-					AND completed_at < $4
+					AND completed_at >= $4
+					AND completed_at < $5
 				)
 			)
 		ORDER BY
@@ -338,12 +356,27 @@ func (r *Repository) ListToday(
 			priority DESC,
 			position,
 			created_at
-	`, userID, date, dayStart, dayEnd, includeCompleted)
+	`, userID, projectID, date, dayStart, dayEnd, includeCompleted)
 	if err != nil {
 		return nil, fmt.Errorf("select Today tasks: %w", err)
 	}
 
 	return tasks, nil
+}
+
+func (r *Repository) requireActiveProject(ctx context.Context, userID, projectID string) error {
+	var exists bool
+	if err := r.db.GetContext(ctx, &exists, `
+		SELECT EXISTS (
+			SELECT 1 FROM projects WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
+		)
+	`, projectID, userID); err != nil {
+		return fmt.Errorf("check project: %w", err)
+	}
+	if !exists {
+		return ErrProjectNotFound
+	}
+	return nil
 }
 
 // Search returns top-level user tasks matching text and optional project/status filters.
@@ -913,6 +946,7 @@ func (r *Repository) appendTaskEvent(
 	aggregateID := task.ID
 	if _, err := r.events.Append(ctx, executor, scope, activity.NewEvent{
 		Type:          eventType,
+		ProjectID:     task.ProjectID,
 		AggregateType: &aggregateType,
 		AggregateID:   &aggregateID,
 		Payload:       payload,

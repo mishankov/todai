@@ -17,6 +17,7 @@ const (
 // RunRequest contains the product identities and prompt supplied to a runtime.
 type RunRequest struct {
 	UserID         string
+	ProjectID      string
 	SessionID      string
 	RunID          string
 	Message        string

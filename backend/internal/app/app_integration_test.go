@@ -111,15 +111,22 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	client := &http.Client{Timeout: time.Second}
 	baseURL := "http://127.0.0.1:" + port
 	waitForStatus(t, client, http.MethodGet, baseURL+"/health", http.StatusOK, &logs)
-	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/inbox", http.StatusUnauthorized)
-	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/all", http.StatusUnauthorized)
+	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/projects/missing/inbox", http.StatusUnauthorized)
+	assertStatus(t, client, http.MethodGet, baseURL+"/api/views/projects/missing/all", http.StatusUnauthorized)
 	assertStatus(t, client, http.MethodPost, baseURL+"/api/auth/register", http.StatusNotFound)
 	assertStatus(t, client, http.MethodGet, baseURL+"/protected/ping", http.StatusNotFound)
 	assertLoginStatus(t, client, baseURL, "owner", "wrong password", http.StatusUnauthorized)
 	sessionCookie := login(t, client, baseURL, "owner", "correct horse battery staple")
 	assertCurrentUser(t, client, baseURL, sessionCookie, "owner")
-	assertCreateTaskStatus(t, client, baseURL, sessionCookie, "   ", http.StatusBadRequest)
-	created := createTask(t, client, baseURL, sessionCookie, "Buy milk")
+	personalProject := createProject(t, client, baseURL, sessionCookie, "Personal")
+	if personalProject.Name != "Personal" || personalProject.Version != 1 ||
+		personalProject.ColorTheme != project.ColorThemeSage {
+		t.Errorf("personal project = %#v", personalProject)
+	}
+	assertCreateTaskStatus(
+		t, client, baseURL, sessionCookie, "   ", personalProject.ID, http.StatusBadRequest,
+	)
+	created := createTask(t, client, baseURL, sessionCookie, "Buy milk", personalProject.ID)
 	if created.Title != "Buy milk" || created.Status != task.StatusActive || created.Version != 1 {
 		t.Errorf("created task = %#v", created)
 	}
@@ -166,14 +173,17 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		http.StatusConflict,
 	)
 	assertTask(t, client, baseURL, sessionCookie, created.ID, task.StatusActive)
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{updated})
-	future := createTask(t, client, baseURL, sessionCookie, "Plan tomorrow")
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, false, []task.Task{updated})
+	future := createTask(t, client, baseURL, sessionCookie, "Plan tomorrow", personalProject.ID)
 	future = updateTask(t, client, baseURL, sessionCookie, future.ID, map[string]any{
 		"version": future.Version,
 		"dueDate": dueTomorrow,
 		"dueTime": nil,
 	})
-	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{updated})
+	assertToday(
+		t, client, baseURL, sessionCookie, personalProject.ID,
+		"Europe/Moscow", false, []task.Task{updated},
+	)
 
 	completed := changeTaskStatus(
 		t, client, baseURL, sessionCookie, created.ID, "complete", updated.Version,
@@ -181,10 +191,10 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	if completed.Status != task.StatusCompleted || completed.CompletedAt == nil || completed.Version != 3 {
 		t.Errorf("completed task = %#v", completed)
 	}
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{future})
-	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{future, completed})
-	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", false, []task.Task{})
-	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", true, []task.Task{completed})
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, false, []task.Task{future})
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, true, []task.Task{future, completed})
+	assertToday(t, client, baseURL, sessionCookie, personalProject.ID, "Europe/Moscow", false, []task.Task{})
+	assertToday(t, client, baseURL, sessionCookie, personalProject.ID, "Europe/Moscow", true, []task.Task{completed})
 
 	reopened := changeTaskStatus(
 		t, client, baseURL, sessionCookie, created.ID, "reopen", completed.Version,
@@ -192,14 +202,17 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	if reopened.Status != task.StatusActive || reopened.CompletedAt != nil || reopened.Version != 4 {
 		t.Errorf("reopened task = %#v", reopened)
 	}
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{reopened, future})
-	assertToday(t, client, baseURL, sessionCookie, "Europe/Moscow", true, []task.Task{reopened})
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, false, []task.Task{reopened, future})
+	assertToday(t, client, baseURL, sessionCookie, personalProject.ID, "Europe/Moscow", true, []task.Task{reopened})
 
-	createdProject := createProject(t, client, baseURL, sessionCookie, " Personal ")
-	if createdProject.Name != "Personal" || createdProject.Version != 1 {
+	createdProject := createProject(t, client, baseURL, sessionCookie, " Work ")
+	if createdProject.Name != "Work" || createdProject.Version != 1 {
 		t.Errorf("created project = %#v", createdProject)
 	}
-	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{createdProject})
+	assertProjects(
+		t, client, baseURL, sessionCookie, false,
+		[]project.Project{personalProject, createdProject},
+	)
 	renamedProject := updateProject(t, client, baseURL, sessionCookie, createdProject.ID, map[string]any{
 		"version": createdProject.Version,
 		"name":    "Home",
@@ -309,17 +322,17 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		"projectId": renamedProject.ID,
 	})
 	assertAllTasks(
-		t, client, baseURL, sessionCookie, true, []task.Task{moved, future, projectTask},
+		t, client, baseURL, sessionCookie, renamedProject.ID, true, []task.Task{moved, projectTask},
 	)
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{future})
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, false, []task.Task{future})
 	assertProjectTasks(
 		t, client, baseURL, sessionCookie, renamedProject.ID, true, []task.Task{moved, projectTask},
 	)
 	moved = updateTask(t, client, baseURL, sessionCookie, moved.ID, map[string]any{
 		"version":   moved.Version,
-		"projectId": nil,
+		"projectId": personalProject.ID,
 	})
-	assertInbox(t, client, baseURL, sessionCookie, false, []task.Task{moved, future})
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, false, []task.Task{moved, future})
 	archivedProject := updateProject(
 		t, client, baseURL, sessionCookie, renamedProject.ID,
 		map[string]any{"version": boardProject.Version, "archived": true},
@@ -327,8 +340,11 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	if archivedProject.ArchivedAt == nil || archivedProject.Version != 4 {
 		t.Errorf("archived project = %#v", archivedProject)
 	}
-	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{})
-	assertProjects(t, client, baseURL, sessionCookie, true, []project.Project{archivedProject})
+	assertProjects(t, client, baseURL, sessionCookie, false, []project.Project{personalProject})
+	assertProjects(
+		t, client, baseURL, sessionCookie, true,
+		[]project.Project{personalProject, archivedProject},
+	)
 
 	deleteTask(t, client, baseURL, sessionCookie, moved.ID, moved.Version)
 	deleteTask(t, client, baseURL, sessionCookie, future.ID, future.Version)
@@ -341,15 +357,12 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		sessionCookie,
 		http.StatusNotFound,
 	)
-	assertInbox(t, client, baseURL, sessionCookie, true, []task.Task{})
-	assertActivityTypes(t, client, baseURL, sessionCookie, map[string]int{
-		"task.created":      6,
-		"task.updated":      2,
-		"task.moved":        2,
-		"task.completed":    1,
-		"task.reopened":     1,
+	assertInbox(t, client, baseURL, sessionCookie, personalProject.ID, true, []task.Task{})
+	assertActivityTypes(t, client, baseURL, sessionCookie, renamedProject.ID, map[string]int{
+		"task.created":      4,
+		"task.moved":        1,
 		"task.reordered":    2,
-		"task.deleted":      6,
+		"task.deleted":      4,
 		"project.created":   1,
 		"project.updated":   2,
 		"project.archived":  1,
@@ -360,7 +373,7 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	})
 	runFakeAgentFlow(t, ctx, client, baseURL, databaseURL, "owner", sessionCookie)
 	if runnerAvailable {
-		runCompiledRunnerFlow(t, baseURL, sessionCookie)
+		runCompiledRunnerFlow(t, baseURL, sessionCookie, archivedProject.ID)
 	} else {
 		t.Log("compiled pi-runner is unavailable; skipping cross-component runner flow")
 	}
@@ -911,11 +924,12 @@ func assertCreateTaskStatus(
 	baseURL string,
 	cookie *http.Cookie,
 	title string,
+	projectID string,
 	want int,
 ) {
 	t.Helper()
 
-	response := sendTaskCreate(t, client, baseURL, cookie, title)
+	response := sendTaskCreate(t, client, baseURL, cookie, title, projectID)
 	defer closeResponse(t, response)
 	if response.StatusCode != want {
 		t.Fatalf("create task status = %d, want %d", response.StatusCode, want)
@@ -928,10 +942,11 @@ func createTask(
 	baseURL string,
 	cookie *http.Cookie,
 	title string,
+	projectID string,
 ) task.Task {
 	t.Helper()
 
-	response := sendTaskCreate(t, client, baseURL, cookie, title)
+	response := sendTaskCreate(t, client, baseURL, cookie, title, projectID)
 	defer closeResponse(t, response)
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("create task status = %d, want %d", response.StatusCode, http.StatusCreated)
@@ -946,11 +961,14 @@ func sendTaskCreate(
 	baseURL string,
 	cookie *http.Cookie,
 	title string,
+	projectID string,
 ) *http.Response {
 	t.Helper()
 
 	var body bytes.Buffer
-	if err := json.NewEncoder(&body).Encode(map[string]string{"title": title}); err != nil {
+	if err := json.NewEncoder(&body).Encode(map[string]string{
+		"title": title, "projectId": projectID,
+	}); err != nil {
 		t.Fatalf("encode task request: %v", err)
 	}
 	request, err := http.NewRequest(http.MethodPost, baseURL+"/api/tasks", &body)
@@ -1015,12 +1033,14 @@ func assertInbox(
 	client *http.Client,
 	baseURL string,
 	cookie *http.Cookie,
+	projectID string,
 	includeCompleted bool,
 	want []task.Task,
 ) {
 	t.Helper()
 
-	url := baseURL + "/api/views/inbox?include_completed=" + strconv.FormatBool(includeCompleted)
+	url := baseURL + "/api/views/projects/" + projectID +
+		"/inbox?include_completed=" + strconv.FormatBool(includeCompleted)
 	request, err := http.NewRequest(http.MethodGet, url, http.NoBody)
 	if err != nil {
 		t.Fatalf("create Inbox request: %v", err)
@@ -1056,12 +1076,14 @@ func assertAllTasks(
 	client *http.Client,
 	baseURL string,
 	cookie *http.Cookie,
+	projectID string,
 	includeCompleted bool,
 	want []task.Task,
 ) {
 	t.Helper()
 
-	endpoint := baseURL + "/api/views/all?include_completed=" + strconv.FormatBool(includeCompleted)
+	endpoint := baseURL + "/api/views/projects/" + projectID +
+		"/all?include_completed=" + strconv.FormatBool(includeCompleted)
 	request, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		t.Fatalf("create all tasks request: %v", err)
@@ -1097,13 +1119,15 @@ func assertToday(
 	client *http.Client,
 	baseURL string,
 	cookie *http.Cookie,
+	projectID string,
 	timezone string,
 	includeCompleted bool,
 	want []task.Task,
 ) {
 	t.Helper()
 
-	endpoint := baseURL + "/api/views/today?timezone=" + url.QueryEscape(timezone) +
+	endpoint := baseURL + "/api/views/projects/" + projectID +
+		"/today?timezone=" + url.QueryEscape(timezone) +
 		"&include_completed=" + strconv.FormatBool(includeCompleted)
 	request, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
@@ -1219,11 +1243,16 @@ func assertActivityTypes(
 	client *http.Client,
 	baseURL string,
 	cookie *http.Cookie,
+	projectID string,
 	want map[string]int,
 ) {
 	t.Helper()
 
-	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/activity/?limit=200", http.NoBody)
+	request, err := http.NewRequest(
+		http.MethodGet,
+		baseURL+"/api/activity/?project_id="+url.QueryEscape(projectID)+"&limit=200",
+		http.NoBody,
+	)
 	if err != nil {
 		t.Fatalf("create activity request: %v", err)
 	}
@@ -1312,10 +1341,18 @@ func runFakeAgentFlow(
 	); err != nil {
 		t.Fatalf("get fake agent user: %v", err)
 	}
+	var projectID string
+	if err := tokenDatabase.Connection().GetContext(
+		ctx, &projectID,
+		"SELECT id FROM projects WHERE user_id = $1 ORDER BY created_at, id LIMIT 1", userID,
+	); err != nil {
+		t.Fatalf("get fake agent project: %v", err)
+	}
 	issued, err := agentauth.NewService(agentauth.NewRepository(tokenDatabase.Connection())).Issue(
 		ctx,
 		agentauth.IssueRequest{
 			UserID:         userID,
+			ProjectID:      projectID,
 			AgentSessionID: "fake-session",
 			AgentRunID:     "fake-run",
 			AllowedTools: []agentauth.Tool{
@@ -1389,7 +1426,9 @@ func runFakeAgentFlow(
 		t.Errorf("fake agent completed task = %#v", completed)
 	}
 
-	assertAgentActivity(t, client, baseURL, cookie, "fake-session", "fake-run", created.ID)
+	assertAgentActivity(
+		t, client, baseURL, cookie, projectID, "fake-session", "fake-run", created.ID,
+	)
 }
 
 func assertAgentActivity(
@@ -1397,13 +1436,18 @@ func assertAgentActivity(
 	client *http.Client,
 	baseURL string,
 	cookie *http.Cookie,
+	projectID string,
 	sessionID string,
 	runID string,
 	taskID string,
 ) {
 	t.Helper()
 
-	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/activity/?limit=10", http.NoBody)
+	request, err := http.NewRequest(
+		http.MethodGet,
+		baseURL+"/api/activity/?project_id="+url.QueryEscape(projectID)+"&limit=10",
+		http.NoBody,
+	)
 	if err != nil {
 		t.Fatalf("create agent activity request: %v", err)
 	}
@@ -1464,6 +1508,7 @@ func runCompiledRunnerFlow(
 	t *testing.T,
 	baseURL string,
 	cookie *http.Cookie,
+	projectID string,
 ) {
 	t.Helper()
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -1479,7 +1524,7 @@ func runCompiledRunnerFlow(
 
 	response = sendJSONRequest(
 		t, client, http.MethodPost, baseURL+"/api/agent/sessions/"+session.ID+"/messages",
-		cookie, map[string]any{"message": "Plan the day"},
+		cookie, map[string]any{"projectId": projectID, "message": "Plan the day"},
 	)
 	defer closeResponse(t, response)
 	if response.StatusCode != http.StatusAccepted {

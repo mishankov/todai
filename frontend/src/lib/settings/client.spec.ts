@@ -48,6 +48,27 @@ describe('settings client', () => {
 			})
 		).rejects.toBeInstanceOf(SettingsConflictError);
 	});
+
+	it('normalizes missing model choices to empty lists', async () => {
+		const view = testSettingsView();
+		const fetcher = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						...view,
+						availableAgentModels: null,
+						availableAgentThinkingEfforts: null
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+				)
+		) as unknown as typeof fetch;
+
+		await expect(getSettings(fetcher)).resolves.toEqual({
+			...view,
+			availableAgentModels: [],
+			availableAgentThinkingEfforts: []
+		});
+	});
 });
 
 function testSettingsView(): SettingsView {

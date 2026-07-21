@@ -3,6 +3,7 @@ package task_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 	"time"
@@ -18,16 +19,83 @@ import (
 	"github.com/mishankov/todai/backend/internal/task"
 )
 
+func TestProjectRequirementMigrationBackfillsLegacyInbox(t *testing.T) {
+	db := taskRepositoryDatabase(t)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ALTER COLUMN project_id DROP NOT NULL`); err != nil {
+		t.Fatalf("allow legacy Inbox row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO tasks (
+			id, user_id, project_id, title, status, priority, position, version,
+			created_at, updated_at, last_modified_by
+		) VALUES (
+			'legacy-task', 'legacy-user', NULL, 'Legacy Inbox task', 'active', 0, 1024, 1,
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'legacy-user'
+		)
+	`); err != nil {
+		t.Fatalf("insert legacy Inbox task: %v", err)
+	}
+
+	repository := task.NewRepository(db, activity.NewRepository(db))
+	migration, err := fs.ReadFile(repository.Migrations(), "1784647301_require_task_project.sql")
+	if err != nil {
+		t.Fatalf("read project requirement migration: %v", err)
+	}
+	upSQL := strings.Split(string(migration), "-- +migrate Down")[0]
+	if _, err := db.ExecContext(ctx, upSQL); err != nil {
+		t.Fatalf("reapply project requirement migration: %v", err)
+	}
+
+	var projectID string
+	if err := db.GetContext(ctx, &projectID, `
+		SELECT project_id FROM tasks WHERE id = 'legacy-task'
+	`); err != nil {
+		t.Fatalf("read migrated task: %v", err)
+	}
+	var migratedProject project.Project
+	if err := db.GetContext(ctx, &migratedProject, `
+		SELECT id, user_id, name, layout, color_theme, agent_model, agent_thinking_effort,
+			position, version, archived_at, created_at, updated_at, last_modified_by
+		FROM projects WHERE id = $1
+	`, projectID); err != nil {
+		t.Fatalf("read generated personal project: %v", err)
+	}
+	if migratedProject.UserID != "legacy-user" || migratedProject.Name != "Personal" ||
+		migratedProject.ColorTheme != project.ColorThemeSage ||
+		migratedProject.AgentThinkingEffort != "medium" {
+		t.Errorf("generated personal project = %#v", migratedProject)
+	}
+	var projectRequired bool
+	if err := db.GetContext(ctx, &projectRequired, `
+		SELECT attnotnull
+		FROM pg_attribute
+		WHERE attrelid = 'tasks'::REGCLASS AND attname = 'project_id'
+	`); err != nil {
+		t.Fatalf("read project_id nullability: %v", err)
+	}
+	if !projectRequired {
+		t.Error("tasks.project_id remains nullable")
+	}
+}
+
 func TestCreateRollsBackTaskWhenActivityAppendFails(t *testing.T) {
 	db := taskRepositoryDatabase(t)
 	appendError := errors.New("append activity")
+	scope := execution.UserScope("user-id", "correlation-id")
+	createdProject, err := project.NewService(
+		project.NewRepository(db, activity.NewRepository(db)),
+	).Create(context.Background(), scope, "Work")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
 	repository := task.NewRepository(db, failingActivityAppender{err: appendError})
 
-	_, err := repository.Create(
+	_, err = repository.Create(
 		context.Background(),
-		execution.UserScope("user-id", "correlation-id"),
+		scope,
 		"Task that must roll back",
-		nil,
+		&createdProject.ID,
 		nil,
 		nil,
 	)
@@ -191,10 +259,15 @@ func TestRepositoryPersistsSubtasksCommentsAndHierarchyInvariants(t *testing.T) 
 		t.Errorf("other user list comments error = %v", err)
 	}
 
-	activityEvents, err := events.List(ctx, "user-id", 100)
+	activityEvents, err := events.List(ctx, "user-id", firstProject.ID, 100)
 	if err != nil {
 		t.Fatalf("list activity: %v", err)
 	}
+	secondProjectEvents, err := events.List(ctx, "user-id", secondProject.ID, 100)
+	if err != nil {
+		t.Fatalf("list moved-project activity: %v", err)
+	}
+	activityEvents = append(activityEvents, secondProjectEvents...)
 	wantTypes := map[string]bool{
 		"task.subtask.created": false,
 		"task.comment.created": false,

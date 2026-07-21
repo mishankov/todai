@@ -7,12 +7,14 @@
 	type Poll = typeof pollActivityChanges;
 
 	interface Props {
+		projectId?: string;
 		poll?: Poll;
 		refresh?: () => Promise<void>;
 		currentPath?: () => string;
 	}
 
 	let {
+		projectId = '',
 		poll = pollActivityChanges,
 		refresh = invalidateAll,
 		currentPath = () => window.location.pathname
@@ -31,12 +33,12 @@
 		let cursor: number | null = null;
 		while (!signal.aborted) {
 			try {
-				const changes = await poll(fetch, cursor, signal);
+				const changes = await poll(fetch, projectId, cursor, signal);
 				for (const event of changes.events) publishActivityEvent(event);
 				const shouldRefresh =
 					cursor === null ||
 					changes.events.some(
-						(event) => affectsApplicationData(event.type) || currentPath() === '/activity'
+						(event) => affectsApplicationData(event.type) || currentPath().endsWith('/activity')
 					);
 				if (shouldRefresh) await refresh();
 				cursor = changes.cursor;

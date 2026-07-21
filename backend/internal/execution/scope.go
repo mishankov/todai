@@ -38,11 +38,14 @@ var (
 	ErrCorrelationIDRequired = errors.New("execution correlation ID is required")
 	// ErrInvalidAgentRunID indicates an explicitly provided empty agent run identity.
 	ErrInvalidAgentRunID = errors.New("execution agent run ID is invalid")
+	// ErrInvalidProjectID indicates an explicitly provided empty project identity.
+	ErrInvalidProjectID = errors.New("execution project ID is invalid")
 )
 
 // Scope carries trusted authorization and attribution for one application operation.
 type Scope struct {
 	UserID        string
+	ProjectID     *string
 	ActorType     ActorType
 	ActorID       *string
 	Source        Source
@@ -89,6 +92,9 @@ func (s Scope) Validate() error {
 	}
 	if s.AgentRunID != nil && *s.AgentRunID == "" {
 		return ErrInvalidAgentRunID
+	}
+	if s.ProjectID != nil && *s.ProjectID == "" {
+		return ErrInvalidProjectID
 	}
 
 	return nil

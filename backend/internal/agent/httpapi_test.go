@@ -43,7 +43,7 @@ func TestAgentRoutesPassUserScopeAndReturnContracts(t *testing.T) {
 
 	posted := serveAgentRequest(
 		t, handler, http.MethodPost, "/agent/sessions/session-id/messages",
-		map[string]any{"message": "Triage inbox"}, nil,
+		map[string]any{"projectId": "project-id", "message": "Triage inbox"}, nil,
 	)
 	if posted.Code != http.StatusAccepted {
 		t.Fatalf("post status = %d, want %d; body = %q", posted.Code, http.StatusAccepted, posted.Body.String())
@@ -57,6 +57,7 @@ func TestAgentRoutesPassUserScopeAndReturnContracts(t *testing.T) {
 
 	started := serveAgentRequest(
 		t, handler, http.MethodPost, "/agent/runs", map[string]any{
+			"projectId": "project-id",
 			"context": map[string]any{
 				"type": "task", "taskId": "11111111-1111-4111-8111-111111111111",
 				"action": "decompose",
@@ -83,7 +84,10 @@ func TestAgentRoutesPassUserScopeAndReturnContracts(t *testing.T) {
 		t.Errorf("last stream offset = %d, want 7", conversation.LastStreamOffset)
 	}
 
-	aborted := serveAgentRequest(t, handler, http.MethodPost, "/agent/runs/run-id/abort", nil, nil)
+	aborted := serveAgentRequest(
+		t, handler, http.MethodPost, "/agent/runs/run-id/abort",
+		map[string]any{"projectId": "project-id"}, nil,
+	)
 	if aborted.Code != http.StatusOK || service.runID != "run-id" {
 		t.Errorf("abort status/run = %d/%q", aborted.Code, service.runID)
 	}
@@ -141,7 +145,9 @@ func TestContextRunEventStreamIsScopedToTheRun(t *testing.T) {
 	}}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest(http.MethodGet, "/agent/runs/context-run/events", nil).WithContext(ctx)
+	request := httptest.NewRequest(
+		http.MethodGet, "/agent/runs/context-run/events?projectId=project-id", nil,
+	).WithContext(ctx)
 	request.AddCookie(agentCookie())
 	response := newCancelOnFlushRecorder(cancel)
 	handler.ServeHTTP(response, request)
@@ -221,6 +227,7 @@ type fakeHTTPAgentService struct {
 	sessionID string
 	runID     string
 	message   string
+	projectID string
 	context   *agent.MessageContext
 	after     int64
 	limit     int
@@ -230,9 +237,11 @@ type fakeHTTPAgentService struct {
 func (s *fakeHTTPAgentService) StartContextRun(
 	_ context.Context,
 	scope execution.Scope,
+	projectID string,
 	messageContext agent.MessageContext,
 ) (agent.Run, error) {
 	s.scope = scope
+	s.projectID = projectID
 	s.context = &messageContext
 	return agent.Run{ID: "run-id", SessionID: "private-execution-id", Status: agent.RunStatusQueued}, nil
 }
@@ -255,10 +264,12 @@ func (s *fakeHTTPAgentService) GetSession(
 func (s *fakeHTTPAgentService) PostMessage(
 	_ context.Context,
 	scope execution.Scope,
+	projectID string,
 	sessionID string,
 	input agent.MessageInput,
 ) (agent.PostedMessage, error) {
 	s.scope = scope
+	s.projectID = projectID
 	s.sessionID = sessionID
 	s.message = input.Content
 	return agent.PostedMessage{
@@ -284,11 +295,13 @@ func (s *fakeHTTPAgentService) ListEvents(
 func (s *fakeHTTPAgentService) ListContextRunEvents(
 	_ context.Context,
 	userID string,
+	projectID string,
 	runID string,
 	after int64,
 	limit int,
 ) ([]agent.RunEvent, error) {
 	s.userID = userID
+	s.projectID = projectID
 	s.runID = runID
 	s.after = after
 	s.limit = limit
@@ -298,9 +311,11 @@ func (s *fakeHTTPAgentService) ListContextRunEvents(
 func (s *fakeHTTPAgentService) Abort(
 	_ context.Context,
 	scope execution.Scope,
+	projectID string,
 	runID string,
 ) (agent.Run, error) {
 	s.scope = scope
+	s.projectID = projectID
 	s.runID = runID
 	return agent.Run{ID: runID, Status: agent.RunStatusAborted}, nil
 }

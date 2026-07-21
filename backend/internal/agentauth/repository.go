@@ -41,10 +41,11 @@ func (r *Repository) Create(ctx context.Context, tokenHash []byte, claims Claims
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO agent_tokens (
-			token_hash, user_id, agent_session_id, agent_run_id, allowed_tools, expires_at
+			token_hash, user_id, project_id, agent_session_id, agent_run_id, allowed_tools, expires_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, tokenHash, claims.UserID, claims.AgentSessionID, claims.AgentRunID, pq.Array(tools), claims.ExpiresAt)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, tokenHash, claims.UserID, claims.ProjectID, claims.AgentSessionID, claims.AgentRunID,
+		pq.Array(tools), claims.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("insert agent token: %w", err)
 	}
@@ -56,13 +57,14 @@ func (r *Repository) Create(ctx context.Context, tokenHash []byte, claims Claims
 func (r *Repository) Get(ctx context.Context, tokenHash []byte) (Claims, error) {
 	var stored struct {
 		UserID         string         `db:"user_id"`
+		ProjectID      string         `db:"project_id"`
 		AgentSessionID string         `db:"agent_session_id"`
 		AgentRunID     string         `db:"agent_run_id"`
 		AllowedTools   pq.StringArray `db:"allowed_tools"`
 		ExpiresAt      time.Time      `db:"expires_at"`
 	}
 	if err := r.db.GetContext(ctx, &stored, `
-		SELECT user_id, agent_session_id, agent_run_id, allowed_tools, expires_at
+		SELECT user_id, project_id, agent_session_id, agent_run_id, allowed_tools, expires_at
 		FROM agent_tokens
 		WHERE token_hash = $1
 	`, tokenHash); errors.Is(err, sql.ErrNoRows) {
@@ -78,6 +80,7 @@ func (r *Repository) Get(ctx context.Context, tokenHash []byte) (Claims, error) 
 
 	return Claims{
 		UserID:         stored.UserID,
+		ProjectID:      stored.ProjectID,
 		AgentSessionID: stored.AgentSessionID,
 		AgentRunID:     stored.AgentRunID,
 		AllowedTools:   tools,

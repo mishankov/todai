@@ -13,9 +13,18 @@ type Domain struct {
 }
 
 // New constructs the project domain.
-func New(db *sqlx.DB, events *activity.Repository) *Domain {
+func New(
+	db *sqlx.DB,
+	events *activity.Repository,
+	defaultAgentModel string,
+	availableAgentModels []string,
+) *Domain {
 	repository := NewRepository(db, events)
-	return &Domain{Repository: repository, Service: NewService(repository)}
+	return &Domain{Repository: repository, Service: NewService(repository, ServiceConfig{
+		DefaultAgentModel:          defaultAgentModel,
+		AvailableAgentModels:       availableAgentModels,
+		DefaultAgentThinkingEffort: "medium",
+	})}
 }
 
 // GetRepository exposes the repository for Platforma migration registration.

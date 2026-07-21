@@ -13,6 +13,7 @@ type Event struct {
 	StreamOffset  int64               `db:"stream_offset" json:"streamOffset"`
 	ID            string              `db:"id" json:"id"`
 	UserID        *string             `db:"user_id" json:"-"`
+	ProjectID     *string             `db:"project_id" json:"projectId"`
 	Type          string              `db:"type" json:"type"`
 	OccurredAt    time.Time           `db:"occurred_at" json:"occurredAt"`
 	ActorType     execution.ActorType `db:"actor_type" json:"actorType"`
@@ -28,6 +29,7 @@ type Event struct {
 // NewEvent describes an event before persistence assigns its ID and occurrence time.
 type NewEvent struct {
 	Type          string
+	ProjectID     *string
 	AggregateType *string
 	AggregateID   *string
 	Payload       any

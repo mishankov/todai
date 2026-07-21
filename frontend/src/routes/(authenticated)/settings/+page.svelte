@@ -7,8 +7,6 @@
 	const initial = initialForm();
 	let current = $state(initial.settings);
 	let timezone = $state(initial.timezone);
-	let agentModel = $state(initial.agentModel);
-	let agentThinkingEffort = $state(initial.agentThinkingEffort);
 	let saving = $state(false);
 	let saved = $state(false);
 	let errorMessage = $state('');
@@ -21,8 +19,6 @@
 			if (next.version === current.version) return;
 			current = next;
 			timezone = next.timezone ?? detectedTimezone();
-			agentModel = next.agentModel;
-			agentThinkingEffort = next.agentThinkingEffort;
 			saved = false;
 		});
 	});
@@ -31,9 +27,7 @@
 		const settings = data.settings.settings;
 		return {
 			settings,
-			timezone: settings.timezone ?? detectedTimezone(),
-			agentModel: settings.agentModel,
-			agentThinkingEffort: settings.agentThinkingEffort
+			timezone: settings.timezone ?? detectedTimezone()
 		};
 	}
 
@@ -44,14 +38,12 @@
 		try {
 			const updated = await updateSettings(fetch, {
 				timezone,
-				agentModel,
-				agentThinkingEffort,
+				agentModel: current.agentModel,
+				agentThinkingEffort: current.agentThinkingEffort,
 				version: current.version
 			});
 			current = updated.settings;
 			timezone = updated.settings.timezone ?? timezone;
-			agentModel = updated.settings.agentModel;
-			agentThinkingEffort = updated.settings.agentThinkingEffort;
 			saved = true;
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Could not save settings.';
@@ -69,20 +61,6 @@
 		const values = intl.supportedValuesOf?.('timeZone') ?? ['UTC'];
 		return values.includes(currentTimezone) ? values : [currentTimezone, ...values];
 	}
-
-	function thinkingEffortLabel(effort: string): string {
-		return (
-			{
-				off: 'Off',
-				minimal: 'Minimal',
-				low: 'Low',
-				medium: 'Medium',
-				high: 'High',
-				xhigh: 'Extra high',
-				max: 'Maximum'
-			}[effort] ?? effort
-		);
-	}
 </script>
 
 <svelte:head>
@@ -93,7 +71,7 @@
 	<header>
 		<p>ACCOUNT</p>
 		<h1 id="settings-title">Settings</h1>
-		<span>Personal preferences used across Todai and by the built-in agent.</span>
+		<span>Personal preferences shared across all of your projects.</span>
 	</header>
 
 	<form
@@ -117,44 +95,10 @@
 			</label>
 		</section>
 
-		<section class="settings-group" aria-labelledby="agent-settings">
-			<div>
-				<h2 id="agent-settings">Agent</h2>
-				<p>
-					The model and reasoning depth are used for new messages. Pi limits effort to each model's
-					capabilities.
-				</p>
-			</div>
-			<div class="agent-controls">
-				<label>
-					<span>Model</span>
-					<select
-						bind:value={agentModel}
-						disabled={data.settings.availableAgentModels.length === 0}
-					>
-						{#each data.settings.availableAgentModels as model (model)}
-							<option value={model}>{model}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					<span>Thinking effort</span>
-					<select
-						bind:value={agentThinkingEffort}
-						disabled={data.settings.availableAgentThinkingEfforts.length === 0}
-					>
-						{#each data.settings.availableAgentThinkingEfforts as effort (effort)}
-							<option value={effort}>{thinkingEffortLabel(effort)}</option>
-						{/each}
-					</select>
-				</label>
-			</div>
-		</section>
-
 		<footer>
 			{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 			{#if saved}<p class="success" role="status">Settings saved.</p>{/if}
-			<button type="submit" disabled={saving || !timezone || !agentModel || !agentThinkingEffort}>
+			<button type="submit" disabled={saving || !timezone}>
 				{saving ? 'Saving…' : 'Save changes'}
 			</button>
 		</footer>
@@ -174,7 +118,7 @@
 
 	header p {
 		margin: 0 0 0.55rem;
-		color: #4f765c;
+		color: var(--theme-accent, #4f765c);
 		font-size: 0.75rem;
 		font-weight: 800;
 		letter-spacing: 0.12em;
@@ -226,11 +170,6 @@
 		font-weight: 750;
 	}
 
-	.agent-controls {
-		display: grid;
-		gap: 0.9rem;
-	}
-
 	select {
 		width: 100%;
 		min-height: 2.8rem;
@@ -238,14 +177,14 @@
 		border: 1px solid #cdd9ca;
 		border-radius: 0.55rem;
 		color: #292927;
-		background: #fbfcfa;
+		background: var(--theme-canvas, #fbfcfa);
 		font: inherit;
 		font-size: 0.88rem;
 	}
 
 	select:focus {
 		outline: 3px solid rgb(45 101 64 / 16%);
-		border-color: #4f765c;
+		border-color: var(--theme-accent, #4f765c);
 	}
 
 	footer {
@@ -265,7 +204,7 @@
 		color: #b83f34;
 	}
 	.success {
-		color: #2d6540;
+		color: var(--theme-accent, #2d6540);
 	}
 
 	button {
@@ -273,7 +212,7 @@
 		border: 0;
 		border-radius: 0.55rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 		font-weight: 750;
 		cursor: pointer;
 	}

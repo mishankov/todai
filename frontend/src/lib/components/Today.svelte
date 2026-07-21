@@ -10,9 +10,18 @@
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 		remove: (taskId: string, version: number) => Promise<void>;
 		projects?: Project[];
+		currentProjectId?: string;
 	}
 
-	let { initialTasks, complete, reopen, update, remove, projects = [] }: Props = $props();
+	let {
+		initialTasks,
+		complete,
+		reopen,
+		update,
+		remove,
+		projects = [],
+		currentProjectId
+	}: Props = $props();
 	const date = new Intl.DateTimeFormat(undefined, {
 		weekday: 'long',
 		month: 'long',
@@ -27,6 +36,7 @@
 	{update}
 	{remove}
 	{projects}
+	{currentProjectId}
 	eyebrow={date}
 	heading="Today"
 	countNoun="remaining"

@@ -1,13 +1,11 @@
-import { getProject, listProjectSections } from '$lib/projects/client';
-import { getProjectTasks } from '$lib/tasks/client';
+import { getProject } from '$lib/projects/client';
+import { getInbox } from '$lib/tasks/client';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ fetch, params, parent }) => {
-	const [{ projects }, project, sections, tasks] = await Promise.all([
-		parent(),
+export const load = (async ({ fetch, params }) => {
+	const [project, tasks] = await Promise.all([
 		getProject(fetch, params.id),
-		listProjectSections(fetch, params.id),
-		getProjectTasks(fetch, params.id, true)
+		getInbox(fetch, params.id, true)
 	]);
-	return { projects, project, sections, tasks };
+	return { project, tasks };
 }) satisfies PageLoad;

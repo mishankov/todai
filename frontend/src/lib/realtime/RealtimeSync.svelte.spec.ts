@@ -7,6 +7,7 @@ describe('RealtimeSync', () => {
 	it('refreshes application data after a task event', async () => {
 		let refreshes = 0;
 		render(RealtimeSync, {
+			projectId: 'project-id',
 			poll: changePoll(testEvent({ type: 'task.created' })),
 			refresh: async () => {
 				refreshes += 1;
@@ -20,6 +21,7 @@ describe('RealtimeSync', () => {
 	it('ignores agent lifecycle outside the activity page', async () => {
 		let refreshes = 0;
 		render(RealtimeSync, {
+			projectId: 'project-id',
 			poll: changePoll(testEvent({ type: 'agent.run.completed' })),
 			refresh: async () => {
 				refreshes += 1;
@@ -34,11 +36,12 @@ describe('RealtimeSync', () => {
 	it('refreshes the activity page for every event type', async () => {
 		let refreshes = 0;
 		render(RealtimeSync, {
+			projectId: 'project-id',
 			poll: changePoll(testEvent({ type: 'agent.run.completed' })),
 			refresh: async () => {
 				refreshes += 1;
 			},
-			currentPath: () => '/activity'
+			currentPath: () => '/projects/project-id/activity'
 		});
 
 		await vi.waitFor(() => expect(refreshes).toBe(2));
@@ -47,7 +50,12 @@ describe('RealtimeSync', () => {
 
 function changePoll(event: ActivityEvent) {
 	let calls = 0;
-	return async (_fetcher: typeof fetch, _after: number | null, signal: AbortSignal) => {
+	return async (
+		_fetcher: typeof fetch,
+		_projectId: string,
+		_after: number | null,
+		signal: AbortSignal
+	) => {
 		calls += 1;
 		if (calls === 1) return { cursor: 0, events: [] };
 		if (calls === 2) {

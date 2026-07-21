@@ -26,10 +26,10 @@ describe('agent client', () => {
 
 		await createAgentSession(fetcher);
 		await getAgentSession(fetcher, 'session/id');
-		await postAgentMessage(fetcher, 'session/id', {
+		await postAgentMessage(fetcher, 'project-id', 'session/id', {
 			message: 'Plan my day'
 		});
-		await abortAgentRun(fetcher, 'run/id');
+		await abortAgentRun(fetcher, 'project-id', 'run/id');
 
 		expect(fetcher).toHaveBeenNthCalledWith(
 			1,
@@ -46,13 +46,16 @@ describe('agent client', () => {
 			'/api/agent/sessions/session%2Fid/messages',
 			expect.objectContaining({
 				method: 'POST',
-				body: JSON.stringify({ message: 'Plan my day' })
+				body: JSON.stringify({ projectId: 'project-id', message: 'Plan my day' })
 			})
 		);
 		expect(fetcher).toHaveBeenNthCalledWith(
 			4,
 			'/api/agent/runs/run%2Fid/abort',
-			expect.objectContaining({ method: 'POST' })
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({ projectId: 'project-id' })
+			})
 		);
 	});
 
@@ -69,12 +72,19 @@ describe('agent client', () => {
 				})
 			);
 
-		await startAgentContextRun(fetcher, {
+		await startAgentContextRun(fetcher, 'project-id', {
 			type: 'task',
 			taskId: 'task-id',
 			action: 'decompose'
 		});
-		await streamAgentContextRunEvents(fetcher, run.id, 0, vi.fn(), new AbortController().signal);
+		await streamAgentContextRunEvents(
+			fetcher,
+			'project-id',
+			run.id,
+			0,
+			vi.fn(),
+			new AbortController().signal
+		);
 
 		expect(fetcher).toHaveBeenNthCalledWith(
 			1,
@@ -82,13 +92,14 @@ describe('agent client', () => {
 			expect.objectContaining({
 				method: 'POST',
 				body: JSON.stringify({
+					projectId: 'project-id',
 					context: { type: 'task', taskId: 'task-id', action: 'decompose' }
 				})
 			})
 		);
 		expect(fetcher).toHaveBeenNthCalledWith(
 			2,
-			'/api/agent/runs/run-id/events',
+			'/api/agent/runs/run-id/events?projectId=project-id',
 			expect.objectContaining({ headers: { Accept: 'text/event-stream' } })
 		);
 	});

@@ -43,7 +43,7 @@ export async function getSettings(fetcher: typeof fetch): Promise<SettingsView> 
 		headers: { Accept: 'application/json' }
 	});
 	if (!response.ok) throw new SettingsRequestError('Could not load settings.');
-	return (await response.json()) as SettingsView;
+	return normalizeSettingsView(await response.json());
 }
 
 export async function updateSettings(
@@ -58,5 +58,17 @@ export async function updateSettings(
 	});
 	if (response.status === 409) throw new SettingsConflictError();
 	if (!response.ok) throw new SettingsRequestError('Could not save settings.');
-	return (await response.json()) as SettingsView;
+	return normalizeSettingsView(await response.json());
+}
+
+function normalizeSettingsView(value: unknown): SettingsView {
+	const view = value as SettingsView & {
+		availableAgentModels: string[] | null;
+		availableAgentThinkingEfforts: AgentThinkingEffort[] | null;
+	};
+	return {
+		...view,
+		availableAgentModels: view.availableAgentModels ?? [],
+		availableAgentThinkingEfforts: view.availableAgentThinkingEfforts ?? []
+	};
 }

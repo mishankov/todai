@@ -24,9 +24,9 @@ const (
 
 // HTTPService describes the activity operations exposed over HTTP.
 type HTTPService interface {
-	List(context.Context, string, int) ([]Event, error)
-	LatestOffset(context.Context, string) (int64, error)
-	ListAfter(context.Context, string, int64, int) ([]Event, error)
+	List(context.Context, string, string, int) ([]Event, error)
+	LatestOffset(context.Context, string, string) (int64, error)
+	ListAfter(context.Context, string, string, int64, int) ([]Event, error)
 }
 
 // HTTPModule owns the activity domain's routes and handlers.
@@ -69,6 +69,11 @@ func (h activityHandlers) changes(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
 
 	rawCursor := strings.TrimSpace(r.URL.Query().Get("after"))
 	after, err := parseChangeCursor(rawCursor)
@@ -77,7 +82,7 @@ func (h activityHandlers) changes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rawCursor == "" {
-		after, err = h.service.LatestOffset(r.Context(), user.ID)
+		after, err = h.service.LatestOffset(r.Context(), user.ID, projectID)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -89,7 +94,7 @@ func (h activityHandlers) changes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := h.waitForChanges(r.Context(), user.ID, after)
+	events, err := h.waitForChanges(r.Context(), user.ID, projectID, after)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -105,7 +110,7 @@ func (h activityHandlers) changes(w http.ResponseWriter, r *http.Request) {
 
 func (h activityHandlers) waitForChanges(
 	ctx context.Context,
-	userID string,
+	userID, projectID string,
 	after int64,
 ) ([]Event, error) {
 	poll := time.NewTicker(changePollInterval)
@@ -113,7 +118,7 @@ func (h activityHandlers) waitForChanges(
 	defer poll.Stop()
 	defer timeout.Stop()
 	for {
-		events, err := h.service.ListAfter(ctx, userID, after, changePageSize)
+		events, err := h.service.ListAfter(ctx, userID, projectID, after, changePageSize)
 		if err != nil || len(events) > 0 {
 			return events, err
 		}
@@ -153,13 +158,18 @@ func (h activityHandlers) list(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
 
 	limit, err := parseLimit(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	events, err := h.service.List(r.Context(), user.ID, limit)
+	events, err := h.service.List(r.Context(), user.ID, projectID, limit)
 	if err != nil {
 		writeActivityError(w, r, err)
 		return

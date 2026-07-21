@@ -32,14 +32,14 @@ func TestActivityEndpointListsAuthenticatedUsersEvents(t *testing.T) {
 
 	handler, service := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
 	service.events = []activity.Event{{ID: "event-id", Type: "task.created"}}
-	request := httptest.NewRequest(http.MethodGet, "/activity?limit=12", nil)
+	request := httptest.NewRequest(http.MethodGet, "/activity?project_id=project-id&limit=12", nil)
 	request.AddCookie(activityCookie())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if service.userID != "user-id" || service.limit != 12 {
+	if service.userID != "user-id" || service.projectID != "project-id" || service.limit != 12 {
 		t.Errorf("List() arguments = (%q, %d), want (user-id, 12)", service.userID, service.limit)
 	}
 	var body struct {
@@ -57,7 +57,7 @@ func TestActivityEndpointUsesDefaultLimit(t *testing.T) {
 	t.Parallel()
 
 	handler, service := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
-	request := httptest.NewRequest(http.MethodGet, "/activity", nil)
+	request := httptest.NewRequest(http.MethodGet, "/activity?project_id=project-id", nil)
 	request.AddCookie(activityCookie())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -76,7 +76,7 @@ func TestActivityEndpointRejectsInvalidLimits(t *testing.T) {
 		t.Run(limit, func(t *testing.T) {
 			t.Parallel()
 			handler, _ := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
-			request := httptest.NewRequest(http.MethodGet, "/activity?limit="+limit, nil)
+			request := httptest.NewRequest(http.MethodGet, "/activity?project_id=project-id&limit="+limit, nil)
 			request.AddCookie(activityCookie())
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -92,7 +92,7 @@ func TestActivityChangesReturnEventsAfterCursor(t *testing.T) {
 
 	handler, service := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
 	service.events = []activity.Event{{StreamOffset: 8, ID: "event-id", Type: "task.created"}}
-	request := httptest.NewRequest(http.MethodGet, "/activity/changes?after=7", nil)
+	request := httptest.NewRequest(http.MethodGet, "/activity/changes?project_id=project-id&after=7", nil)
 	request.AddCookie(activityCookie())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -100,7 +100,7 @@ func TestActivityChangesReturnEventsAfterCursor(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if service.userID != "user-id" || service.after != 7 || service.limit != 100 {
+	if service.userID != "user-id" || service.projectID != "project-id" || service.after != 7 || service.limit != 100 {
 		t.Errorf("ListAfter() = user %q after %d limit %d", service.userID, service.after, service.limit)
 	}
 	var body struct {
@@ -120,7 +120,7 @@ func TestActivityChangesStartAtLatestOffset(t *testing.T) {
 
 	handler, service := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
 	service.latestOffset = 42
-	request := httptest.NewRequest(http.MethodGet, "/activity/changes", nil)
+	request := httptest.NewRequest(http.MethodGet, "/activity/changes?project_id=project-id", nil)
 	request.AddCookie(activityCookie())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -141,7 +141,7 @@ func TestActivityChangesRejectInvalidCursor(t *testing.T) {
 	t.Parallel()
 
 	handler, _ := testActivityAPI(&auth.User{ID: "user-id", Username: "owner"})
-	request := httptest.NewRequest(http.MethodGet, "/activity/changes?after=invalid", nil)
+	request := httptest.NewRequest(http.MethodGet, "/activity/changes?project_id=project-id&after=invalid", nil)
 	request.AddCookie(activityCookie())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -173,31 +173,35 @@ func activityCookie() *http.Cookie {
 
 type fakeActivityService struct {
 	userID       string
+	projectID    string
 	limit        int
 	after        int64
 	latestOffset int64
 	events       []activity.Event
 }
 
-func (s *fakeActivityService) LatestOffset(_ context.Context, userID string) (int64, error) {
+func (s *fakeActivityService) LatestOffset(_ context.Context, userID, projectID string) (int64, error) {
 	s.userID = userID
+	s.projectID = projectID
 	return s.latestOffset, nil
 }
 
 func (s *fakeActivityService) ListAfter(
 	_ context.Context,
-	userID string,
+	userID, projectID string,
 	after int64,
 	limit int,
 ) ([]activity.Event, error) {
 	s.userID = userID
+	s.projectID = projectID
 	s.after = after
 	s.limit = limit
 	return s.events, nil
 }
 
-func (s *fakeActivityService) List(_ context.Context, userID string, limit int) ([]activity.Event, error) {
+func (s *fakeActivityService) List(_ context.Context, userID, projectID string, limit int) ([]activity.Event, error) {
 	s.userID = userID
+	s.projectID = projectID
 	s.limit = limit
 	return s.events, nil
 }

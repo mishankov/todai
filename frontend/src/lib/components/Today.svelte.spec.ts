@@ -27,7 +27,7 @@ describe('Today', () => {
 function testTask(overrides: Partial<TaskSummary> = {}): TaskSummary {
 	return {
 		id: 'task-id',
-		projectId: null,
+		projectId: 'project-id',
 		sectionId: null,
 		parentId: null,
 		title: 'Task',
