@@ -32,6 +32,7 @@ func TestEndpointsRequireSession(t *testing.T) {
 		httptest.NewRequest(http.MethodPost, "/tasks/task-id/comments", nil),
 		httptest.NewRequest(http.MethodPatch, "/tasks/task-id/comments/comment-id", nil),
 		httptest.NewRequest(http.MethodDelete, "/tasks/task-id/comments/comment-id", nil),
+		httptest.NewRequest(http.MethodGet, "/tasks/search?query=milk&project_id=project-id", nil),
 		httptest.NewRequest(http.MethodGet, "/views/projects/project-id/all", nil),
 		httptest.NewRequest(http.MethodGet, "/views/projects/project-id/inbox", nil),
 		httptest.NewRequest(http.MethodGet, "/views/projects/project-id/today?timezone=UTC", nil),
@@ -48,6 +49,57 @@ func TestEndpointsRequireSession(t *testing.T) {
 				http.StatusUnauthorized,
 			)
 		}
+	}
+}
+
+func TestTaskSearchRequiresProjectQueryAndValidFilters(t *testing.T) {
+	t.Parallel()
+
+	service := &searchRecordingTaskService{}
+	handler := testAPIWithService(&auth.User{ID: "user-id", Username: "owner"}, service)
+
+	response := serveJSON(
+		t, handler, http.MethodGet,
+		"/tasks/search?query=%20milk%20&project_id=project-id&status=completed&limit=7",
+		nil, authenticatedCookie(),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("search status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if service.userID != "user-id" || service.query.Query != " milk " ||
+		service.query.ProjectID == nil || *service.query.ProjectID != "project-id" ||
+		service.query.Status == nil || *service.query.Status != task.StatusCompleted ||
+		service.query.Limit != 7 {
+		t.Errorf("search arguments = (%q, %#v)", service.userID, service.query)
+	}
+
+	for _, path := range []string{
+		"/tasks/search?query=milk",
+		"/tasks/search?query=milk&project_id=%20",
+		"/tasks/search?query=&project_id=project-id",
+		"/tasks/search?query=milk&query=tea&project_id=project-id",
+		"/tasks/search?query=milk&project_id=project-id&status=waiting",
+		"/tasks/search?query=milk&project_id=project-id&limit=101",
+		"/tasks/search?query=milk&project_id=project-id&limit=many",
+	} {
+		response = serveJSON(t, handler, http.MethodGet, path, nil, authenticatedCookie())
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("GET %s status = %d, want %d", path, response.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+func TestTaskSearchMapsUnavailableProjectToNotFound(t *testing.T) {
+	t.Parallel()
+
+	service := &searchRecordingTaskService{err: task.ErrProjectNotFound}
+	handler := testAPIWithService(&auth.User{ID: "user-id", Username: "owner"}, service)
+	response := serveJSON(
+		t, handler, http.MethodGet,
+		"/tasks/search?query=milk&project_id=archived-project", nil, authenticatedCookie(),
+	)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("search status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }
 
@@ -517,6 +569,10 @@ func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
 }
 
+func (fakeTaskService) Search(context.Context, string, task.SearchQuery) ([]task.Task, error) {
+	return []task.Task{}, nil
+}
+
 func (fakeTaskService) ListInbox(context.Context, string, string, bool) ([]task.TaskSummary, error) {
 	return []task.TaskSummary{}, nil
 }
@@ -569,6 +625,27 @@ type scopeRecordingTaskService struct {
 type viewRecordingTaskService struct {
 	fakeTaskService
 	projectIDs int
+}
+
+type searchRecordingTaskService struct {
+	fakeTaskService
+	userID string
+	query  task.SearchQuery
+	err    error
+}
+
+func (s *searchRecordingTaskService) Search(
+	_ context.Context, userID string, query task.SearchQuery,
+) ([]task.Task, error) {
+	s.userID = userID
+	s.query = query
+	if query.Limit < 1 || query.Limit > 100 {
+		return nil, task.ErrInvalidSearchLimit
+	}
+	if query.Status != nil && *query.Status != task.StatusActive && *query.Status != task.StatusCompleted {
+		return nil, task.ErrInvalidSearchStatus
+	}
+	return []task.Task{}, s.err
 }
 
 func (s *viewRecordingTaskService) ListInbox(

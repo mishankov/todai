@@ -112,6 +112,104 @@ func TestCreateRollsBackTaskWhenActivityAppendFails(t *testing.T) {
 	}
 }
 
+func TestSearchScopesTextStatusAndLimitToActiveUserProject(t *testing.T) {
+	db := taskRepositoryDatabase(t)
+	ctx := context.Background()
+	events := activity.NewRepository(db)
+	repository := task.NewRepository(db, events)
+	projects := project.NewService(project.NewRepository(db, events))
+	userScope := execution.UserScope("user-id", "search-test")
+	otherScope := execution.UserScope("other-user", "search-test-other")
+
+	work, err := projects.Create(ctx, userScope, "Work")
+	if err != nil {
+		t.Fatalf("create Work project: %v", err)
+	}
+	personal, err := projects.Create(ctx, userScope, "Personal")
+	if err != nil {
+		t.Fatalf("create Personal project: %v", err)
+	}
+	other, err := projects.Create(ctx, otherScope, "Other")
+	if err != nil {
+		t.Fatalf("create other user's project: %v", err)
+	}
+
+	active, err := repository.Create(ctx, userScope, "Milk plan", &work.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("create active task: %v", err)
+	}
+	descriptionTask, err := repository.Create(ctx, userScope, "Groceries", &work.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("create description task: %v", err)
+	}
+	description := "Remember MILK"
+	descriptionTask, err = repository.Update(ctx, userScope, descriptionTask.ID, task.Update{
+		Version:     descriptionTask.Version,
+		Description: &task.Nullable[string]{Value: &description},
+	})
+	if err != nil {
+		t.Fatalf("describe task: %v", err)
+	}
+	completed, err := repository.Create(ctx, userScope, "Milk receipt", &work.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("create completed task: %v", err)
+	}
+	completed, err = repository.Complete(ctx, userScope, completed.ID, completed.Version)
+	if err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+	if _, err := repository.Create(ctx, userScope, "Milk elsewhere", &personal.ID, nil, nil); err != nil {
+		t.Fatalf("create other-project task: %v", err)
+	}
+	if _, err := repository.Create(ctx, otherScope, "Milk secret", &other.ID, nil, nil); err != nil {
+		t.Fatalf("create other-user task: %v", err)
+	}
+	if _, err := repository.Create(ctx, userScope, "Milk child", nil, nil, &active.ID); err != nil {
+		t.Fatalf("create matching subtask: %v", err)
+	}
+
+	results, err := repository.Search(ctx, "user-id", task.SearchQuery{
+		Query: "milk", ProjectID: &work.ID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("search Work: %v", err)
+	}
+	if len(results) != 3 || results[0].Status != task.StatusActive ||
+		results[1].Status != task.StatusActive || results[2].ID != completed.ID ||
+		!containsTaskIDs(results[:2], active.ID, descriptionTask.ID) {
+		t.Errorf("search results = %#v", results)
+	}
+
+	status := task.StatusCompleted
+	results, err = repository.Search(ctx, "user-id", task.SearchQuery{
+		Query: "milk", ProjectID: &work.ID, Status: &status, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("search completed: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != completed.ID {
+		t.Errorf("completed results = %#v", results)
+	}
+
+	missing := "missing-project"
+	if _, err := repository.Search(ctx, "user-id", task.SearchQuery{
+		Query: "milk", ProjectID: &missing, Limit: 10,
+	}); !errors.Is(err, task.ErrProjectNotFound) {
+		t.Fatalf("missing project error = %v, want %v", err, task.ErrProjectNotFound)
+	}
+	archived := true
+	if _, err := projects.Update(ctx, userScope, personal.ID, project.Update{
+		Version: personal.Version, Archived: &archived,
+	}); err != nil {
+		t.Fatalf("archive project: %v", err)
+	}
+	if _, err := repository.Search(ctx, "user-id", task.SearchQuery{
+		Query: "milk", ProjectID: &personal.ID, Limit: 10,
+	}); !errors.Is(err, task.ErrProjectNotFound) {
+		t.Fatalf("archived project error = %v, want %v", err, task.ErrProjectNotFound)
+	}
+}
+
 func TestRepositoryPersistsSubtasksCommentsAndHierarchyInvariants(t *testing.T) {
 	db := taskRepositoryDatabase(t)
 	ctx := context.Background()
@@ -289,6 +387,19 @@ func TestRepositoryPersistsSubtasksCommentsAndHierarchyInvariants(t *testing.T) 
 			t.Errorf("activity event %q not found", eventType)
 		}
 	}
+}
+
+func containsTaskIDs(tasks []task.Task, ids ...string) bool {
+	found := make(map[string]bool, len(tasks))
+	for _, item := range tasks {
+		found[item.ID] = true
+	}
+	for _, id := range ids {
+		if !found[id] {
+			return false
+		}
+	}
+	return true
 }
 
 func findTaskSummary(t *testing.T, summaries []task.TaskSummary, taskID string) task.TaskSummary {

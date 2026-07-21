@@ -1,4 +1,5 @@
-export type ShortcutCommandId =
+export type ProductCommandId =
+	| 'command-palette'
 	| 'quick-add'
 	| 'toggle-chat'
 	| 'project-overview'
@@ -7,91 +8,135 @@ export type ShortcutCommandId =
 	| 'project-tasks'
 	| 'project-activity'
 	| 'project-settings'
+	| 'manage-projects'
+	| 'account-settings'
 	| 'toggle-help';
 
-export interface ShortcutCommand {
-	id: ShortcutCommandId;
-	label: string;
-	description: string;
+export interface CommandShortcut {
 	code: string;
 	keyLabel: string;
-	scope: 'global' | 'project';
 }
 
-export const shortcutCommands: readonly ShortcutCommand[] = [
+export interface ProductCommand {
+	id: ProductCommandId;
+	label: string;
+	description: string;
+	aliases: readonly string[];
+	scope: 'global' | 'project';
+	shortcut?: CommandShortcut;
+}
+
+export interface ShortcutCommand extends ProductCommand {
+	shortcut: CommandShortcut;
+	code: string;
+	keyLabel: string;
+}
+
+export const commandRegistry: readonly ProductCommand[] = [
+	{
+		id: 'command-palette',
+		label: 'Command palette',
+		description: 'Search actions, projects, and tasks',
+		aliases: ['search', 'jump', 'go to'],
+		scope: 'global',
+		shortcut: { code: 'KeyK', keyLabel: 'K' }
+	},
 	{
 		id: 'quick-add',
 		label: 'Quick add',
 		description: 'Create a task from anywhere in the active project',
-		code: 'KeyN',
-		keyLabel: 'N',
-		scope: 'project'
+		aliases: ['create task', 'new task'],
+		scope: 'project',
+		shortcut: { code: 'KeyN', keyLabel: 'N' }
 	},
 	{
 		id: 'toggle-chat',
 		label: 'Assistant',
 		description: 'Open or close the active project assistant',
-		code: 'KeyJ',
-		keyLabel: 'J',
-		scope: 'project'
+		aliases: ['chat', 'agent'],
+		scope: 'project',
+		shortcut: { code: 'KeyJ', keyLabel: 'J' }
 	},
 	{
 		id: 'project-overview',
 		label: 'Project overview',
 		description: 'Open the active project overview',
-		code: 'Digit1',
-		keyLabel: '1',
-		scope: 'project'
+		aliases: ['overview', 'dashboard'],
+		scope: 'project',
+		shortcut: { code: 'Digit1', keyLabel: '1' }
 	},
 	{
 		id: 'project-inbox',
 		label: 'Inbox',
 		description: 'Open the active project Inbox',
-		code: 'Digit2',
-		keyLabel: '2',
-		scope: 'project'
+		aliases: ['unsorted'],
+		scope: 'project',
+		shortcut: { code: 'Digit2', keyLabel: '2' }
 	},
 	{
 		id: 'project-today',
 		label: 'Today',
 		description: 'Open the active project Today view',
-		code: 'Digit3',
-		keyLabel: '3',
-		scope: 'project'
+		aliases: ['due today'],
+		scope: 'project',
+		shortcut: { code: 'Digit3', keyLabel: '3' }
 	},
 	{
 		id: 'project-tasks',
 		label: 'Tasks',
 		description: 'Open all tasks in the active project',
-		code: 'Digit4',
-		keyLabel: '4',
-		scope: 'project'
+		aliases: ['all tasks'],
+		scope: 'project',
+		shortcut: { code: 'Digit4', keyLabel: '4' }
 	},
 	{
 		id: 'project-activity',
 		label: 'Activity',
 		description: 'Open the active project activity feed',
-		code: 'Digit5',
-		keyLabel: '5',
-		scope: 'project'
+		aliases: ['history', 'events'],
+		scope: 'project',
+		shortcut: { code: 'Digit5', keyLabel: '5' }
 	},
 	{
 		id: 'project-settings',
 		label: 'Project settings',
-		description: 'Open the active project settings',
-		code: 'Digit6',
-		keyLabel: '6',
-		scope: 'project'
+		description: 'Configure the active project',
+		aliases: ['workspace settings'],
+		scope: 'project',
+		shortcut: { code: 'Digit6', keyLabel: '6' }
+	},
+	{
+		id: 'manage-projects',
+		label: 'Manage projects',
+		description: 'Create, organize, or archive projects',
+		aliases: ['projects', 'workspaces'],
+		scope: 'global'
+	},
+	{
+		id: 'account-settings',
+		label: 'Account settings',
+		description: 'Configure your account and agent defaults',
+		aliases: ['settings', 'profile'],
+		scope: 'global'
 	},
 	{
 		id: 'toggle-help',
 		label: 'Keyboard shortcuts',
-		description: 'Open or close this keyboard shortcut reference',
-		code: 'Slash',
-		keyLabel: '/',
-		scope: 'global'
+		description: 'Open or close the keyboard shortcut reference',
+		aliases: ['help', 'hotkeys'],
+		scope: 'global',
+		shortcut: { code: 'Slash', keyLabel: '/' }
 	}
 ];
+
+export const shortcutCommands: readonly ShortcutCommand[] = commandRegistry
+	.filter((command) => command.shortcut !== undefined)
+	.map((command) => ({
+		...command,
+		shortcut: command.shortcut!,
+		code: command.shortcut!.code,
+		keyLabel: command.shortcut!.keyLabel
+	}));
 
 export function isApplePlatform(platform: string): boolean {
 	return /Mac|iPhone|iPad|iPod/i.test(platform);
@@ -136,8 +181,8 @@ export function findShortcutCommand(
 	return shortcutCommands.find((command) => matchesShortcut(event, command, applePlatform));
 }
 
-export function shortcutCommand(id: ShortcutCommandId): ShortcutCommand {
+export function shortcutCommand(id: ProductCommandId): ShortcutCommand {
 	const command = shortcutCommands.find((candidate) => candidate.id === id);
-	if (!command) throw new Error(`Unknown shortcut command: ${id}`);
+	if (!command) throw new Error(`Command has no shortcut: ${id}`);
 	return command;
 }

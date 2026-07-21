@@ -31,6 +31,11 @@ describe('AppShell', () => {
 		await expect
 			.element(page.getByRole('button', { name: /Create task \((Cmd|Ctrl) \+ N\)/ }))
 			.toHaveAttribute('title', expect.stringMatching(/Create task \((Cmd|Ctrl) \+ N\)/));
+		await expect
+			.element(
+				page.getByRole('button', { name: /Open command palette \((Cmd|Ctrl) \+ K\)/ }).first()
+			)
+			.toHaveAttribute('aria-keyshortcuts', expect.stringMatching(/(Meta|Control)\+K/));
 		await expect.element(page.getByRole('link', { name: 'Sections' })).not.toBeInTheDocument();
 		await expect.element(page.getByText('Organize', { exact: true })).not.toBeInTheDocument();
 	});

@@ -1,24 +1,27 @@
 <script lang="ts">
-	/* Shortcut destinations are assembled from the active project and fixed registered suffixes. */
+	/* Shortcut destinations are assembled from the active project and registered commands. */
 	/* eslint-disable svelte/no-navigation-without-resolve */
-	import { goto, invalidateAll } from '$app/navigation';
 	import { browser } from '$app/environment';
+	import { goto, invalidateAll } from '$app/navigation';
+	import TaskEditorModal from '$lib/components/TaskEditorModal.svelte';
+	import CommandPalette from '$lib/palette/CommandPalette.svelte';
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { listProjectSections } from '$lib/projects/client';
+	import { rememberedProjectPath } from '$lib/projects/navigation';
 	import type { Task, TaskUpdate } from '$lib/tasks/client';
 	import {
 		createTask as createTaskRequest,
 		updateTask as updateTaskRequest
 	} from '$lib/tasks/client';
 	import { onMount, tick } from 'svelte';
-	import { quickAddRequestEvent, requestChatToggle } from './events';
+	import { commandPaletteRequestEvent, quickAddRequestEvent, requestChatToggle } from './events';
 	import QuickAddDialog from './QuickAddDialog.svelte';
 	import {
 		findShortcutCommand,
 		formatShortcut,
 		isApplePlatform,
 		shortcutCommand,
-		type ShortcutCommand
+		type ProductCommand
 	} from './registry';
 	import ShortcutHelp from './ShortcutHelp.svelte';
 
@@ -47,14 +50,22 @@
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
 	let quickAddOpen = $state(false);
 	let helpOpen = $state(false);
+	let paletteOpen = $state(false);
+	let editingTask = $state<Task | undefined>();
+	let editingSections = $state<ProjectSection[] | undefined>();
 	let focusRequest = $state(0);
 	let previousFocus: HTMLElement | null = null;
 
 	onMount(() => {
 		applePlatform = isApplePlatform(window.navigator.platform);
 		const openQuickAdd = () => requestQuickAdd();
+		const openPalette = () => requestPalette();
 		window.addEventListener(quickAddRequestEvent, openQuickAdd);
-		return () => window.removeEventListener(quickAddRequestEvent, openQuickAdd);
+		window.addEventListener(commandPaletteRequestEvent, openPalette);
+		return () => {
+			window.removeEventListener(quickAddRequestEvent, openQuickAdd);
+			window.removeEventListener(commandPaletteRequestEvent, openPalette);
+		};
 	});
 
 	function handleWindowKeydown(event: KeyboardEvent) {
@@ -68,37 +79,69 @@
 
 		const command = findShortcutCommand(event, applePlatform);
 		if (!command || (command.scope === 'project' && !activeProject)) return;
+		if (paletteOpen && command.id !== 'command-palette') return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		void runCommand(command);
 	}
 
-	async function runCommand(command: ShortcutCommand) {
+	async function runCommand(command: ProductCommand) {
 		switch (command.id) {
+			case 'command-palette':
+				togglePalette();
+				return;
 			case 'quick-add':
 				requestQuickAdd();
 				return;
 			case 'toggle-chat':
+				previousFocus = null;
 				requestChatToggle();
 				return;
 			case 'toggle-help':
 				toggleHelp();
 				return;
+			case 'manage-projects':
+				previousFocus = null;
+				await navigate('/projects');
+				return;
+			case 'account-settings':
+				previousFocus = null;
+				await navigate('/settings');
+				return;
 		}
 
 		if (!activeProject) return;
-		const suffix: Record<ShortcutCommand['id'], string> = {
-			'quick-add': '',
-			'toggle-chat': '',
+		const suffix: Partial<Record<ProductCommand['id'], string>> = {
 			'project-overview': '/overview',
 			'project-inbox': '',
 			'project-today': '/today',
 			'project-tasks': '/tasks',
 			'project-activity': '/activity',
-			'project-settings': '/settings',
-			'toggle-help': ''
+			'project-settings': '/settings'
 		};
-		await navigate(`/projects/${encodeURIComponent(activeProject.id)}${suffix[command.id]}`);
+		previousFocus = null;
+		await navigate(`/projects/${encodeURIComponent(activeProject.id)}${suffix[command.id] ?? ''}`);
+	}
+
+	function requestPalette() {
+		if (
+			paletteOpen ||
+			document.querySelector('[role="dialog"][aria-modal="true"]') ||
+			document.querySelector('[role="listbox"]')
+		)
+			return;
+		captureFocus();
+		paletteOpen = true;
+	}
+
+	function togglePalette() {
+		if (paletteOpen) closePalette();
+		else requestPalette();
+	}
+
+	function closePalette(restore = true) {
+		paletteOpen = false;
+		if (restore) void restoreFocus();
 	}
 
 	function requestQuickAdd() {
@@ -107,7 +150,7 @@
 			focusRequest += 1;
 			return;
 		}
-		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		captureFocus();
 		quickAddOpen = true;
 	}
 
@@ -121,13 +164,19 @@
 			closeHelp();
 			return;
 		}
-		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		captureFocus();
 		helpOpen = true;
 	}
 
 	function closeHelp() {
 		helpOpen = false;
 		void restoreFocus();
+	}
+
+	function captureFocus() {
+		if (!previousFocus) {
+			previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		}
 	}
 
 	async function restoreFocus() {
@@ -143,6 +192,29 @@
 		await restoreFocus();
 	}
 
+	async function switchFromPalette(project: Project) {
+		previousFocus = null;
+		await navigate(rememberedProjectPath(project.id));
+	}
+
+	function openTaskFromPalette(task: Task, sections?: ProjectSection[]) {
+		editingSections = sections;
+		editingTask = task;
+	}
+
+	async function savePaletteTask(changes: TaskUpdate) {
+		if (!editingTask) return;
+		await updateTask(editingTask.id, changes);
+		editingTask = undefined;
+		await refresh();
+		await restoreFocus();
+	}
+
+	function closePaletteTask() {
+		editingTask = undefined;
+		void restoreFocus();
+	}
+
 	let quickAddLabel = $derived(formatShortcut(shortcutCommand('quick-add'), applePlatform));
 	let activeSectionId = $derived(sectionFromPath(currentPath));
 
@@ -153,6 +225,19 @@
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
+
+{#if paletteOpen}
+	<CommandPalette
+		{projects}
+		{activeProject}
+		{applePlatform}
+		{loadSections}
+		close={closePalette}
+		executeCommand={runCommand}
+		switchProject={switchFromPalette}
+		selectTask={openTaskFromPalette}
+	/>
+{/if}
 
 {#if quickAddOpen && activeProject}
 	<QuickAddDialog
@@ -171,4 +256,15 @@
 
 {#if helpOpen}
 	<ShortcutHelp {applePlatform} close={closeHelp} />
+{/if}
+
+{#if editingTask}
+	<TaskEditorModal
+		task={editingTask}
+		{projects}
+		sections={editingSections}
+		currentProjectId={activeProject?.id}
+		save={savePaletteTask}
+		close={closePaletteTask}
+	/>
 {/if}

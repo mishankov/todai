@@ -5,7 +5,8 @@
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
 	import type { Project, ProjectColorTheme } from '$lib/projects/client';
-	import { quickAddRequestEvent } from '$lib/shortcuts/events';
+	import { recordProjectPath, rememberedProjectPath } from '$lib/projects/navigation';
+	import { commandPaletteRequestEvent, quickAddRequestEvent } from '$lib/shortcuts/events';
 	import {
 		ariaShortcut,
 		formatShortcut,
@@ -39,6 +40,8 @@
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
 	let quickAddCommand = shortcutCommand('quick-add');
 	let quickAddLabel = $derived(formatShortcut(quickAddCommand, applePlatform));
+	let paletteCommand = shortcutCommand('command-palette');
+	let paletteLabel = $derived(formatShortcut(paletteCommand, applePlatform));
 
 	$effect(() => {
 		if (browser) applePlatform = isApplePlatform(window.navigator.platform);
@@ -47,8 +50,7 @@
 	$effect(() => {
 		if (!browser || !activeProject || !currentPath.startsWith(`/projects/${activeProject.id}`))
 			return;
-		window.localStorage.setItem(lastProjectKey, activeProject.id);
-		window.localStorage.setItem(lastViewKey(activeProject.id), currentPath);
+		recordProjectPath(activeProject.id, currentPath);
 	});
 
 	async function signOut() {
@@ -65,11 +67,8 @@
 	async function switchProject(event: Event) {
 		const projectId = (event.currentTarget as HTMLSelectElement).value;
 		if (!projectId || projectId === activeProject?.id) return;
-		const remembered = browser ? window.localStorage.getItem(lastViewKey(projectId)) : null;
-		const prefix = `/projects/${projectId}`;
-		const suffix = remembered?.startsWith(prefix) ? remembered.slice(prefix.length) : '';
 		sidebarOpen = false;
-		await goto(projectHref(projectId, isProjectViewSuffix(suffix) ? suffix : ''));
+		await goto(rememberedProjectPath(projectId));
 	}
 
 	function projectHref(projectId: string, suffix: ProjectViewSuffix = ''): string {
@@ -90,10 +89,6 @@
 		}
 	}
 
-	function isProjectViewSuffix(value: string): value is ProjectViewSuffix {
-		return ['', '/overview', '/today', '/tasks', '/activity', '/settings'].includes(value);
-	}
-
 	function isActive(suffix = ''): boolean {
 		return Boolean(activeProject && currentPath === `${projectBase}${suffix}`);
 	}
@@ -106,11 +101,12 @@
 		window.dispatchEvent(new CustomEvent(quickAddRequestEvent));
 	}
 
-	const lastProjectKey = 'todai.last-project-id';
-	type ProjectViewSuffix = '' | '/overview' | '/today' | '/tasks' | '/activity' | '/settings';
-	function lastViewKey(projectId: string): string {
-		return `todai.project.${projectId}.last-view`;
+	function openCommandPalette() {
+		sidebarOpen = false;
+		window.dispatchEvent(new CustomEvent(commandPaletteRequestEvent));
 	}
+
+	type ProjectViewSuffix = '' | '/overview' | '/today' | '/tasks' | '/activity' | '/settings';
 </script>
 
 <main class={`shell theme-${theme}`}>
@@ -149,6 +145,20 @@
 				{/each}
 			</select>
 		</div>
+
+		<button
+			class="global-command-palette"
+			type="button"
+			title={`Open command palette (${paletteLabel})`}
+			aria-label={`Open command palette (${paletteLabel})`}
+			aria-keyshortcuts={ariaShortcut(paletteCommand, applePlatform)}
+			onclick={openCommandPalette}
+		>
+			<svg viewBox="0 0 24 24" aria-hidden="true"
+				><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg
+			>
+			<span>Search</span><kbd>{paletteLabel}</kbd>
+		</button>
 
 		{#if activeProject}
 			<button
@@ -263,6 +273,15 @@
 			<a class="brand" href={activeProject ? projectHref(activeProject.id) : resolve('/projects')}
 				><span class="mark" aria-hidden="true">T</span><span>{activeProject?.name ?? 'Todai'}</span
 				></a
+			>
+			<button
+				type="button"
+				aria-label={`Open command palette (${paletteLabel})`}
+				aria-keyshortcuts={ariaShortcut(paletteCommand, applePlatform)}
+				onclick={openCommandPalette}
+				><svg viewBox="0 0 24 24" aria-hidden="true"
+					><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg
+				></button
 			>
 		</header>
 		<section class="workspace">
@@ -414,6 +433,38 @@
 		font-size: 0.82rem;
 		font-weight: 750;
 		cursor: pointer;
+	}
+	.global-command-palette {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		width: 100%;
+		margin: 0 0 0.65rem;
+		padding: 0.58rem 0.7rem;
+		border: 1px solid var(--theme-border);
+		border-radius: 0.55rem;
+		color: #555650;
+		background: var(--theme-canvas);
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.global-command-palette:hover {
+		background: var(--theme-hover);
+	}
+	.global-command-palette svg {
+		width: 1rem;
+		height: 1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.7;
+	}
+	.global-command-palette kbd {
+		margin-left: auto;
+		color: #777873;
+		font-family: inherit;
+		font-size: 0.62rem;
 	}
 	.global-quick-add:hover {
 		filter: brightness(0.98);
