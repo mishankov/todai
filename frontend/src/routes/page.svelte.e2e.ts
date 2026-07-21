@@ -466,7 +466,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.getByLabel('Priority').selectOption('3');
 	await page.getByLabel('Due date').fill(todayDate());
 	await page.getByRole('button', { name: '+ Time' }).click();
-	await page.getByRole('textbox', { name: 'Due time', exact: true }).fill('23:59');
+	await page.getByLabel('Due time', { exact: true }).fill('23:59');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 	await expect(page.getByText('High')).toBeVisible();
