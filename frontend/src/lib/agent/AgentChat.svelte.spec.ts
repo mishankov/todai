@@ -2,6 +2,7 @@ import { page } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import AgentChat from './AgentChat.svelte';
+import { chatToggleRequestEvent } from '$lib/shortcuts/events';
 import {
 	AgentRequestError,
 	type AgentAPI,
@@ -105,6 +106,41 @@ describe('AgentChat', () => {
 		await expect.element(page.getByRole('button', { name: 'Open assistant' })).toBeVisible();
 		await page.getByRole('button', { name: 'Open assistant' }).click();
 		expect(api.getSession).toHaveBeenCalledOnce();
+	});
+
+	it('toggles from the global command and restores the previous focus', async () => {
+		const previous = document.createElement('button');
+		previous.textContent = 'Previous control';
+		document.body.append(previous);
+		previous.focus();
+		try {
+			render(AgentChat, { api: testAPI(), storage: testStorage('session-id') });
+			window.dispatchEvent(new CustomEvent(chatToggleRequestEvent));
+			await expect.element(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
+
+			window.dispatchEvent(new CustomEvent(chatToggleRequestEvent));
+			await expect.element(page.getByRole('button', { name: 'Open assistant' })).toBeVisible();
+			expect(document.activeElement).toBe(previous);
+		} finally {
+			previous.remove();
+		}
+	});
+
+	it('leaves Escape for a modal surface above the chat', async () => {
+		render(AgentChat, { api: testAPI(), storage: testStorage('session-id') });
+		await page.getByRole('button', { name: 'Open assistant' }).click();
+		const modal = document.createElement('div');
+		modal.setAttribute('role', 'dialog');
+		modal.setAttribute('aria-modal', 'true');
+		document.body.append(modal);
+		try {
+			window.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+			);
+			await expect.element(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
+		} finally {
+			modal.remove();
+		}
 	});
 
 	it('inherits project theme colors across chat surfaces', async () => {

@@ -6,6 +6,7 @@
 	import { logout } from '$lib/auth/client';
 	import AppShell from '$lib/components/AppShell.svelte';
 	import RealtimeSync from '$lib/realtime/RealtimeSync.svelte';
+	import GlobalShortcuts from '$lib/shortcuts/GlobalShortcuts.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -38,6 +39,8 @@
 	>
 		{@render children()}
 	</AppShell>
+
+	<GlobalShortcuts {activeProject} projects={data.projects} currentPath={page.url.pathname} />
 
 	{#if activeProject}
 		{#key activeProject.id}

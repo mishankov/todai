@@ -4,6 +4,7 @@ import type { Project, ProjectSection } from '$lib/projects/client';
 import type { Task, TaskComment } from '$lib/tasks/client';
 
 test('supports login, Inbox, project Tasks, Today, and logout', async ({ page }) => {
+	const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 	let authenticated = false;
 	let tasks: Task[] = [];
 	let comments: TaskComment[] = [];
@@ -523,14 +524,24 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 		.selectOption('project-1');
 	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
-	await page.getByRole('button', { name: 'Open assistant' }).click();
-	await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
 
-	await page.getByRole('link', { name: 'Today' }).click();
+	await page.keyboard.press(`${primaryModifier}+N`);
+	const quickAdd = page.getByRole('dialog', { name: 'Create a task' });
+	await expect(quickAdd).toBeVisible();
+	await quickAdd.getByLabel('Title').fill('Created with the keyboard');
+	await quickAdd.getByLabel('Due date').fill(todayDate());
+	await quickAdd.getByRole('button', { name: 'Create task' }).click();
+	await expect(quickAdd).toHaveCount(0);
+
+	await page.keyboard.press(`${primaryModifier}+3`);
 	await expect(page).toHaveURL(/\/today$/);
-	await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
-	await page.getByRole('button', { name: 'Close assistant' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Today');
+	await expect(page.getByText('Created with the keyboard')).toBeVisible();
+
+	await page.keyboard.press(`${primaryModifier}+J`);
+	await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
+	await page.keyboard.press(`${primaryModifier}+J`);
+	await expect(page.getByRole('button', { name: 'Open assistant' })).toBeVisible();
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Complete Buy oat milk' }).click();

@@ -23,8 +23,14 @@ describe('AppShell', () => {
 			.element(page.getByRole('link', { name: 'Inbox' }))
 			.toHaveAttribute('href', '/projects/work-id');
 		await expect
+			.element(page.getByRole('link', { name: 'Overview' }))
+			.toHaveAttribute('href', '/projects/work-id/overview');
+		await expect
 			.element(page.getByRole('link', { name: 'Tasks' }))
 			.toHaveAttribute('href', '/projects/work-id/tasks');
+		await expect
+			.element(page.getByRole('button', { name: /Create task \((Cmd|Ctrl) \+ N\)/ }))
+			.toHaveAttribute('title', expect.stringMatching(/Create task \((Cmd|Ctrl) \+ N\)/));
 		await expect.element(page.getByRole('link', { name: 'Sections' })).not.toBeInTheDocument();
 		await expect.element(page.getByText('Organize', { exact: true })).not.toBeInTheDocument();
 	});
