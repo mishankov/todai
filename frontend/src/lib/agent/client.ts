@@ -94,28 +94,29 @@ export class AgentRequestError extends Error {
 	}
 }
 
-export function createAgentAPI(fetcher: typeof fetch = fetch): AgentAPI {
+export function createAgentAPI(fetcher: typeof fetch = fetch, projectId = ''): AgentAPI {
 	return {
 		createSession: () => createAgentSession(fetcher),
 		getSession: (sessionId) => getAgentSession(fetcher, sessionId),
-		startContextRun: (context) => startAgentContextRun(fetcher, context),
-		postMessage: (sessionId, request) => postAgentMessage(fetcher, sessionId, request),
-		abortRun: (runId) => abortAgentRun(fetcher, runId),
+		startContextRun: (context) => startAgentContextRun(fetcher, projectId, context),
+		postMessage: (sessionId, request) => postAgentMessage(fetcher, projectId, sessionId, request),
+		abortRun: (runId) => abortAgentRun(fetcher, projectId, runId),
 		streamEvents: (sessionId, after, onEvent, signal) =>
 			streamAgentEvents(fetcher, sessionId, after, onEvent, signal),
 		streamContextRunEvents: (runId, after, onEvent, signal) =>
-			streamAgentContextRunEvents(fetcher, runId, after, onEvent, signal)
+			streamAgentContextRunEvents(fetcher, projectId, runId, after, onEvent, signal)
 	};
 }
 
 export async function startAgentContextRun(
 	fetcher: typeof fetch,
+	projectId: string,
 	context: AgentRunContext
 ): Promise<AgentRun> {
 	return requestJSON(
 		fetcher,
 		'/api/agent/runs',
-		{ method: 'POST', body: JSON.stringify({ context }) },
+		{ method: 'POST', body: JSON.stringify({ projectId, context }) },
 		'Could not start the agent action.'
 	);
 }
@@ -138,22 +139,27 @@ export async function getAgentSession(
 
 export async function postAgentMessage(
 	fetcher: typeof fetch,
+	projectId: string,
 	sessionId: string,
 	request: AgentMessageRequest
 ): Promise<PostedAgentMessage> {
 	return requestJSON(
 		fetcher,
 		`/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`,
-		{ method: 'POST', body: JSON.stringify(request) },
+		{ method: 'POST', body: JSON.stringify({ projectId, ...request }) },
 		'Could not send the message.'
 	);
 }
 
-export async function abortAgentRun(fetcher: typeof fetch, runId: string): Promise<AgentRun> {
+export async function abortAgentRun(
+	fetcher: typeof fetch,
+	projectId: string,
+	runId: string
+): Promise<AgentRun> {
 	return requestJSON(
 		fetcher,
 		`/api/agent/runs/${encodeURIComponent(runId)}/abort`,
-		{ method: 'POST' },
+		{ method: 'POST', body: JSON.stringify({ projectId }) },
 		'Could not stop the assistant.'
 	);
 }
@@ -176,6 +182,7 @@ export async function streamAgentEvents(
 
 export async function streamAgentContextRunEvents(
 	fetcher: typeof fetch,
+	projectId: string,
 	runId: string,
 	after: number,
 	onEvent: (event: AgentEvent) => void | Promise<void>,
@@ -183,7 +190,7 @@ export async function streamAgentContextRunEvents(
 ): Promise<number> {
 	return streamAgentEventSource(
 		fetcher,
-		`/api/agent/runs/${encodeURIComponent(runId)}/events`,
+		`/api/agent/runs/${encodeURIComponent(runId)}/events?${new URLSearchParams({ projectId })}`,
 		after,
 		onEvent,
 		signal

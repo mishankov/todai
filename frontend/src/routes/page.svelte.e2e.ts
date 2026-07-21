@@ -3,7 +3,7 @@ import type { ActivityEvent } from '$lib/activity/client';
 import type { Project, ProjectSection } from '$lib/projects/client';
 import type { Task, TaskComment } from '$lib/tasks/client';
 
-test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ page }) => {
+test('supports login, Inbox, project Tasks, Today, and logout', async ({ page }) => {
 	let authenticated = false;
 	let tasks: Task[] = [];
 	let comments: TaskComment[] = [];
@@ -99,7 +99,7 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 			})
 		});
 	});
-	await page.route('**/api/activity/?*', async (route) => {
+	await page.route('**/api/activity?*', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -208,27 +208,29 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 			body: JSON.stringify(updated)
 		});
 	});
-	await page.route('**/api/views/inbox?*', async (route) => {
+	await page.route('**/api/views/projects/*/inbox?*', async (route) => {
+		const projectId = new URL(route.request().url()).pathname.split('/').at(-2);
 		inboxLoads += 1;
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ tasks: tasks.filter((item) => item.parentId === null) })
+			body: JSON.stringify({
+				tasks: tasks.filter(
+					(item) =>
+						item.parentId === null && item.projectId === projectId && item.sectionId === null
+				)
+			})
 		});
 	});
-	await page.route('**/api/views/all?*', async (route) => {
-		await route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({ tasks: tasks.filter((item) => item.parentId === null) })
-		});
-	});
-	await page.route('**/api/views/today?*', async (route) => {
+	await page.route('**/api/views/projects/*/today?*', async (route) => {
+		const projectId = new URL(route.request().url()).pathname.split('/').at(-2);
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
 			body: JSON.stringify({
-				tasks: tasks.filter((item) => item.parentId === null && item.dueDate !== null)
+				tasks: tasks.filter(
+					(item) => item.parentId === null && item.projectId === projectId && item.dueDate !== null
+				)
 			})
 		});
 	});
@@ -248,7 +250,7 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		const created = testTask({
 			id: `task-${tasks.length + 1}`,
 			title: request.title,
-			projectId: parent?.projectId ?? request.projectId ?? null,
+			projectId: parent?.projectId ?? request.projectId,
 			sectionId: parent?.sectionId ?? request.sectionId ?? null,
 			parentId: parent?.id ?? null
 		});
@@ -340,7 +342,15 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 				return;
 			}
 
-			Object.assign(updated, changes, { version: updated.version + 1 });
+			const movedProject = changes.projectId && changes.projectId !== updated.projectId;
+			Object.assign(updated, changes, {
+				sectionId: movedProject
+					? null
+					: Object.hasOwn(changes, 'sectionId')
+						? changes.sectionId
+						: updated.sectionId,
+				version: updated.version + 1
+			});
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -423,10 +433,17 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await page.getByLabel('Password').fill('correct horse battery staple');
 	await page.getByRole('button', { name: 'Sign in' }).click();
 
-	await expect(page).toHaveURL(/\/$/);
+	await expect(page).toHaveURL(/\/projects$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
+	await page.getByLabel('Project name').fill('Personal');
+	await page.getByRole('button', { name: 'Create' }).click();
+	await expect(page).toHaveURL(/\/projects\/project-1$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Inbox');
 	await expect.poll(() => inboxLoads).toBeGreaterThanOrEqual(2);
-	tasks = [...tasks, testTask({ id: 'task-from-server', title: 'Synced from server' })];
+	tasks = [
+		...tasks,
+		testTask({ id: 'task-from-server', projectId: 'project-1', title: 'Synced from server' })
+	];
 	realtimeEventReady = true;
 	await expect(page.getByText('Synced from server')).toBeVisible();
 	await expect.poll(() => inboxLoads).toBeGreaterThanOrEqual(3);
@@ -454,12 +471,14 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 	await expect(page.getByText('Buy oat milk')).toBeVisible();
 	await expect(page.getByText('High')).toBeVisible();
 
-	await page.getByRole('link', { name: 'Projects', exact: true }).click();
+	await page.getByRole('link', { name: 'Manage projects' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
 	await page.getByLabel('Project name').fill('Work');
 	await page.getByRole('button', { name: 'Create' }).click();
-	await page.locator('.workspace').getByRole('link', { name: 'Work' }).click();
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Work');
+	await expect(page).toHaveURL(/\/projects\/project-2$/);
+	await page.getByRole('link', { name: 'Tasks' }).click();
+	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks');
 	const addSection = page.getByRole('group', { name: 'Add or move section' });
 	await page.getByLabel('Section name').fill('Planning');
 	await addSection.getByRole('button', { name: 'Add', exact: true }).click();
@@ -481,20 +500,28 @@ test('supports login, Inbox, projects, All tasks, Today, and logout', async ({ p
 		.filter({ hasText: 'Plan sprint' })
 		.dragTo(planningTasks.getByLabel('Drop task in Planning'));
 	await expect(planningTasks.getByText('Plan sprint')).toBeVisible();
-	await page.getByRole('link', { name: 'All tasks' }).click();
-	await expect(page).toHaveURL(/\/all$/);
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText('All tasks');
-	await expect(page.getByText('Buy oat milk')).toBeVisible();
+	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks');
+	await expect(page.getByText('Buy oat milk')).toHaveCount(0);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
 
-	await page.getByRole('link', { name: 'Work' }).click();
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
-	await page.getByRole('button', { name: /^Location:/ }).click();
-	await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption('');
+	await page.getByRole('button', { name: 'Location: Work' }).click();
+	await page
+		.getByRole('group', { name: 'Task location' })
+		.getByRole('combobox', { name: 'Project', exact: true })
+		.selectOption('project-1');
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Plan sprint')).toHaveCount(0);
 
-	await page.getByRole('link', { name: 'Inbox' }).click();
+	await page.evaluate(() =>
+		localStorage.setItem('todai.project.project-1.last-view', '/projects/project-1/tasks')
+	);
+	await page
+		.locator('aside')
+		.getByRole('combobox', { name: 'Project', exact: true })
+		.selectOption('project-1');
+	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
 	await page.getByRole('button', { name: 'Open assistant' }).click();
 	await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
@@ -528,6 +555,9 @@ function testProject(overrides: Partial<Project> = {}): Project {
 		id: 'project-id',
 		name: 'Project',
 		layout: 'list',
+		colorTheme: 'sage',
+		agentModel: 'gpt-default',
+		agentThinkingEffort: 'medium',
 		position: 1024,
 		version: 1,
 		archivedAt: null,
@@ -541,7 +571,7 @@ function testProject(overrides: Partial<Project> = {}): Project {
 function testTask(overrides: Partial<Task> = {}): Task {
 	return {
 		id: 'task-id',
-		projectId: null,
+		projectId: 'project-id',
 		sectionId: null,
 		parentId: null,
 		title: 'Task',

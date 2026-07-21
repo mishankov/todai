@@ -6,11 +6,11 @@ describe('realtime client', () => {
 		const fetcher = changeFetcher({ cursor: 42, events: [] });
 		const signal = new AbortController().signal;
 
-		await expect(pollActivityChanges(fetcher, null, signal)).resolves.toEqual({
+		await expect(pollActivityChanges(fetcher, 'project-id', null, signal)).resolves.toEqual({
 			cursor: 42,
 			events: []
 		});
-		expect(fetcher).toHaveBeenCalledWith('/api/activity/changes', {
+		expect(fetcher).toHaveBeenCalledWith('/api/activity/changes?project_id=project-id', {
 			credentials: 'same-origin',
 			headers: { Accept: 'application/json' },
 			signal
@@ -21,9 +21,9 @@ describe('realtime client', () => {
 		const fetcher = changeFetcher({ cursor: 8, events: [] });
 		const signal = new AbortController().signal;
 
-		await pollActivityChanges(fetcher, 7, signal);
+		await pollActivityChanges(fetcher, 'project-id', 7, signal);
 
-		expect(fetcher).toHaveBeenCalledWith('/api/activity/changes?after=7', {
+		expect(fetcher).toHaveBeenCalledWith('/api/activity/changes?project_id=project-id&after=7', {
 			credentials: 'same-origin',
 			headers: { Accept: 'application/json' },
 			signal
@@ -35,9 +35,9 @@ describe('realtime client', () => {
 			async () => new Response(null, { status: 401 })
 		) as unknown as typeof fetch;
 
-		await expect(pollActivityChanges(fetcher, null, new AbortController().signal)).rejects.toEqual(
-			expect.objectContaining<Partial<RealtimeRequestError>>({ status: 401 })
-		);
+		await expect(
+			pollActivityChanges(fetcher, 'project-id', null, new AbortController().signal)
+		).rejects.toEqual(expect.objectContaining<Partial<RealtimeRequestError>>({ status: 401 }));
 	});
 });
 

@@ -113,7 +113,7 @@ func TestRepositoryMutationsAreAtomicAndEmitAttributedEvents(t *testing.T) {
 		t.Errorf("archived project = %#v", archivedProject)
 	}
 
-	activityEvents, err := events.List(ctx, "user-id", 50)
+	activityEvents, err := events.List(ctx, "user-id", created.ID, 50)
 	if err != nil {
 		t.Fatalf("list activity events: %v", err)
 	}

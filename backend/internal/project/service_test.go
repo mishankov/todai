@@ -28,6 +28,56 @@ func TestCreateNormalizesName(t *testing.T) {
 	}
 }
 
+func TestCreateUsesConfiguredWorkspaceDefaults(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	created, err := project.NewService(repository, project.ServiceConfig{
+		DefaultAgentModel:          "provider/model",
+		AvailableAgentModels:       []string{"provider/model"},
+		DefaultAgentThinkingEffort: "high",
+	}).Create(context.Background(), projectTestScope(), "Work")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if created.ColorTheme != project.ColorThemeSage || created.AgentModel != "provider/model" ||
+		created.AgentThinkingEffort != "high" {
+		t.Errorf("created project = %#v", created)
+	}
+}
+
+func TestResolveAgentUsesProjectSettings(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{found: project.Project{
+		ID: "project-id", AgentModel: "provider/model", AgentThinkingEffort: "xhigh",
+	}}
+	model, effort, err := project.NewService(repository).ResolveAgent(
+		context.Background(), "user-id", "project-id",
+	)
+	if err != nil {
+		t.Fatalf("resolve project agent: %v", err)
+	}
+	if model != "provider/model" || effort != "xhigh" {
+		t.Errorf("resolved agent = (%q, %q)", model, effort)
+	}
+}
+
+func TestResolveAgentFallsBackForLegacyBlankSettings(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{found: project.Project{ID: "project-id"}}
+	model, effort, err := project.NewService(repository, project.ServiceConfig{
+		DefaultAgentModel: "provider/default", DefaultAgentThinkingEffort: "high",
+	}).ResolveAgent(context.Background(), "user-id", "project-id")
+	if err != nil {
+		t.Fatalf("resolve legacy project agent: %v", err)
+	}
+	if model != "provider/default" || effort != "high" {
+		t.Errorf("resolved legacy agent = (%q, %q)", model, effort)
+	}
+}
+
 func TestCreateRejectsInvalidName(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +190,45 @@ func TestUpdateAcceptsBoardLayout(t *testing.T) {
 	if updated.Layout != project.LayoutBoard || repository.update.Layout == nil ||
 		*repository.update.Layout != project.LayoutBoard {
 		t.Errorf("updated project = %#v, repository update = %#v", updated, repository.update)
+	}
+}
+
+func TestUpdateValidatesWorkspaceSettings(t *testing.T) {
+	t.Parallel()
+
+	theme := project.ColorThemeOcean
+	model := "provider/model"
+	effort := "high"
+	repository := &fakeRepository{}
+	service := project.NewService(repository, project.ServiceConfig{
+		AvailableAgentModels: []string{model},
+	})
+	updated, err := service.Update(
+		context.Background(), projectTestScope(), "project-id", project.Update{
+			Version: 1, ColorTheme: &theme, AgentModel: &model, AgentThinkingEffort: &effort,
+		},
+	)
+	if err != nil {
+		t.Fatalf("update project settings: %v", err)
+	}
+	if updated.ColorTheme != theme || updated.AgentModel != model ||
+		updated.AgentThinkingEffort != effort {
+		t.Errorf("updated project = %#v", updated)
+	}
+
+	invalidTheme := project.ColorTheme("neon")
+	if _, err := service.Update(
+		context.Background(), projectTestScope(), "project-id",
+		project.Update{Version: 1, ColorTheme: &invalidTheme},
+	); !errors.Is(err, project.ErrInvalidColorTheme) {
+		t.Errorf("invalid theme error = %v", err)
+	}
+	invalidModel := "missing/model"
+	if _, err := service.Update(
+		context.Background(), projectTestScope(), "project-id",
+		project.Update{Version: 1, AgentModel: &invalidModel},
+	); !errors.Is(err, project.ErrInvalidAgentModel) {
+		t.Errorf("invalid model error = %v", err)
 	}
 }
 
@@ -317,19 +406,31 @@ func TestMutationsRejectInvalidExecutionScope(t *testing.T) {
 }
 
 type fakeRepository struct {
-	createScope   execution.Scope
-	update        project.Update
-	sectionName   string
-	sectionUpdate project.SectionUpdate
+	createScope    execution.Scope
+	createDefaults project.AgentDefaults
+	found          project.Project
+	update         project.Update
+	sectionName    string
+	sectionUpdate  project.SectionUpdate
 }
 
-func (r *fakeRepository) Create(_ context.Context, scope execution.Scope, name string) (project.Project, error) {
+func (r *fakeRepository) Create(
+	_ context.Context, scope execution.Scope, name string, defaults ...project.AgentDefaults,
+) (project.Project, error) {
 	r.createScope = scope
-	return project.Project{ID: "project-id", UserID: scope.UserID, Name: name, Version: 1}, nil
+	if len(defaults) > 0 {
+		r.createDefaults = defaults[0]
+	}
+	return project.Project{
+		ID: "project-id", UserID: scope.UserID, Name: name, Version: 1,
+		ColorTheme:          project.ColorThemeSage,
+		AgentModel:          r.createDefaults.Model,
+		AgentThinkingEffort: r.createDefaults.ThinkingEffort,
+	}, nil
 }
 
-func (*fakeRepository) Get(context.Context, string, string) (project.Project, error) {
-	return project.Project{}, nil
+func (r *fakeRepository) Get(context.Context, string, string) (project.Project, error) {
+	return r.found, nil
 }
 
 func (*fakeRepository) List(context.Context, string, bool) ([]project.Project, error) {
@@ -349,6 +450,15 @@ func (r *fakeRepository) Update(
 	}
 	if update.Layout != nil {
 		updated.Layout = *update.Layout
+	}
+	if update.ColorTheme != nil {
+		updated.ColorTheme = *update.ColorTheme
+	}
+	if update.AgentModel != nil {
+		updated.AgentModel = *update.AgentModel
+	}
+	if update.AgentThinkingEffort != nil {
+		updated.AgentThinkingEffort = *update.AgentThinkingEffort
 	}
 	return updated, nil
 }

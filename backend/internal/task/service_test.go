@@ -16,8 +16,9 @@ func TestCreateNormalizesTitle(t *testing.T) {
 
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
+	projectID := "project-id"
 
-	created, err := service.Create(context.Background(), testScope(), "  Buy milk  ", nil, nil)
+	created, err := service.Create(context.Background(), testScope(), "  Buy milk  ", &projectID, nil)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -95,8 +96,8 @@ func TestCreateRejectsSectionWithoutProject(t *testing.T) {
 	_, err := task.NewService(&fakeRepository{}).Create(
 		context.Background(), testScope(), "Plan sprint", nil, &sectionID,
 	)
-	if !errors.Is(err, task.ErrSectionNotFound) {
-		t.Fatalf("error = %v, want %v", err, task.ErrSectionNotFound)
+	if !errors.Is(err, task.ErrProjectRequired) {
+		t.Fatalf("error = %v, want %v", err, task.ErrProjectRequired)
 	}
 }
 
@@ -239,11 +240,14 @@ func TestListAllScopesTasksToUser(t *testing.T) {
 	t.Parallel()
 
 	repository := &fakeRepository{}
-	_, err := task.NewService(repository).ListAll(context.Background(), "user-id", true)
+	_, err := task.NewService(repository).ListAll(
+		context.Background(), "user-id", "project-id", true,
+	)
 	if err != nil {
 		t.Fatalf("list all tasks: %v", err)
 	}
-	if repository.allUserID != "user-id" || !repository.allIncludeCompleted {
+	if repository.allUserID != "user-id" || repository.allProjectID != "project-id" ||
+		!repository.allIncludeCompleted {
 		t.Errorf(
 			"all tasks arguments = (%q, %t), want (%q, %t)",
 			repository.allUserID,
@@ -251,6 +255,21 @@ func TestListAllScopesTasksToUser(t *testing.T) {
 			"user-id",
 			true,
 		)
+	}
+}
+
+func TestListInboxScopesTasksToProject(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	_, err := task.NewService(repository).ListInbox(
+		context.Background(), "user-id", "project-id", false,
+	)
+	if err != nil {
+		t.Fatalf("list Inbox: %v", err)
+	}
+	if repository.inboxUserID != "user-id" || repository.inboxProjectID != "project-id" {
+		t.Errorf("Inbox scope = (%q, %q)", repository.inboxUserID, repository.inboxProjectID)
 	}
 }
 
@@ -301,7 +320,9 @@ func TestListTodayUsesUserLocalDay(t *testing.T) {
 	repository := &fakeRepository{}
 	service := task.NewService(repository)
 
-	_, err := service.ListToday(context.Background(), "user-id", "Europe/Moscow", true)
+	_, err := service.ListToday(
+		context.Background(), "user-id", "project-id", "Europe/Moscow", true,
+	)
 	if err != nil {
 		t.Fatalf("list Today: %v", err)
 	}
@@ -316,7 +337,8 @@ func TestListTodayUsesUserLocalDay(t *testing.T) {
 	if !repository.todayEnd.Equal(repository.todayStart.AddDate(0, 0, 1)) {
 		t.Errorf("day end = %v, want day after %v", repository.todayEnd, repository.todayStart)
 	}
-	if repository.todayUserID != "user-id" || !repository.todayIncludeCompleted {
+	if repository.todayUserID != "user-id" || repository.todayProjectID != "project-id" ||
+		!repository.todayIncludeCompleted {
 		t.Errorf(
 			"Today arguments = (%q, %t), want (%q, %t)",
 			repository.todayUserID,
@@ -336,6 +358,7 @@ func TestListTodayRejectsInvalidTimezone(t *testing.T) {
 	_, err := task.NewService(&fakeRepository{}).ListToday(
 		context.Background(),
 		"user-id",
+		"project-id",
 		"Mars/Olympus_Mons",
 		false,
 	)
@@ -524,8 +547,12 @@ type fakeRepository struct {
 	deleteTaskID          string
 	deleteVersion         int64
 	allUserID             string
+	allProjectID          string
 	allIncludeCompleted   bool
+	inboxUserID           string
+	inboxProjectID        string
 	todayUserID           string
+	todayProjectID        string
 	todayDate             task.Date
 	todayStart            time.Time
 	todayEnd              time.Time
@@ -589,16 +616,22 @@ func (*fakeRepository) Get(context.Context, string, string) (task.Task, error) {
 	return task.Task{}, nil
 }
 
-func (*fakeRepository) ListInbox(context.Context, string, bool) ([]task.TaskSummary, error) {
+func (r *fakeRepository) ListInbox(
+	_ context.Context, userID, projectID string, _ bool,
+) ([]task.TaskSummary, error) {
+	r.inboxUserID = userID
+	r.inboxProjectID = projectID
 	return nil, nil
 }
 
 func (r *fakeRepository) ListAll(
 	_ context.Context,
 	userID string,
+	projectID string,
 	includeCompleted bool,
 ) ([]task.TaskSummary, error) {
 	r.allUserID = userID
+	r.allProjectID = projectID
 	r.allIncludeCompleted = includeCompleted
 	return nil, nil
 }
@@ -612,12 +645,14 @@ func (*fakeRepository) ListProject(
 func (r *fakeRepository) ListToday(
 	_ context.Context,
 	userID string,
+	projectID string,
 	date task.Date,
 	dayStart time.Time,
 	dayEnd time.Time,
 	includeCompleted bool,
 ) ([]task.TaskSummary, error) {
 	r.todayUserID = userID
+	r.todayProjectID = projectID
 	r.todayDate = date
 	r.todayStart = dayStart
 	r.todayEnd = dayEnd

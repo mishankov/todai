@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,12 @@ var (
 	ErrServiceStopped = errors.New("agent service is stopped")
 	// ErrMessageContextNotFound avoids starting a run for an inaccessible product resource.
 	ErrMessageContextNotFound = errors.New("agent message context not found")
+	// ErrProjectNotFound avoids starting a run for an inaccessible project.
+	ErrProjectNotFound = errors.New("agent project not found")
+	// ErrProjectIDRequired prevents a run without an explicit project scope.
+	ErrProjectIDRequired = errors.New("agent project ID is required")
+	// ErrProjectValidatorRequired prevents an unverified project from reaching a runtime.
+	ErrProjectValidatorRequired = errors.New("agent project validator is not configured")
 	// ErrContextValidatorRequired prevents unverified structured context from reaching a runtime.
 	ErrContextValidatorRequired = errors.New("agent message context validator is not configured")
 )
@@ -27,11 +34,11 @@ var (
 type repository interface {
 	CreateSession(context.Context, execution.Scope) (Session, error)
 	GetConversation(context.Context, string, string) (Session, []Message, []Run, int64, error)
-	CreateMessageRun(context.Context, execution.Scope, string, MessageInput) (Message, Run, []HistoryMessage, error)
-	CreateContextRun(context.Context, execution.Scope, MessageContext) (Run, error)
-	GetRun(context.Context, string, string) (Run, error)
+	CreateMessageRun(context.Context, execution.Scope, string, string, MessageInput) (Message, Run, []HistoryMessage, error)
+	CreateContextRun(context.Context, execution.Scope, string, MessageContext) (Run, error)
+	GetRun(context.Context, string, string, string) (Run, error)
 	ListRunEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
-	ListContextRunEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
+	ListContextRunEvents(context.Context, string, string, string, int64, int) ([]RunEvent, error)
 	RecordRuntimeEvent(context.Context, execution.Scope, string, RuntimeEvent) (RunEvent, error)
 	FinishRun(context.Context, execution.Scope, string, string, any) (Run, error)
 }
@@ -43,14 +50,19 @@ type tokenIssuer interface {
 
 // PreferencesResolver supplies the effective user preferences for a new run.
 type PreferencesResolver interface {
-	ResolveAgent(context.Context, string) (
+	ResolveAgent(context.Context, string, string) (
 		timezone string, model string, thinkingEffort string, err error,
 	)
 }
 
+// ProjectAccessValidator verifies that a project belongs to the current user.
+type ProjectAccessValidator interface {
+	ValidateProject(context.Context, string, string) error
+}
+
 // ContextValidator verifies that a structured product resource belongs to the current user.
 type ContextValidator interface {
-	ValidateMessageContext(context.Context, string, MessageContext) error
+	ValidateMessageContext(context.Context, string, string, MessageContext) error
 }
 
 // ServiceConfig controls the isolated runtime without exposing credentials globally.
@@ -64,6 +76,7 @@ type ServiceConfig struct {
 	Model            string
 	ThinkingEffort   string
 	Preferences      PreferencesResolver
+	ProjectValidator ProjectAccessValidator
 	ContextValidator ContextValidator
 }
 
@@ -156,16 +169,22 @@ func (s *Service) GetSession(ctx context.Context, userID, sessionID string) (Con
 func (s *Service) StartContextRun(
 	ctx context.Context,
 	scope execution.Scope,
+	projectID string,
 	messageContext MessageContext,
 ) (Run, error) {
-	if err := s.validateRunContext(ctx, scope.UserID, &messageContext); err != nil {
-		return Run{}, err
-	}
-	timezone, model, thinkingEffort, err := s.resolvePreferences(ctx, scope.UserID)
+	projectID, err := s.validateProject(ctx, scope.UserID, projectID)
 	if err != nil {
 		return Run{}, err
 	}
-	run, err := s.repository.CreateContextRun(ctx, scope, messageContext)
+	if err := s.validateRunContext(ctx, scope.UserID, projectID, &messageContext); err != nil {
+		return Run{}, err
+	}
+	timezone, model, thinkingEffort, err := s.resolvePreferences(ctx, scope.UserID, projectID)
+	if err != nil {
+		return Run{}, err
+	}
+	projectScope := withProject(scope, projectID)
+	run, err := s.repository.CreateContextRun(ctx, projectScope, projectID, messageContext)
 	if err != nil {
 		return Run{}, fmt.Errorf("queue contextual agent run: %w", err)
 	}
@@ -182,17 +201,25 @@ func (s *Service) StartContextRun(
 func (s *Service) PostMessage(
 	ctx context.Context,
 	scope execution.Scope,
+	projectID string,
 	sessionID string,
 	input MessageInput,
 ) (PostedMessage, error) {
 	if s.runtime == nil {
 		return PostedMessage{}, errors.New("agent runtime is not configured")
 	}
-	timezone, model, thinkingEffort, err := s.resolvePreferences(ctx, scope.UserID)
+	projectID, err := s.validateProject(ctx, scope.UserID, projectID)
 	if err != nil {
 		return PostedMessage{}, err
 	}
-	message, run, history, err := s.repository.CreateMessageRun(ctx, scope, sessionID, input)
+	timezone, model, thinkingEffort, err := s.resolvePreferences(ctx, scope.UserID, projectID)
+	if err != nil {
+		return PostedMessage{}, err
+	}
+	projectScope := withProject(scope, projectID)
+	message, run, history, err := s.repository.CreateMessageRun(
+		ctx, projectScope, projectID, sessionID, input,
+	)
 	if err != nil {
 		return PostedMessage{}, fmt.Errorf("queue agent message: %w", err)
 	}
@@ -219,7 +246,8 @@ func (s *Service) launchRun(
 		return errors.New("agent token issuer is not configured")
 	}
 	issued, err := s.tokens.Issue(ctx, agentauth.IssueRequest{
-		UserID: run.UserID, AgentSessionID: run.SessionID, AgentRunID: run.ID,
+		UserID: run.UserID, ProjectID: runProjectID(run),
+		AgentSessionID: run.SessionID, AgentRunID: run.ID,
 		AllowedTools: s.config.AllowedTools, TTL: s.config.TokenTTL,
 	})
 	if err != nil {
@@ -255,6 +283,7 @@ func (s *Service) launchRun(
 func (s *Service) validateRunContext(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	messageContext *MessageContext,
 ) error {
 	if s.runtime == nil {
@@ -269,15 +298,32 @@ func (s *Service) validateRunContext(
 	if s.config.ContextValidator == nil {
 		return ErrContextValidatorRequired
 	}
-	if err := s.config.ContextValidator.ValidateMessageContext(ctx, userID, *messageContext); err != nil {
+	if err := s.config.ContextValidator.ValidateMessageContext(
+		ctx, userID, projectID, *messageContext,
+	); err != nil {
 		return fmt.Errorf("validate agent run context: %w", err)
 	}
 	return nil
 }
 
+func (s *Service) validateProject(ctx context.Context, userID, projectID string) (string, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return "", ErrProjectIDRequired
+	}
+	if s.config.ProjectValidator == nil {
+		return "", ErrProjectValidatorRequired
+	}
+	if err := s.config.ProjectValidator.ValidateProject(ctx, userID, projectID); err != nil {
+		return "", fmt.Errorf("validate agent project: %w", err)
+	}
+	return projectID, nil
+}
+
 func (s *Service) resolvePreferences(
 	ctx context.Context,
 	userID string,
+	projectID string,
 ) (string, string, string, error) {
 	timezone := ""
 	model := s.config.Model
@@ -285,7 +331,7 @@ func (s *Service) resolvePreferences(
 	if s.config.Preferences == nil {
 		return timezone, model, thinkingEffort, nil
 	}
-	timezone, model, thinkingEffort, err := s.config.Preferences.ResolveAgent(ctx, userID)
+	timezone, model, thinkingEffort, err := s.config.Preferences.ResolveAgent(ctx, userID, projectID)
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve agent preferences: %w", err)
 	}
@@ -320,11 +366,16 @@ func (s *Service) ListEvents(
 func (s *Service) ListContextRunEvents(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	runID string,
 	after int64,
 	limit int,
 ) ([]RunEvent, error) {
-	events, err := s.repository.ListContextRunEvents(ctx, userID, runID, after, limit)
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, ErrProjectIDRequired
+	}
+	events, err := s.repository.ListContextRunEvents(ctx, userID, projectID, runID, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list contextual agent run events: %w", err)
 	}
@@ -335,9 +386,14 @@ func (s *Service) ListContextRunEvents(
 func (s *Service) Abort(
 	ctx context.Context,
 	scope execution.Scope,
+	projectID string,
 	runID string,
 ) (Run, error) {
-	_, err := s.repository.GetRun(ctx, scope.UserID, runID)
+	projectID, err := s.validateProject(ctx, scope.UserID, projectID)
+	if err != nil {
+		return Run{}, err
+	}
+	_, err = s.repository.GetRun(ctx, scope.UserID, projectID, runID)
 	if err != nil {
 		return Run{}, fmt.Errorf("get agent run for abort: %w", err)
 	}
@@ -348,7 +404,7 @@ func (s *Service) Abort(
 	if ok {
 		active.cancel()
 	}
-	finished, err := s.repository.FinishRun(ctx, scope, runID, EventRunAborted, map[string]any{
+	finished, err := s.repository.FinishRun(ctx, withProject(scope, projectID), runID, EventRunAborted, map[string]any{
 		"reason": "user_requested",
 	})
 	if err != nil {
@@ -388,7 +444,8 @@ func (s *Service) execute(
 		allowedTools[index] = string(tool)
 	}
 	err := s.runtime.Run(ctx, RunRequest{
-		UserID: run.UserID, SessionID: run.SessionID, RunID: run.ID, Message: message,
+		UserID: run.UserID, ProjectID: runProjectID(run),
+		SessionID: run.SessionID, RunID: run.ID, Message: message,
 		Context: messageContext, History: history,
 		Runtime: s.config.Runtime, InternalURL: s.config.InternalURL, AccessToken: accessToken,
 		AllowedTools: allowedTools, AgentDir: s.config.AgentDir,
@@ -425,10 +482,23 @@ func runtimeScope(run Run) execution.Scope {
 	runID := run.ID
 	return execution.Scope{
 		UserID:        run.UserID,
+		ProjectID:     run.ProjectID,
 		ActorType:     execution.ActorBuiltInAgent,
 		ActorID:       &actorID,
 		Source:        execution.SourceSystem,
 		CorrelationID: run.CorrelationID,
 		AgentRunID:    &runID,
 	}
+}
+
+func withProject(scope execution.Scope, projectID string) execution.Scope {
+	scope.ProjectID = &projectID
+	return scope
+}
+
+func runProjectID(run Run) string {
+	if run.ProjectID == nil {
+		return ""
+	}
+	return *run.ProjectID
 }

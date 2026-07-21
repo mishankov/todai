@@ -106,6 +106,38 @@ describe('AgentChat', () => {
 		await page.getByRole('button', { name: 'Open assistant' }).click();
 		expect(api.getSession).toHaveBeenCalledOnce();
 	});
+
+	it('inherits project theme colors across chat surfaces', async () => {
+		const root = document.documentElement;
+		root.style.setProperty('--theme-accent', '#94505e');
+		root.style.setProperty('--theme-accent-soft', '#f1dfe3');
+		root.style.setProperty('--theme-border', '#eadce0');
+		try {
+			render(AgentChat, {
+				api: testAPI({
+					getSession: vi
+						.fn()
+						.mockResolvedValue(
+							testConversation({ messages: [userMessage(), assistantMessage('Found it.')] })
+						)
+				}),
+				storage: testStorage('session-id')
+			});
+			await page.getByRole('button', { name: 'Open assistant' }).click();
+			await expect.element(page.getByText('Found it.', { exact: true })).toBeVisible();
+
+			const launcher = document.querySelector<HTMLElement>('.chat-launcher');
+			const userBubble = document.querySelector<HTMLElement>('.message.from-user');
+			expect(launcher).not.toBeNull();
+			expect(userBubble).not.toBeNull();
+			expect(getComputedStyle(launcher!).backgroundColor).toBe('rgb(148, 80, 94)');
+			expect(getComputedStyle(userBubble!).backgroundColor).toBe('rgb(241, 223, 227)');
+		} finally {
+			root.style.removeProperty('--theme-accent');
+			root.style.removeProperty('--theme-accent-soft');
+			root.style.removeProperty('--theme-border');
+		}
+	});
 });
 
 function controllableStream() {

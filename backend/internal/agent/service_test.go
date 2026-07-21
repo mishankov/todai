@@ -42,7 +42,7 @@ func TestPostMessageRunsRuntimeAndPersistsStableEvents(t *testing.T) {
 
 	posted, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", agent.MessageInput{Content: " Triage inbox "},
+		"project-id", "session-id", agent.MessageInput{Content: " Triage inbox "},
 	)
 	if err != nil {
 		t.Fatalf("post message: %v", err)
@@ -60,6 +60,46 @@ func TestPostMessageRunsRuntimeAndPersistsStableEvents(t *testing.T) {
 		if event.Sequence != int64(index+1) {
 			t.Errorf("event %d sequence = %d", index, event.Sequence)
 		}
+	}
+}
+
+func TestPostMessageRequiresAccessibleProject(t *testing.T) {
+	repository := newFakeRepository()
+	runtimeCalled := false
+	service := agent.NewService(
+		repository,
+		runtimeFunc(func(
+			context.Context,
+			agent.RunRequest,
+			func(context.Context, agent.RuntimeEvent) error,
+		) error {
+			runtimeCalled = true
+			return nil
+		}),
+		tokenIssuerFunc(func(
+			context.Context,
+			agentauth.IssueRequest,
+		) (agentauth.IssuedToken, error) {
+			return agentauth.IssuedToken{Token: "scoped-token"}, nil
+		}),
+		agent.ServiceConfig{ProjectValidator: projectValidatorFunc(func(
+			context.Context,
+			string,
+			string,
+		) error {
+			return agent.ErrProjectNotFound
+		})},
+	)
+
+	_, err := service.PostMessage(
+		context.Background(), execution.UserScope("user-id", "correlation-id"),
+		"other-project", "session-id", agent.MessageInput{Content: "Run"},
+	)
+	if !errors.Is(err, agent.ErrProjectNotFound) {
+		t.Fatalf("error = %v, want %v", err, agent.ErrProjectNotFound)
+	}
+	if runtimeCalled {
+		t.Fatal("runtime was called for an inaccessible project")
 	}
 }
 
@@ -88,12 +128,15 @@ func TestStartContextRunUsesPrivateExecutionWithEmptyHistory(t *testing.T) {
 		agent.ServiceConfig{
 			Runtime: "pi", InternalURL: "http://127.0.0.1:8080", TokenTTL: time.Minute,
 			ContextValidator: contextValidatorFunc(func(
-				_ context.Context, userID string, messageContext agent.MessageContext,
+				_ context.Context, userID, projectID string, messageContext agent.MessageContext,
 			) error {
-				if userID != "user-id" {
-					t.Errorf("context user = %q", userID)
+				if userID != "user-id" || projectID != "project-id" {
+					t.Errorf("context scope = (%q, %q)", userID, projectID)
 				}
 				contextReceived <- messageContext
+				return nil
+			}),
+			ProjectValidator: projectValidatorFunc(func(context.Context, string, string) error {
 				return nil
 			}),
 		},
@@ -104,7 +147,8 @@ func TestStartContextRunUsesPrivateExecutionWithEmptyHistory(t *testing.T) {
 	}
 
 	started, err := service.StartContextRun(
-		context.Background(), execution.UserScope("user-id", "correlation-id"), wantContext,
+		context.Background(), execution.UserScope("user-id", "correlation-id"),
+		"project-id", wantContext,
 	)
 	if err != nil {
 		t.Fatalf("start contextual run: %v", err)
@@ -139,14 +183,17 @@ func TestPostMessageScopesToolAccessToTheDurableRun(t *testing.T) {
 		Runtime: "pi", InternalURL: "http://127.0.0.1:8080", TokenTTL: 5 * time.Minute,
 		AllowedTools: []agentauth.Tool{agentauth.ToolTaskGet, agentauth.ToolTaskUpdate},
 		AgentDir:     "/tmp/pi", Provider: "openai-codex", Model: "model-id",
-		Preferences: preferencesResolverFunc(func(context.Context, string) (string, string, string, error) {
+		Preferences: preferencesResolverFunc(func(context.Context, string, string) (string, string, string, error) {
 			return "Europe/Moscow", "selected-model", "high", nil
+		}),
+		ProjectValidator: projectValidatorFunc(func(context.Context, string, string) error {
+			return nil
 		}),
 	})
 
 	if _, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", agent.MessageInput{Content: "Run"},
+		"project-id", "session-id", agent.MessageInput{Content: "Run"},
 	); err != nil {
 		t.Fatalf("post message: %v", err)
 	}
@@ -159,10 +206,12 @@ func TestPostMessageScopesToolAccessToTheDurableRun(t *testing.T) {
 	}
 
 	if issuer.issue.UserID != "user-id" || issuer.issue.AgentSessionID != "session-id" ||
-		issuer.issue.AgentRunID != "run-id" || issuer.issue.TTL != 5*time.Minute {
+		issuer.issue.ProjectID != "project-id" || issuer.issue.AgentRunID != "run-id" ||
+		issuer.issue.TTL != 5*time.Minute {
 		t.Errorf("token request = %#v", issuer.issue)
 	}
-	if request.AccessToken != "scoped-token" || request.InternalURL != "http://127.0.0.1:8080" ||
+	if request.ProjectID != "project-id" || request.AccessToken != "scoped-token" ||
+		request.InternalURL != "http://127.0.0.1:8080" ||
 		request.Runtime != "pi" || len(request.AllowedTools) != 2 ||
 		request.Timezone != "Europe/Moscow" || request.Model != "selected-model" ||
 		request.ThinkingEffort != "high" {
@@ -185,7 +234,7 @@ func TestRuntimeFailureProducesOneTerminalFailure(t *testing.T) {
 
 	if _, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", agent.MessageInput{Content: "Run"},
+		"project-id", "session-id", agent.MessageInput{Content: "Run"},
 	); err != nil {
 		t.Fatalf("post message: %v", err)
 	}
@@ -209,7 +258,7 @@ func TestAbortCancelsRuntimeAndRecordsTerminalEventOnce(t *testing.T) {
 	}))
 	if _, err := service.PostMessage(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
-		"session-id", agent.MessageInput{Content: "Run"},
+		"project-id", "session-id", agent.MessageInput{Content: "Run"},
 	); err != nil {
 		t.Fatalf("post message: %v", err)
 	}
@@ -220,7 +269,8 @@ func TestAbortCancelsRuntimeAndRecordsTerminalEventOnce(t *testing.T) {
 	}
 
 	finished, err := service.Abort(
-		context.Background(), execution.UserScope("user-id", "abort-correlation"), "run-id",
+		context.Background(), execution.UserScope("user-id", "abort-correlation"),
+		"project-id", "run-id",
 	)
 	if err != nil {
 		t.Fatalf("abort run: %v", err)
@@ -250,23 +300,35 @@ func (f runtimeFunc) Run(
 
 type tokenIssuerFunc func(context.Context, agentauth.IssueRequest) (agentauth.IssuedToken, error)
 
-type preferencesResolverFunc func(context.Context, string) (string, string, string, error)
+type preferencesResolverFunc func(context.Context, string, string) (string, string, string, error)
 
-type contextValidatorFunc func(context.Context, string, agent.MessageContext) error
+type contextValidatorFunc func(context.Context, string, string, agent.MessageContext) error
+
+type projectValidatorFunc func(context.Context, string, string) error
 
 func (f contextValidatorFunc) ValidateMessageContext(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	messageContext agent.MessageContext,
 ) error {
-	return f(ctx, userID, messageContext)
+	return f(ctx, userID, projectID, messageContext)
 }
 
 func (f preferencesResolverFunc) ResolveAgent(
 	ctx context.Context,
 	userID string,
+	projectID string,
 ) (string, string, string, error) {
-	return f(ctx, userID)
+	return f(ctx, userID, projectID)
+}
+
+func (f projectValidatorFunc) ValidateProject(
+	ctx context.Context,
+	userID string,
+	projectID string,
+) error {
+	return f(ctx, userID, projectID)
 }
 
 func (f tokenIssuerFunc) Issue(
@@ -310,6 +372,9 @@ func newService(repository *fakeRepository, runtime agent.Runtime) *agent.Servic
 	return agent.NewService(repository, runtime, issuer, agent.ServiceConfig{
 		Runtime: "fake", InternalURL: "http://127.0.0.1:8080",
 		TokenTTL: time.Minute, AllowedTools: []agentauth.Tool{agentauth.ToolTaskGet},
+		ProjectValidator: projectValidatorFunc(func(context.Context, string, string) error {
+			return nil
+		}),
 	})
 }
 
@@ -349,28 +414,31 @@ func (r *fakeRepository) GetConversation(
 func (r *fakeRepository) CreateMessageRun(
 	_ context.Context,
 	_ execution.Scope,
+	projectID string,
 	_ string,
 	input agent.MessageInput,
 ) (agent.Message, agent.Run, []agent.HistoryMessage, error) {
 	return agent.Message{
 		ID: "message-id", Content: strings.TrimSpace(input.Content),
-	}, r.run, r.history, nil
+	}, withRunProject(r.run, projectID), r.history, nil
 }
 
 func (r *fakeRepository) CreateContextRun(
 	_ context.Context,
 	_ execution.Scope,
+	projectID string,
 	messageContext agent.MessageContext,
 ) (agent.Run, error) {
 	r.context = &messageContext
 	r.run = agent.Run{
 		ID: "run-id", SessionID: "private-execution-id", UserID: "user-id",
-		Kind: agent.ExecutionAction, Status: agent.RunStatusQueued, CorrelationID: "correlation-id",
+		ProjectID: &projectID,
+		Kind:      agent.ExecutionAction, Status: agent.RunStatusQueued, CorrelationID: "correlation-id",
 	}
 	return r.run, nil
 }
 
-func (r *fakeRepository) GetRun(context.Context, string, string) (agent.Run, error) {
+func (r *fakeRepository) GetRun(context.Context, string, string, string) (agent.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.run, nil
@@ -390,10 +458,16 @@ func (r *fakeRepository) ListContextRunEvents(
 	context.Context,
 	string,
 	string,
+	string,
 	int64,
 	int,
 ) ([]agent.RunEvent, error) {
 	return []agent.RunEvent{}, nil
+}
+
+func withRunProject(run agent.Run, projectID string) agent.Run {
+	run.ProjectID = &projectID
+	return run
 }
 
 func (r *fakeRepository) RecordRuntimeEvent(

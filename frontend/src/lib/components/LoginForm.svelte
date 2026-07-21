@@ -114,7 +114,7 @@
 		place-items: center;
 		border-radius: 0.65rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 	}
 
 	.intro {
@@ -167,7 +167,7 @@
 	}
 
 	input:focus {
-		border-color: #477d56;
+		border-color: var(--theme-accent, #477d56);
 		box-shadow: 0 0 0 0.2rem rgb(71 125 86 / 14%);
 	}
 
@@ -177,7 +177,7 @@
 		border: 0;
 		border-radius: 0.75rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 		font-weight: 750;
 		cursor: pointer;
 	}

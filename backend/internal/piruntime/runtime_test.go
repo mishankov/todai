@@ -201,6 +201,7 @@ func TestRuntimeHelperProcess(t *testing.T) {
 	pi, piOK := start["pi"].(map[string]any)
 	messageContext, contextOK := start["context"].(map[string]any)
 	if !ok || toolAccess["token"] != "scoped-token" || start["runtimeName"] != "fake" ||
+		start["projectId"] != "project-id" ||
 		!historyOK || len(history) != 1 || !piOK || pi["timezone"] != "Europe/Moscow" ||
 		pi["model"] != "selected-model" || pi["thinkingEffort"] != "high" || !contextOK ||
 		messageContext["type"] != "task" || messageContext["action"] != "decompose" {
@@ -289,7 +290,8 @@ func helperRuntime(t *testing.T, scenario string) *piruntime.Runtime {
 
 func testRunRequest() agent.RunRequest {
 	return agent.RunRequest{
-		UserID: "user-id", SessionID: "session-id", RunID: "run-id", Message: "Plan my day",
+		UserID: "user-id", ProjectID: "project-id",
+		SessionID: "session-id", RunID: "run-id", Message: "Plan my day",
 		Context: &agent.MessageContext{
 			Type: agent.ContextTask, TaskID: "11111111-1111-4111-8111-111111111111",
 			Action: agent.ContextActionDecompose,

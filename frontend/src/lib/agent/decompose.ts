@@ -2,8 +2,8 @@ import type { Task } from '$lib/tasks/client';
 import { createAgentAPI, type AgentAPI, type AgentEvent } from './client';
 
 export async function decomposeTaskWithAgent(
-	task: Pick<Task, 'id'>,
-	api: AgentAPI = createAgentAPI()
+	task: Pick<Task, 'id' | 'projectId'>,
+	api: AgentAPI = createAgentAPI(fetch, task.projectId)
 ): Promise<void> {
 	const run = await api.startContextRun({ type: 'task', taskId: task.id, action: 'decompose' });
 	await waitForRun(api, run.id, 0);

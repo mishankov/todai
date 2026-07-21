@@ -70,9 +70,9 @@ jobs:
       - name: Auth smoke test
         run: |
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST http://localhost:8080/api/auth/register)" = "404"
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:8080/api/views/inbox)" = "401"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:8080/api/projects)" = "401"
           curl --silent --fail --cookie-jar /tmp/todai-cookie --header 'Content-Type: application/json' --data '{"login":"ci-admin","password":"ci-password"}' http://localhost:8080/api/auth/login
-          curl --silent --fail --cookie /tmp/todai-cookie http://localhost:8080/api/views/inbox
+          curl --silent --fail --cookie /tmp/todai-cookie http://localhost:8080/api/projects
           curl --silent --fail --cookie /tmp/todai-cookie --request POST http://localhost:8080/api/auth/logout
 
   frontend:

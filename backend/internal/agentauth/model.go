@@ -26,6 +26,7 @@ const (
 // IssueRequest describes the identity, permissions, and lifetime of a new token.
 type IssueRequest struct {
 	UserID         string
+	ProjectID      string
 	AgentSessionID string
 	AgentRunID     string
 	AllowedTools   []Tool
@@ -41,6 +42,7 @@ type IssuedToken struct {
 // Claims are the trusted identity and permissions authenticated from a token.
 type Claims struct {
 	UserID         string
+	ProjectID      string
 	AgentSessionID string
 	AgentRunID     string
 	AllowedTools   []Tool
@@ -53,6 +55,7 @@ func (c Claims) ExecutionScope(correlationID string) execution.Scope {
 	agentRunID := c.AgentRunID
 	return execution.Scope{
 		UserID:        c.UserID,
+		ProjectID:     &c.ProjectID,
 		ActorType:     execution.ActorBuiltInAgent,
 		ActorID:       &actorID,
 		Source:        execution.SourceInternalAPI,

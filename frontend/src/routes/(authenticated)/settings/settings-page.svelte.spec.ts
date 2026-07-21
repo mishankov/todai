@@ -6,7 +6,7 @@ import SettingsPage from './+page.svelte';
 describe('Settings page', () => {
 	afterEach(() => vi.unstubAllGlobals());
 
-	it('saves the selected timezone, agent model and thinking effort', async () => {
+	it('saves the selected timezone without exposing account-level agent controls', async () => {
 		const fetcher = vi.fn(
 			async () =>
 				new Response(
@@ -46,8 +46,8 @@ describe('Settings page', () => {
 		} as never);
 
 		await page.getByLabelText('Time zone').selectOptions('Europe/London');
-		await page.getByLabelText('Model').selectOptions('gpt-fast');
-		await page.getByLabelText('Thinking effort').selectOptions('high');
+		await expect.element(page.getByLabelText('Model')).not.toBeInTheDocument();
+		await expect.element(page.getByLabelText('Thinking effort')).not.toBeInTheDocument();
 		await page.getByRole('button', { name: 'Save changes' }).click();
 
 		expect(fetcher).toHaveBeenCalledWith(
@@ -55,8 +55,8 @@ describe('Settings page', () => {
 			expect.objectContaining({
 				body: JSON.stringify({
 					timezone: 'Europe/London',
-					agentModel: 'gpt-fast',
-					agentThinkingEffort: 'high',
+					agentModel: 'gpt-default',
+					agentThinkingEffort: 'medium',
 					version: 1
 				})
 			})

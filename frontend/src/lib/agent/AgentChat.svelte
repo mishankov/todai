@@ -17,11 +17,12 @@
 	} from './state';
 
 	interface Props {
+		projectId?: string;
 		api?: AgentAPI;
 		storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 	}
 
-	let { api = createAgentAPI(), storage }: Props = $props();
+	let { projectId = '', api = createAgentAPI(fetch, projectId), storage }: Props = $props();
 	let chatState = $state<AgentChatState | null>(null);
 	let open = $state(false);
 	let initialized = $state(false);
@@ -445,8 +446,8 @@
 		border: 0;
 		border-radius: 50%;
 		color: #fff;
-		background: #2d6540;
-		box-shadow: 0 0.8rem 2.2rem rgb(35 77 49 / 28%);
+		background: var(--theme-accent, #2d6540);
+		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 28%, transparent);
 		cursor: pointer;
 		transition:
 			transform 160ms ease,
@@ -455,10 +456,10 @@
 	}
 	.chat-launcher:hover {
 		transform: translateY(-2px);
-		box-shadow: 0 1rem 2.5rem rgb(35 77 49 / 34%);
+		box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--theme-accent, #2d6540) 34%, transparent);
 	}
 	.chat-launcher:focus-visible {
-		outline: 3px solid rgb(45 101 64 / 24%);
+		outline: 3px solid color-mix(in srgb, var(--theme-accent, #2d6540) 24%, transparent);
 		outline-offset: 3px;
 	}
 	.chat-launcher.hidden {
@@ -493,10 +494,10 @@
 		bottom: 1.5rem;
 		width: min(26rem, calc(100vw - 2rem));
 		height: min(42rem, calc(100dvh - 3rem));
-		border: 1px solid #d8e1d5;
+		border: 1px solid var(--theme-border, #dfe5dc);
 		border-radius: 1rem;
 		background: #fff;
-		box-shadow: 0 1.5rem 4rem rgb(31 51 36 / 22%);
+		box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--theme-accent, #2d6540) 22%, transparent);
 		overflow: hidden;
 		opacity: 0;
 		visibility: hidden;
@@ -521,8 +522,8 @@
 		gap: 1rem;
 		height: 4.35rem;
 		padding: 0 0.85rem 0 1rem;
-		border-bottom: 1px solid #e1e7df;
-		background: #f7faf6;
+		border-bottom: 1px solid var(--theme-border, #dfe5dc);
+		background: var(--theme-canvas, #fbfcfa);
 	}
 	.popup-identity,
 	.popup-actions {
@@ -544,7 +545,7 @@
 		place-items: center;
 		border-radius: 0.6rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 		font-weight: 800;
 	}
 	.popup-header h2 {
@@ -562,14 +563,14 @@
 		padding: 0.45rem 0.55rem;
 		border: 0;
 		border-radius: 0.45rem;
-		color: #315e40;
+		color: var(--theme-accent, #2d6540);
 		background: transparent;
 		font-size: 0.72rem;
 		font-weight: 720;
 		cursor: pointer;
 	}
 	.new-chat:hover:not(:disabled) {
-		background: #edf3ec;
+		background: var(--theme-hover, #e6ece4);
 	}
 	.new-chat:disabled {
 		cursor: not-allowed;
@@ -589,7 +590,7 @@
 	}
 	.close-chat:hover {
 		color: #2d2d2a;
-		background: #e9efe7;
+		background: var(--theme-hover, #e6ece4);
 	}
 	.chat-panel {
 		display: grid;
@@ -613,11 +614,11 @@
 		justify-self: end;
 		padding: 0.9rem 1rem;
 		border-radius: 0.85rem 0.85rem 0.2rem 0.85rem;
-		background: #e8f0e6;
+		background: var(--theme-accent-soft, #dfeadf);
 	}
 	.message-role {
 		margin: 0 0 0.35rem;
-		color: #50715a;
+		color: var(--theme-accent, #2d6540);
 		font-size: 0.7rem;
 		font-weight: 760;
 		letter-spacing: 0.04em;
@@ -655,7 +656,7 @@
 		place-items: center;
 		border-radius: 0.8rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 		font-weight: 800;
 	}
 	.suggestions {
@@ -667,22 +668,22 @@
 	}
 	.suggestions button {
 		padding: 0.55rem 0.75rem;
-		border: 1px solid #d6dfd3;
+		border: 1px solid var(--theme-border, #dfe5dc);
 		border-radius: 999px;
-		color: #4f6253;
-		background: #fbfcfa;
+		color: var(--theme-accent, #2d6540);
+		background: var(--theme-canvas, #fbfcfa);
 		cursor: pointer;
 	}
 	.suggestions button:hover {
-		border-color: #9eb5a2;
-		background: #f0f5ef;
+		border-color: var(--theme-accent, #2d6540);
+		background: var(--theme-hover, #e6ece4);
 	}
 	.tool-activity {
 		display: grid;
 		gap: 0.4rem;
 		margin-top: 1.3rem;
 		padding-top: 1rem;
-		border-top: 1px solid #edf0eb;
+		border-top: 1px solid var(--theme-border, #dfe5dc);
 	}
 	.tool-activity div,
 	.run-status {
@@ -690,7 +691,7 @@
 		align-items: center;
 		gap: 0.55rem;
 		margin: 0;
-		color: #68736a;
+		color: var(--theme-accent, #2d6540);
 		font-size: 0.8rem;
 	}
 	.tool-activity div.failed {
@@ -699,7 +700,7 @@
 	.tool-activity div > span:first-child {
 		width: 0.55rem;
 		height: 0.55rem;
-		border: 1.5px solid #8da594;
+		border: 1.5px solid color-mix(in srgb, var(--theme-accent, #2d6540) 62%, transparent);
 		border-radius: 50%;
 	}
 	.tool-activity div > span:first-child.spinning {
@@ -711,19 +712,19 @@
 	}
 	.composer-area {
 		padding: 1rem;
-		border-top: 1px solid #dfe5dc;
-		background: #f8faf7;
+		border-top: 1px solid var(--theme-border, #dfe5dc);
+		background: var(--theme-canvas, #fbfcfa);
 	}
 	form {
 		padding: 0.7rem 0.8rem 0.6rem;
-		border: 1px solid #ccd8c9;
+		border: 1px solid var(--theme-border, #dfe5dc);
 		border-radius: 0.75rem;
 		background: #fff;
-		box-shadow: 0 0.4rem 1.2rem rgb(45 65 49 / 5%);
+		box-shadow: 0 0.4rem 1.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 5%, transparent);
 	}
 	form:focus-within {
-		border-color: #78a184;
-		box-shadow: 0 0 0 3px rgb(76 127 91 / 11%);
+		border-color: var(--theme-accent, #2d6540);
+		box-shadow: 0 0 0 3px var(--theme-focus, rgb(45 101 64 / 16%));
 	}
 	label {
 		position: absolute;
@@ -776,7 +777,7 @@
 	}
 	.send {
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 	}
 	.stop {
 		color: #9f3d35;

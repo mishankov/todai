@@ -42,10 +42,13 @@ type createProjectRequest struct {
 }
 
 type updateProjectRequest struct {
-	Version  *int64           `json:"version"`
-	Name     optional[string] `json:"name"`
-	Archived optional[bool]   `json:"archived"`
-	Layout   optional[Layout] `json:"layout"`
+	Version             *int64               `json:"version"`
+	Name                optional[string]     `json:"name"`
+	Archived            optional[bool]       `json:"archived"`
+	Layout              optional[Layout]     `json:"layout"`
+	ColorTheme          optional[ColorTheme] `json:"colorTheme"`
+	AgentModel          optional[string]     `json:"agentModel"`
+	AgentThinkingEffort optional[string]     `json:"agentThinkingEffort"`
 }
 
 type createSectionRequest struct {
@@ -190,6 +193,15 @@ func (h projectHandlers) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.Layout.Set {
 		update.Layout = &request.Layout.Value
+	}
+	if request.ColorTheme.Set {
+		update.ColorTheme = &request.ColorTheme.Value
+	}
+	if request.AgentModel.Set {
+		update.AgentModel = &request.AgentModel.Value
+	}
+	if request.AgentThinkingEffort.Set {
+		update.AgentThinkingEffort = &request.AgentThinkingEffort.Value
 	}
 
 	scope, ok := projectWebUserScope(w, r)
@@ -349,6 +361,9 @@ func writeProjectError(w http.ResponseWriter, r *http.Request, operation string,
 		errors.Is(err, ErrSectionNameTooLong),
 		errors.Is(err, ErrSectionNoChanges),
 		errors.Is(err, ErrInvalidLayout),
+		errors.Is(err, ErrInvalidColorTheme),
+		errors.Is(err, ErrInvalidAgentModel),
+		errors.Is(err, ErrInvalidAgentThinkingEffort),
 		errors.Is(err, ErrInvalidVersion),
 		errors.Is(err, ErrNoChanges):
 		http.Error(w, err.Error(), http.StatusBadRequest)

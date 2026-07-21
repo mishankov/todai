@@ -2,7 +2,7 @@ export type TaskStatus = 'active' | 'completed';
 
 export interface Task {
 	id: string;
-	projectId: string | null;
+	projectId: string;
 	sectionId: string | null;
 	parentId: string | null;
 	title: string;
@@ -29,7 +29,7 @@ export interface TaskUpdate {
 	version: number;
 	title?: string;
 	description?: string | null;
-	projectId?: string | null;
+	projectId?: string;
 	sectionId?: string | null;
 	priority?: number;
 	dueDate?: string | null;
@@ -64,22 +64,33 @@ export class TaskConflictError extends TaskRequestError {
 
 export async function getInbox(
 	fetcher: typeof fetch,
+	projectId: string,
 	includeCompleted = false
 ): Promise<TaskSummary[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
-	return getTaskView(fetcher, `/api/views/inbox?${query}`, 'Could not load Inbox.');
+	return getTaskView(
+		fetcher,
+		`/api/views/projects/${encodeURIComponent(projectId)}/inbox?${query}`,
+		'Could not load Inbox.'
+	);
 }
 
 export async function getAllTasks(
 	fetcher: typeof fetch,
+	projectId: string,
 	includeCompleted = false
 ): Promise<TaskSummary[]> {
 	const query = new URLSearchParams({ include_completed: String(includeCompleted) });
-	return getTaskView(fetcher, `/api/views/all?${query}`, 'Could not load all tasks.');
+	return getTaskView(
+		fetcher,
+		`/api/views/projects/${encodeURIComponent(projectId)}/all?${query}`,
+		'Could not load all tasks.'
+	);
 }
 
 export async function getToday(
 	fetcher: typeof fetch,
+	projectId: string,
 	timezone: string,
 	includeCompleted = false
 ): Promise<TaskSummary[]> {
@@ -87,7 +98,11 @@ export async function getToday(
 		timezone,
 		include_completed: String(includeCompleted)
 	});
-	return getTaskView(fetcher, `/api/views/today?${query}`, 'Could not load Today.');
+	return getTaskView(
+		fetcher,
+		`/api/views/projects/${encodeURIComponent(projectId)}/today?${query}`,
+		'Could not load Today.'
+	);
 }
 
 export async function getProjectTasks(
@@ -123,7 +138,7 @@ async function getTaskView(
 export async function createTask(
 	fetcher: typeof fetch,
 	title: string,
-	projectId?: string,
+	projectId: string,
 	sectionId?: string,
 	parentId?: string
 ): Promise<Task> {
@@ -132,7 +147,7 @@ export async function createTask(
 		'/api/tasks',
 		{
 			title,
-			...(projectId === undefined ? {} : { projectId }),
+			projectId,
 			...(sectionId === undefined ? {} : { sectionId }),
 			...(parentId === undefined ? {} : { parentId })
 		},

@@ -23,12 +23,14 @@ func TestRepositoryAppendsAndListsUserEventsNewestFirst(t *testing.T) {
 	taskType := "task"
 	first := appendEvent(t, ctx, repository, db, execution.UserScope("user-id", "correlation-id"), activity.NewEvent{
 		Type:          "task.created",
+		ProjectID:     stringPointer("project-id"),
 		AggregateType: &taskType,
 		AggregateID:   stringPointer("first-task"),
 		Payload:       map[string]any{"schemaVersion": 1, "title": "First"},
 	})
 	secondScope := execution.Scope{
 		UserID:        "user-id",
+		ProjectID:     stringPointer("project-id"),
 		ActorType:     execution.ActorBuiltInAgent,
 		Source:        execution.SourceInternalAPI,
 		CorrelationID: "correlation-id",
@@ -46,15 +48,19 @@ func TestRepositoryAppendsAndListsUserEventsNewestFirst(t *testing.T) {
 		UserID: "user-id", ActorType: execution.ActorSystem,
 		Source: execution.SourceSystem, CorrelationID: "system-correlation",
 	}, activity.NewEvent{
-		Type:    "task.maintenance.completed",
+		Type: "task.maintenance.completed", ProjectID: stringPointer("project-id"),
 		Payload: map[string]any{"schemaVersion": 1},
 	})
 	appendEvent(t, ctx, repository, db, execution.UserScope("other-user", "other-correlation"), activity.NewEvent{
 		Type:    "task.created",
 		Payload: map[string]any{"schemaVersion": 1},
 	})
+	appendEvent(t, ctx, repository, db, execution.UserScope("user-id", "other-project-correlation"), activity.NewEvent{
+		Type: "task.created", ProjectID: stringPointer("other-project"),
+		Payload: map[string]any{"schemaVersion": 1},
+	})
 
-	events, err := repository.List(ctx, "user-id", 50)
+	events, err := repository.List(ctx, "user-id", "project-id", 50)
 	if err != nil {
 		t.Fatalf("list activity: %v", err)
 	}
@@ -90,14 +96,14 @@ func TestRepositoryAppendParticipatesInCallerTransaction(t *testing.T) {
 		t.Fatalf("begin transaction: %v", err)
 	}
 	appendEvent(t, ctx, repository, tx, execution.UserScope("user-id", "correlation-id"), activity.NewEvent{
-		Type:    "task.created",
+		Type: "task.created", ProjectID: stringPointer("project-id"),
 		Payload: map[string]any{"schemaVersion": 1},
 	})
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("rollback transaction: %v", err)
 	}
 
-	events, err := repository.List(ctx, "user-id", 50)
+	events, err := repository.List(ctx, "user-id", "project-id", 50)
 	if err != nil {
 		t.Fatalf("list activity: %v", err)
 	}
@@ -110,23 +116,23 @@ func TestRepositoryListsEventsAfterDurableOffset(t *testing.T) {
 	db, repository := testRepository(t)
 	ctx := context.Background()
 	first := appendEvent(t, ctx, repository, db, execution.UserScope("user-id", "first"), activity.NewEvent{
-		Type: "task.created", Payload: map[string]any{"schemaVersion": 1},
+		Type: "task.created", ProjectID: stringPointer("project-id"), Payload: map[string]any{"schemaVersion": 1},
 	})
 	second := appendEvent(t, ctx, repository, db, execution.UserScope("user-id", "second"), activity.NewEvent{
-		Type: "task.updated", Payload: map[string]any{"schemaVersion": 1},
+		Type: "task.updated", ProjectID: stringPointer("project-id"), Payload: map[string]any{"schemaVersion": 1},
 	})
 	appendEvent(t, ctx, repository, db, execution.UserScope("other-user", "other"), activity.NewEvent{
 		Type: "task.created", Payload: map[string]any{"schemaVersion": 1},
 	})
 
-	latest, err := repository.LatestOffset(ctx, "user-id")
+	latest, err := repository.LatestOffset(ctx, "user-id", "project-id")
 	if err != nil {
 		t.Fatalf("latest offset: %v", err)
 	}
 	if latest != second.StreamOffset || second.StreamOffset <= first.StreamOffset {
 		t.Errorf("offsets = first %d, second %d, latest %d", first.StreamOffset, second.StreamOffset, latest)
 	}
-	events, err := repository.ListAfter(ctx, "user-id", first.StreamOffset, 100)
+	events, err := repository.ListAfter(ctx, "user-id", "project-id", first.StreamOffset, 100)
 	if err != nil {
 		t.Fatalf("list after: %v", err)
 	}

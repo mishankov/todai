@@ -17,11 +17,13 @@ export class RealtimeRequestError extends Error {
 
 export async function pollActivityChanges(
 	fetcher: typeof fetch,
+	projectId: string,
 	after: number | null,
 	signal: AbortSignal
 ): Promise<ActivityChanges> {
-	const query = after === null ? '' : `?${new URLSearchParams({ after: String(after) })}`;
-	const response = await fetcher(`/api/activity/changes${query}`, {
+	const query = new URLSearchParams({ project_id: projectId });
+	if (after !== null) query.set('after', String(after));
+	const response = await fetcher(`/api/activity/changes?${query}`, {
 		credentials: 'same-origin',
 		headers: { Accept: 'application/json' },
 		signal

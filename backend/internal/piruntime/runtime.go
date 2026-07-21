@@ -103,6 +103,7 @@ func (r *Runtime) Run(
 		Type:        "run.start",
 		RequestID:   "start-" + request.RunID,
 		SessionID:   request.SessionID,
+		ProjectID:   request.ProjectID,
 		RunID:       request.RunID,
 		Message:     request.Message,
 		Context:     request.Context,

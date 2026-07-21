@@ -27,6 +27,12 @@ var (
 	ErrNoChanges = errors.New("project update contains no changes")
 	// ErrInvalidLayout indicates that a project layout is unsupported.
 	ErrInvalidLayout = errors.New("project layout must be list or board")
+	// ErrInvalidColorTheme indicates that a project theme is unsupported.
+	ErrInvalidColorTheme = errors.New("project color theme is not available")
+	// ErrInvalidAgentModel indicates that a project agent model is unavailable.
+	ErrInvalidAgentModel = errors.New("project agent model is not available")
+	// ErrInvalidAgentThinkingEffort indicates an unsupported reasoning effort.
+	ErrInvalidAgentThinkingEffort = errors.New("project agent thinking effort is not available")
 	// ErrSectionNotFound indicates that a section is unavailable in the project.
 	ErrSectionNotFound = errors.New("project section not found")
 	// ErrSectionNameRequired indicates that a section name is blank.
@@ -38,7 +44,7 @@ var (
 )
 
 type repository interface {
-	Create(context.Context, execution.Scope, string) (Project, error)
+	Create(context.Context, execution.Scope, string, ...AgentDefaults) (Project, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
 	Update(context.Context, execution.Scope, string, Update) (Project, error)
@@ -51,12 +57,35 @@ type repository interface {
 
 // Service provides user-scoped project application operations.
 type Service struct {
-	repository repository
+	repository           repository
+	defaults             AgentDefaults
+	availableAgentModels []string
+}
+
+// ServiceConfig supplies server-owned defaults and model choices.
+type ServiceConfig struct {
+	DefaultAgentModel          string
+	AvailableAgentModels       []string
+	DefaultAgentThinkingEffort string
 }
 
 // NewService constructs a project service.
-func NewService(repository repository) *Service {
-	return &Service{repository: repository}
+func NewService(repository repository, configs ...ServiceConfig) *Service {
+	config := ServiceConfig{DefaultAgentThinkingEffort: "medium"}
+	if len(configs) > 0 {
+		config = configs[0]
+		if strings.TrimSpace(config.DefaultAgentThinkingEffort) == "" {
+			config.DefaultAgentThinkingEffort = "medium"
+		}
+	}
+	return &Service{
+		repository: repository,
+		defaults: AgentDefaults{
+			Model:          strings.TrimSpace(config.DefaultAgentModel),
+			ThinkingEffort: strings.TrimSpace(config.DefaultAgentThinkingEffort),
+		},
+		availableAgentModels: append([]string(nil), config.AvailableAgentModels...),
+	}
 }
 
 // Create creates an active project for the user.
@@ -69,7 +98,7 @@ func (s *Service) Create(ctx context.Context, scope execution.Scope, name string
 		return Project{}, err
 	}
 
-	created, err := s.repository.Create(ctx, scope, name)
+	created, err := s.repository.Create(ctx, scope, name, s.defaults)
 	if err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
@@ -85,6 +114,27 @@ func (s *Service) Get(ctx context.Context, userID, projectID string) (Project, e
 	}
 
 	return found, nil
+}
+
+// ResolveAgent returns the model and thinking effort configured for one project.
+func (s *Service) ResolveAgent(
+	ctx context.Context,
+	userID string,
+	projectID string,
+) (string, string, error) {
+	found, err := s.Get(ctx, userID, projectID)
+	if err != nil {
+		return "", "", err
+	}
+	model := strings.TrimSpace(found.AgentModel)
+	if model == "" {
+		model = s.defaults.Model
+	}
+	effort := strings.TrimSpace(found.AgentThinkingEffort)
+	if effort == "" {
+		effort = s.defaults.ThinkingEffort
+	}
+	return model, effort, nil
 }
 
 // List returns the user's projects ordered by position.
@@ -110,7 +160,8 @@ func (s *Service) Update(
 	if update.Version < 1 {
 		return Project{}, ErrInvalidVersion
 	}
-	if update.Name == nil && update.Archived == nil && update.Layout == nil {
+	if update.Name == nil && update.Archived == nil && update.Layout == nil &&
+		update.ColorTheme == nil && update.AgentModel == nil && update.AgentThinkingEffort == nil {
 		return Project{}, ErrNoChanges
 	}
 	if update.Name != nil {
@@ -123,6 +174,23 @@ func (s *Service) Update(
 	if update.Layout != nil && *update.Layout != LayoutList && *update.Layout != LayoutBoard {
 		return Project{}, ErrInvalidLayout
 	}
+	if update.ColorTheme != nil && !validColorTheme(*update.ColorTheme) {
+		return Project{}, ErrInvalidColorTheme
+	}
+	if update.AgentModel != nil {
+		model := strings.TrimSpace(*update.AgentModel)
+		if !contains(s.availableAgentModels, model) {
+			return Project{}, ErrInvalidAgentModel
+		}
+		update.AgentModel = &model
+	}
+	if update.AgentThinkingEffort != nil {
+		effort := strings.TrimSpace(*update.AgentThinkingEffort)
+		if !validThinkingEffort(effort) {
+			return Project{}, ErrInvalidAgentThinkingEffort
+		}
+		update.AgentThinkingEffort = &effort
+	}
 
 	updated, err := s.repository.Update(ctx, scope, projectID, update)
 	if err != nil {
@@ -130,6 +198,29 @@ func (s *Service) Update(
 	}
 
 	return updated, nil
+}
+
+func validColorTheme(theme ColorTheme) bool {
+	switch theme {
+	case ColorThemeSage, ColorThemeOcean, ColorThemePlum, ColorThemeSand,
+		ColorThemeRose, ColorThemeGraphite:
+		return true
+	default:
+		return false
+	}
+}
+
+func validThinkingEffort(effort string) bool {
+	return contains([]string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}, effort)
+}
+
+func contains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 // CreateSection creates a section at the end of a project.

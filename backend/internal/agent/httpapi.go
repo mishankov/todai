@@ -28,11 +28,11 @@ const (
 type HTTPService interface {
 	CreateSession(context.Context, execution.Scope) (Session, error)
 	GetSession(context.Context, string, string) (Conversation, error)
-	StartContextRun(context.Context, execution.Scope, MessageContext) (Run, error)
-	PostMessage(context.Context, execution.Scope, string, MessageInput) (PostedMessage, error)
+	StartContextRun(context.Context, execution.Scope, string, MessageContext) (Run, error)
+	PostMessage(context.Context, execution.Scope, string, string, MessageInput) (PostedMessage, error)
 	ListEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
-	ListContextRunEvents(context.Context, string, string, int64, int) ([]RunEvent, error)
-	Abort(context.Context, execution.Scope, string) (Run, error)
+	ListContextRunEvents(context.Context, string, string, string, int64, int) ([]RunEvent, error)
+	Abort(context.Context, execution.Scope, string, string) (Run, error)
 }
 
 // HTTPModule owns the built-in agent's public routes and handlers.
@@ -46,11 +46,17 @@ type agentHandlers struct {
 }
 
 type postMessageRequest struct {
-	Message string `json:"message"`
+	ProjectID string `json:"projectId"`
+	Message   string `json:"message"`
 }
 
 type startContextRunRequest struct {
-	Context MessageContext `json:"context"`
+	ProjectID string         `json:"projectId"`
+	Context   MessageContext `json:"context"`
+}
+
+type abortRunRequest struct {
+	ProjectID string `json:"projectId"`
 }
 
 // NewHTTPModule constructs the agent HTTP module.
@@ -82,7 +88,7 @@ func (h agentHandlers) startContextRun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	started, err := h.service.StartContextRun(r.Context(), scope, request.Context)
+	started, err := h.service.StartContextRun(r.Context(), scope, request.ProjectID, request.Context)
 	if err != nil {
 		writeAgentError(w, r, "start_context_run", err)
 		return
@@ -126,7 +132,7 @@ func (h agentHandlers) postMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	posted, err := h.service.PostMessage(r.Context(), scope, r.PathValue("id"), MessageInput{
+	posted, err := h.service.PostMessage(r.Context(), scope, request.ProjectID, r.PathValue("id"), MessageInput{
 		Content: request.Message,
 	})
 	if err != nil {
@@ -137,11 +143,15 @@ func (h agentHandlers) postMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h agentHandlers) abort(w http.ResponseWriter, r *http.Request) {
+	var request abortRunRequest
+	if !decodeAgentRequest(w, r, &request) {
+		return
+	}
 	scope, ok := webScope(w, r)
 	if !ok {
 		return
 	}
-	finished, err := h.service.Abort(r.Context(), scope, r.PathValue("id"))
+	finished, err := h.service.Abort(r.Context(), scope, request.ProjectID, r.PathValue("id"))
 	if err != nil {
 		writeAgentError(w, r, "abort_run", err)
 		return
@@ -168,10 +178,13 @@ func (h agentHandlers) contextRunEvents(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	projectID := r.URL.Query().Get("projectId")
 	streamAgentEvents(w, r, "list_context_run_events", func(
 		ctx context.Context, after int64, limit int,
 	) ([]RunEvent, error) {
-		return h.service.ListContextRunEvents(ctx, user.ID, r.PathValue("id"), after, limit)
+		return h.service.ListContextRunEvents(
+			ctx, user.ID, projectID, r.PathValue("id"), after, limit,
+		)
 	})
 }
 
@@ -313,9 +326,10 @@ func writeAgentError(w http.ResponseWriter, r *http.Request, operation string, e
 	switch {
 	case errors.Is(err, ErrSessionNotFound), errors.Is(err, ErrRunNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrMessageContextNotFound):
+	case errors.Is(err, ErrMessageContextNotFound), errors.Is(err, ErrProjectNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrMessageRequired), errors.Is(err, ErrInvalidMessageContext),
+		errors.Is(err, ErrProjectIDRequired),
 		errors.Is(err, ErrInvalidEventCursor),
 		errors.Is(err, ErrInvalidEventLimit), errors.Is(err, ErrInvalidEvent):
 		http.Error(w, err.Error(), http.StatusBadRequest)

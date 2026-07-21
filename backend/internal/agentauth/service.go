@@ -19,6 +19,8 @@ const (
 var (
 	// ErrUserIDRequired indicates that the token has no user authorization scope.
 	ErrUserIDRequired = errors.New("agent token user ID is required")
+	// ErrProjectIDRequired indicates that the token has no project authorization scope.
+	ErrProjectIDRequired = errors.New("agent token project ID is required")
 	// ErrAgentSessionIDRequired indicates that the token is not scoped to an agent session.
 	ErrAgentSessionIDRequired = errors.New("agent token session ID is required")
 	// ErrAgentRunIDRequired indicates that the token is not scoped to an agent run.
@@ -115,6 +117,10 @@ func validateIssueRequest(request IssueRequest) (Claims, error) {
 	if userID == "" {
 		return Claims{}, ErrUserIDRequired
 	}
+	projectID := strings.TrimSpace(request.ProjectID)
+	if projectID == "" {
+		return Claims{}, ErrProjectIDRequired
+	}
 	sessionID := strings.TrimSpace(request.AgentSessionID)
 	if sessionID == "" {
 		return Claims{}, ErrAgentSessionIDRequired
@@ -132,7 +138,8 @@ func validateIssueRequest(request IssueRequest) (Claims, error) {
 	}
 
 	return Claims{
-		UserID: userID, AgentSessionID: sessionID, AgentRunID: runID, AllowedTools: tools,
+		UserID: userID, ProjectID: projectID, AgentSessionID: sessionID,
+		AgentRunID: runID, AllowedTools: tools,
 	}, nil
 }
 

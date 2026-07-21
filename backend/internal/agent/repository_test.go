@@ -20,13 +20,15 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 	db, repository, activityRepository := testAgentRepository(t)
 	ctx := context.Background()
 	userScope := execution.UserScope("user-id", "correlation-id")
+	projectID := "project-id"
+	userScope.ProjectID = &projectID
 
 	session, err := repository.CreateSession(ctx, userScope)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	message, run, history, err := repository.CreateMessageRun(
-		ctx, userScope, session.ID, agent.MessageInput{Content: " Triage inbox "},
+		ctx, userScope, projectID, session.ID, agent.MessageInput{Content: " Triage inbox "},
 	)
 	if err != nil {
 		t.Fatalf("create message run: %v", err)
@@ -119,7 +121,7 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 		t.Errorf("late event error = %v, want %v", err, agent.ErrRunFinished)
 	}
 	_, failedRun, history, err := repository.CreateMessageRun(
-		ctx, userScope, session.ID, agent.MessageInput{Content: "Try again"},
+		ctx, userScope, projectID, session.ID, agent.MessageInput{Content: "Try again"},
 	)
 	if err != nil {
 		t.Fatalf("create failed message run: %v", err)
@@ -144,12 +146,17 @@ func TestRepositoryPersistsConversationEventsAndLifecycleActivity(t *testing.T) 
 		t.Errorf("failed run = %#v", updatedRuns)
 	}
 
-	activityEvents, err := activityRepository.List(ctx, "user-id", 50)
+	activityEvents, err := activityRepository.List(ctx, "user-id", projectID, 50)
 	if err != nil {
 		t.Fatalf("list lifecycle activity: %v", err)
 	}
 	if len(activityEvents) != 8 {
 		t.Fatalf("lifecycle activity count = %d, want 8", len(activityEvents))
+	}
+	for _, event := range activityEvents {
+		if event.ProjectID == nil || *event.ProjectID != projectID {
+			t.Errorf("lifecycle event project = %#v", event.ProjectID)
+		}
 	}
 	if activityEvents[0].Type != agent.EventRunFailed ||
 		activityEvents[len(activityEvents)-1].Type != "agent.session.created" {
@@ -163,13 +170,15 @@ func TestRepositoryKeepsContextRunsOutOfConversationHistory(t *testing.T) {
 	db, repository, _ := testAgentRepository(t)
 	ctx := context.Background()
 	scope := execution.UserScope("user-id", "correlation-id")
+	projectID := "project-id"
+	scope.ProjectID = &projectID
 
 	conversation, err := repository.CreateSession(ctx, scope)
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
 	if _, _, _, err := repository.CreateMessageRun(
-		ctx, scope, conversation.ID, agent.MessageInput{Content: "Keep this chat isolated"},
+		ctx, scope, projectID, conversation.ID, agent.MessageInput{Content: "Keep this chat isolated"},
 	); err != nil {
 		t.Fatalf("create conversation run: %v", err)
 	}
@@ -178,7 +187,7 @@ func TestRepositoryKeepsContextRunsOutOfConversationHistory(t *testing.T) {
 		Type: agent.ContextTask, TaskID: "11111111-1111-4111-8111-111111111111",
 		Action: agent.ContextActionDecompose,
 	}
-	actionRun, err := repository.CreateContextRun(ctx, scope, messageContext)
+	actionRun, err := repository.CreateContextRun(ctx, scope, projectID, messageContext)
 	if err != nil {
 		t.Fatalf("create contextual run: %v", err)
 	}
@@ -211,7 +220,7 @@ func TestRepositoryKeepsContextRunsOutOfConversationHistory(t *testing.T) {
 		t.Errorf("conversation leaked contextual run: messages=%#v runs=%#v offset=%d", messages, runs, lastOffset)
 	}
 	_, _, history, err := repository.CreateMessageRun(
-		ctx, scope, conversation.ID, agent.MessageInput{Content: "Continue the chat"},
+		ctx, scope, projectID, conversation.ID, agent.MessageInput{Content: "Continue the chat"},
 	)
 	if err != nil {
 		t.Fatalf("continue conversation: %v", err)
@@ -234,14 +243,21 @@ func TestRepositoryKeepsContextRunsOutOfConversationHistory(t *testing.T) {
 	); !errors.Is(err, agent.ErrSessionNotFound) {
 		t.Errorf("contextual execution exposed as conversation: %v", err)
 	}
-	events, err := repository.ListContextRunEvents(ctx, "user-id", actionRun.ID, 0, 100)
+	events, err := repository.ListContextRunEvents(
+		ctx, "user-id", projectID, actionRun.ID, 0, 100,
+	)
 	if err != nil || len(events) != 3 {
 		t.Errorf("contextual events = %#v, error = %v", events, err)
 	}
 	if _, err := repository.ListContextRunEvents(
-		ctx, "other-user", actionRun.ID, 0, 100,
+		ctx, "other-user", projectID, actionRun.ID, 0, 100,
 	); !errors.Is(err, agent.ErrRunNotFound) {
 		t.Errorf("other user contextual events error = %v", err)
+	}
+	if _, err := repository.ListContextRunEvents(
+		ctx, "user-id", "other-project", actionRun.ID, 0, 100,
+	); !errors.Is(err, agent.ErrRunNotFound) {
+		t.Errorf("other project contextual events error = %v", err)
 	}
 }
 
@@ -325,7 +341,8 @@ func agentRunScope(run agent.Run) execution.Scope {
 	actorID := run.SessionID
 	runID := run.ID
 	return execution.Scope{
-		UserID: run.UserID, ActorType: execution.ActorBuiltInAgent, ActorID: &actorID,
+		UserID: run.UserID, ProjectID: run.ProjectID,
+		ActorType: execution.ActorBuiltInAgent, ActorID: &actorID,
 		Source: execution.SourceSystem, CorrelationID: run.CorrelationID, AgentRunID: &runID,
 	}
 }

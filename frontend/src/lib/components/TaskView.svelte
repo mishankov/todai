@@ -19,6 +19,7 @@
 		listLabel: string;
 		projects?: Project[];
 		currentProjectId?: string | null;
+		currentSectionId?: string | null;
 	}
 
 	interface TaskGroup {
@@ -43,7 +44,8 @@
 		emptyMessage,
 		listLabel,
 		projects = [],
-		currentProjectId
+		currentProjectId,
+		currentSectionId
 	}: Props = $props();
 	let tasks = $derived([...initialTasks]);
 	let title = $state('');
@@ -122,12 +124,14 @@
 
 	async function saveItem(item: TaskSummary, changes: TaskUpdate) {
 		const updated = await update(item.id, changes);
-		tasks =
-			currentProjectId === undefined || updated.projectId === currentProjectId
-				? tasks.map((candidate) =>
-						candidate.id === updated.id ? { ...candidate, ...updated } : candidate
-					)
-				: tasks.filter((candidate) => candidate.id !== updated.id);
+		const remainsInView =
+			(currentProjectId === undefined || updated.projectId === currentProjectId) &&
+			(currentSectionId === undefined || updated.sectionId === currentSectionId);
+		tasks = remainsInView
+			? tasks.map((candidate) =>
+					candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+				)
+			: tasks.filter((candidate) => candidate.id !== updated.id);
 		editingTaskId = null;
 	}
 
@@ -480,7 +484,7 @@
 	}
 
 	.quick-add:focus-within input::placeholder {
-		color: #2d6540;
+		color: var(--theme-accent, #2d6540);
 	}
 
 	.quick-add button {
@@ -488,7 +492,7 @@
 		border: 0;
 		border-radius: 0.35rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 		font-size: 0.76rem;
 		font-weight: 720;
 		cursor: pointer;
@@ -541,7 +545,7 @@
 	}
 
 	.task-group.today .group-header h2 {
-		color: #32885e;
+		color: var(--theme-accent, #32885e);
 	}
 
 	.task-group.completed .group-header h2,
@@ -630,7 +634,7 @@
 	}
 
 	.due {
-		color: #32885e;
+		color: var(--theme-accent, #32885e);
 	}
 
 	.due.overdue {
@@ -651,7 +655,7 @@
 	}
 
 	.task-project {
-		color: #52705a;
+		color: var(--theme-accent, #52705a);
 	}
 
 	.task-actions {

@@ -16,7 +16,8 @@ import (
 )
 
 const projectColumns = `
-	id, user_id, name, layout, position, version, archived_at, created_at, updated_at,
+	id, user_id, name, layout, color_theme, agent_model, agent_thinking_effort,
+	position, version, archived_at, created_at, updated_at,
 	last_modified_by
 `
 
@@ -55,7 +56,16 @@ func (r *Repository) Migrations() fs.FS {
 }
 
 // Create inserts an active project after the user's existing projects.
-func (r *Repository) Create(ctx context.Context, scope execution.Scope, name string) (Project, error) {
+func (r *Repository) Create(
+	ctx context.Context,
+	scope execution.Scope,
+	name string,
+	defaults ...AgentDefaults,
+) (Project, error) {
+	effectiveDefaults := AgentDefaults{ThinkingEffort: "medium"}
+	if len(defaults) > 0 {
+		effectiveDefaults = defaults[0]
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return Project{}, fmt.Errorf("begin project creation: %w", err)
@@ -65,25 +75,30 @@ func (r *Repository) Create(ctx context.Context, scope execution.Scope, name str
 	var created Project
 	err = tx.GetContext(ctx, &created, `
 		INSERT INTO projects (
-			id, user_id, name, position, version, created_at, updated_at, last_modified_by
+			id, user_id, name, color_theme, agent_model, agent_thinking_effort,
+			position, version, created_at, updated_at, last_modified_by
 		)
-		SELECT $1::VARCHAR, $2::VARCHAR, $3::TEXT,
+		SELECT $1::VARCHAR, $2::VARCHAR, $3::TEXT, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR,
 			COALESCE(MAX(position), 0) + 1024, 1,
-			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $4::VARCHAR
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $7::VARCHAR
 		FROM projects
 		WHERE user_id = $2::VARCHAR AND archived_at IS NULL
 		RETURNING `+projectColumns,
-		uuid.NewString(), scope.UserID, name, scope.ModifiedBy(),
+		uuid.NewString(), scope.UserID, name, ColorThemeSage, effectiveDefaults.Model,
+		effectiveDefaults.ThinkingEffort, scope.ModifiedBy(),
 	)
 	if err != nil {
 		return Project{}, fmt.Errorf("insert project: %w", err)
 	}
 
 	if err := r.appendProjectEvent(ctx, tx, scope, "project.created", created, map[string]any{
-		"schemaVersion": 1,
-		"name":          created.Name,
-		"layout":        created.Layout,
-		"version":       created.Version,
+		"schemaVersion":       1,
+		"name":                created.Name,
+		"layout":              created.Layout,
+		"colorTheme":          created.ColorTheme,
+		"agentModel":          created.AgentModel,
+		"agentThinkingEffort": created.AgentThinkingEffort,
+		"version":             created.Version,
 	}); err != nil {
 		return Project{}, err
 	}
@@ -167,15 +182,21 @@ func (r *Repository) Update(
 				ELSE NULL
 			END,
 			layout = CASE WHEN $8::BOOLEAN THEN $9::VARCHAR ELSE layout END,
+			color_theme = CASE WHEN $10::BOOLEAN THEN $11::VARCHAR ELSE color_theme END,
+			agent_model = CASE WHEN $12::BOOLEAN THEN $13::VARCHAR ELSE agent_model END,
+			agent_thinking_effort = CASE WHEN $14::BOOLEAN THEN $15::VARCHAR ELSE agent_thinking_effort END,
 			version = version + 1,
 			updated_at = CURRENT_TIMESTAMP,
-			last_modified_by = $10
+			last_modified_by = $16
 		WHERE id = $1 AND user_id = $2 AND version = $3
 		RETURNING `+projectColumns,
 		projectID, scope.UserID, update.Version,
 		update.Name != nil, pointerValue(update.Name),
 		update.Archived != nil, pointerValue(update.Archived),
 		update.Layout != nil, pointerValue(update.Layout),
+		update.ColorTheme != nil, pointerValue(update.ColorTheme),
+		update.AgentModel != nil, pointerValue(update.AgentModel),
+		update.AgentThinkingEffort != nil, pointerValue(update.AgentThinkingEffort),
 		scope.ModifiedBy(),
 	)
 	if err != nil {
@@ -187,12 +208,15 @@ func (r *Repository) Update(
 		eventType = "project.archived"
 	}
 	if err := r.appendProjectEvent(ctx, tx, scope, eventType, updated, map[string]any{
-		"schemaVersion": 1,
-		"beforeVersion": current.Version,
-		"version":       updated.Version,
-		"name":          updated.Name,
-		"layout":        updated.Layout,
-		"archived":      updated.ArchivedAt != nil,
+		"schemaVersion":       1,
+		"beforeVersion":       current.Version,
+		"version":             updated.Version,
+		"name":                updated.Name,
+		"layout":              updated.Layout,
+		"colorTheme":          updated.ColorTheme,
+		"agentModel":          updated.AgentModel,
+		"agentThinkingEffort": updated.AgentThinkingEffort,
+		"archived":            updated.ArchivedAt != nil,
 	}); err != nil {
 		return Project{}, err
 	}
@@ -573,6 +597,7 @@ func (r *Repository) appendProjectEvent(
 	aggregateType := "project"
 	if _, err := r.events.Append(ctx, executor, scope, activity.NewEvent{
 		Type:          eventType,
+		ProjectID:     &project.ID,
 		AggregateType: &aggregateType,
 		AggregateID:   &project.ID,
 		Payload:       payload,
@@ -594,6 +619,7 @@ func (r *Repository) appendSectionEvent(
 	aggregateType := "section"
 	if _, err := r.events.Append(ctx, executor, scope, activity.NewEvent{
 		Type:          eventType,
+		ProjectID:     &section.ProjectID,
 		AggregateType: &aggregateType,
 		AggregateID:   &section.ID,
 		Payload:       payload,

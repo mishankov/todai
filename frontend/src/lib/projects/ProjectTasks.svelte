@@ -546,12 +546,12 @@
 >
 	<header class="view-header">
 		<div>
-			<p>Project</p>
-			<h1>{currentProject.name}</h1>
+			<p>{currentProject.name}</p>
+			<h1>Tasks</h1>
 		</div>
 		<div class="header-actions">
 			<span>{activeTasks.length} active</span>
-			<div class="layout-switch" aria-label="Project layout">
+			<div class="layout-switch" aria-label="Tasks layout">
 				<button
 					type="button"
 					class:active={currentProject.layout === 'list'}
@@ -845,7 +845,7 @@
 	}
 	.view-header p {
 		margin: 0 0 0.3rem;
-		color: #52705a;
+		color: var(--theme-accent, #52705a);
 		font-size: 0.68rem;
 		font-weight: 720;
 		letter-spacing: 0.08em;
@@ -864,9 +864,9 @@
 	}
 	.layout-switch {
 		padding: 0.16rem;
-		border: 1px solid #d9e1d7;
+		border: 1px solid var(--theme-border, #d9e1d7);
 		border-radius: 0.5rem;
-		background: #f1f5ef;
+		background: var(--theme-sidebar, #f1f5ef);
 	}
 	.layout-switch button {
 		padding: 0.38rem 0.6rem;
@@ -878,9 +878,9 @@
 		font-weight: 700;
 	}
 	.layout-switch button.active {
-		color: #245937;
+		color: var(--theme-accent, #245937);
 		background: #fff;
-		box-shadow: 0 1px 4px rgb(31 68 42 / 10%);
+		box-shadow: 0 1px 4px color-mix(in srgb, var(--theme-accent, #2d6540) 10%, transparent);
 	}
 	.sections {
 		display: grid;
@@ -909,8 +909,8 @@
 	.insertion-marker {
 		position: absolute;
 		border-radius: 999px;
-		background: #4f8a60;
-		box-shadow: 0 0 0 2px #f8faf7;
+		background: var(--theme-accent, #4f8a60);
+		box-shadow: 0 0 0 2px var(--theme-canvas, #f8faf7);
 		pointer-events: none;
 		z-index: 3;
 	}
@@ -919,7 +919,7 @@
 		width: 0.5rem;
 		height: 0.5rem;
 		border-radius: 50%;
-		background: #4f8a60;
+		background: var(--theme-accent, #4f8a60);
 		content: '';
 	}
 	.section-insertion-marker {
@@ -949,7 +949,7 @@
 		gap: 0.5rem;
 		min-height: 2.25rem;
 		padding-bottom: 0.55rem;
-		border-bottom: 1px solid #d9dfd7;
+		border-bottom: 1px solid var(--theme-border, #d9dfd7);
 	}
 	.section-header > div:first-child {
 		gap: 0.45rem;
@@ -1011,7 +1011,7 @@
 		gap: 0.7rem;
 		min-width: 0;
 		padding: 0.72rem 0.15rem;
-		border-bottom: 1px solid #e6e9e4;
+		border-bottom: 1px solid var(--theme-border, #e6e9e4);
 		cursor: grab;
 	}
 	.task-card.dragging {
@@ -1031,10 +1031,10 @@
 		align-items: flex-start;
 		margin-top: 0.55rem;
 		padding: 0.8rem;
-		border: 1px solid #dbe2d9;
+		border: 1px solid var(--theme-border, #dbe2d9);
 		border-radius: 0.65rem;
 		background: #fff;
-		box-shadow: 0 0.25rem 0.8rem rgb(35 66 42 / 5%);
+		box-shadow: 0 0.25rem 0.8rem color-mix(in srgb, var(--theme-accent, #2d6540) 5%, transparent);
 	}
 	.board-sections .task-card > .task-insertion-marker {
 		top: -0.45rem;
@@ -1061,8 +1061,8 @@
 		cursor: pointer;
 	}
 	.task-toggle.checked {
-		border-color: #477d56;
-		background: #477d56;
+		border-color: var(--theme-accent, #477d56);
+		background: var(--theme-accent, #477d56);
 	}
 	.task-copy {
 		display: grid;
@@ -1094,7 +1094,7 @@
 	.metadata {
 		display: flex;
 		gap: 0.55rem;
-		color: #477d56;
+		color: var(--theme-accent, #477d56);
 		font-size: 0.68rem;
 		font-weight: 650;
 	}
@@ -1159,7 +1159,7 @@
 	.quick-add input:focus,
 	.add-section input:focus,
 	.rename-section input:focus {
-		border-color: #b9cdbb;
+		border-color: color-mix(in srgb, var(--theme-accent, #2d6540) 42%, transparent);
 		background: #fff;
 	}
 	.quick-add button,
@@ -1169,14 +1169,14 @@
 		border: 0;
 		border-radius: 0.4rem;
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 		font-size: 0.7rem;
 		font-weight: 700;
 		cursor: pointer;
 	}
 	.rename-section button[type='button'] {
 		color: #687068;
-		background: #edf2eb;
+		background: var(--theme-hover, #edf2eb);
 	}
 	button:disabled {
 		cursor: wait;
@@ -1189,7 +1189,7 @@
 	.board-sections .add-section {
 		min-height: 0;
 		padding: 0.25rem 0.35rem;
-		border: 1px dashed #cbd8c9;
+		border: 1px dashed var(--theme-border, #cbd8c9);
 		border-radius: 0.65rem;
 	}
 	.board-sections .add-section input {

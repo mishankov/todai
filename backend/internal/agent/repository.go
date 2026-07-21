@@ -21,7 +21,7 @@ const (
 	sessionColumns = `id, user_id, kind, created_at, updated_at`
 	messageColumns = `id, session_id, run_id, role, content, context_type, context_id, context_action,
 		created_at, updated_at`
-	runColumns = `id, session_id, user_id, kind, context_type, context_id, context_action,
+	runColumns = `id, session_id, user_id, project_id, kind, context_type, context_id, context_action,
 		status, correlation_id, started_at,
 		completed_at, error, created_at, updated_at`
 	runEventColumns = `stream_offset, run_id, session_id, runtime_sequence, type,
@@ -183,6 +183,7 @@ func (r *Repository) GetConversation(
 func (r *Repository) CreateMessageRun(
 	ctx context.Context,
 	scope execution.Scope,
+	projectID string,
 	sessionID string,
 	input MessageInput,
 ) (Message, Run, []HistoryMessage, error) {
@@ -218,10 +219,10 @@ func (r *Repository) CreateMessageRun(
 	runID := uuid.NewString()
 	var run Run
 	if err := tx.GetContext(ctx, &run, `
-		INSERT INTO agent_runs (id, session_id, user_id, status, correlation_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO agent_runs (id, session_id, user_id, project_id, status, correlation_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+runColumns,
-		runID, sessionID, scope.UserID, RunStatusQueued, scope.CorrelationID,
+		runID, sessionID, scope.UserID, projectID, RunStatusQueued, scope.CorrelationID,
 	); err != nil {
 		return Message{}, Run{}, nil, fmt.Errorf("insert agent run: %w", err)
 	}
@@ -269,6 +270,7 @@ func (r *Repository) CreateMessageRun(
 func (r *Repository) CreateContextRun(
 	ctx context.Context,
 	scope execution.Scope,
+	projectID string,
 	messageContext MessageContext,
 ) (Run, error) {
 	if err := scope.Validate(); err != nil {
@@ -296,12 +298,12 @@ func (r *Repository) CreateContextRun(
 	var run Run
 	if err := tx.GetContext(ctx, &run, `
 		INSERT INTO agent_runs (
-			id, session_id, user_id, kind, context_type, context_id, context_action,
+			id, session_id, user_id, project_id, kind, context_type, context_id, context_action,
 			status, correlation_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING `+runColumns,
-		uuid.NewString(), executionID, scope.UserID, ExecutionAction,
+		uuid.NewString(), executionID, scope.UserID, projectID, ExecutionAction,
 		contextType, contextID, contextAction, RunStatusQueued, scope.CorrelationID,
 	); err != nil {
 		return Run{}, fmt.Errorf("insert contextual agent run: %w", err)
@@ -455,12 +457,13 @@ func hydrateMessageContext(message *Message) {
 	message.Context = messageContext(*message)
 }
 
-// GetRun returns one run only when it belongs to the user.
-func (r *Repository) GetRun(ctx context.Context, userID, runID string) (Run, error) {
+// GetRun returns one run only when it belongs to the user and project.
+func (r *Repository) GetRun(ctx context.Context, userID, projectID, runID string) (Run, error) {
 	var found Run
 	if err := r.db.GetContext(ctx, &found, `
-		SELECT `+runColumns+` FROM agent_runs WHERE id = $1 AND user_id = $2
-	`, runID, userID); errors.Is(err, sql.ErrNoRows) {
+		SELECT `+runColumns+` FROM agent_runs
+		WHERE id = $1 AND user_id = $2 AND project_id = $3
+	`, runID, userID, projectID); errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrRunNotFound
 	} else if err != nil {
 		return Run{}, fmt.Errorf("select agent run: %w", err)
@@ -503,6 +506,7 @@ func (r *Repository) ListRunEvents(
 func (r *Repository) ListContextRunEvents(
 	ctx context.Context,
 	userID string,
+	projectID string,
 	runID string,
 	after int64,
 	limit int,
@@ -516,8 +520,8 @@ func (r *Repository) ListContextRunEvents(
 	var ownedID string
 	if err := r.db.GetContext(ctx, &ownedID, `
 		SELECT id FROM agent_runs
-		WHERE id = $1 AND user_id = $2 AND kind = $3
-	`, runID, userID, ExecutionAction); errors.Is(err, sql.ErrNoRows) {
+		WHERE id = $1 AND user_id = $2 AND project_id = $3 AND kind = $4
+	`, runID, userID, projectID, ExecutionAction); errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrRunNotFound
 	} else if err != nil {
 		return nil, fmt.Errorf("select contextual agent run: %w", err)
@@ -556,7 +560,7 @@ func (r *Repository) RecordRuntimeEvent(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	run, err := lockRun(ctx, tx, scope.UserID, runID)
+	run, err := lockRun(ctx, tx, scope.UserID, scope.ProjectID, runID)
 	if err != nil {
 		return RunEvent{}, err
 	}
@@ -617,7 +621,7 @@ func (r *Repository) FinishRun(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	run, err := lockRun(ctx, tx, scope.UserID, runID)
+	run, err := lockRun(ctx, tx, scope.UserID, scope.ProjectID, runID)
 	if err != nil {
 		return Run{}, err
 	}
@@ -711,14 +715,26 @@ func (r *Repository) recordEventTx(
 	return persisted, updated, nil
 }
 
-func lockRun(ctx context.Context, tx *sqlx.Tx, userID, runID string) (Run, error) {
+func lockRun(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	userID string,
+	projectID *string,
+	runID string,
+) (Run, error) {
 	var run Run
-	if err := tx.GetContext(ctx, &run, `
-		SELECT `+runColumns+`
+	query := `
+		SELECT ` + runColumns + `
 		FROM agent_runs
 		WHERE id = $1 AND user_id = $2
-		FOR UPDATE
-	`, runID, userID); errors.Is(err, sql.ErrNoRows) {
+	`
+	arguments := []any{runID, userID}
+	if projectID != nil {
+		query += ` AND project_id = $3`
+		arguments = append(arguments, *projectID)
+	}
+	query += ` FOR UPDATE`
+	if err := tx.GetContext(ctx, &run, query, arguments...); errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrRunNotFound
 	} else if err != nil {
 		return Run{}, fmt.Errorf("lock agent run: %w", err)
@@ -888,6 +904,7 @@ func (r *Repository) appendLifecycle(
 	}
 	if _, err := r.events.Append(ctx, executor, scope, activity.NewEvent{
 		Type:          eventType,
+		ProjectID:     scope.ProjectID,
 		AggregateType: &aggregateType,
 		AggregateID:   &aggregateID,
 		Payload:       payload,

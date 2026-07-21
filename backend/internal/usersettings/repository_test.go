@@ -49,7 +49,7 @@ func TestRepositoryPersistsVersionedSettingsAndActivity(t *testing.T) {
 	if err != nil || !exists || found.Version != 2 {
 		t.Errorf("Get() = (%#v, %v, %v)", found, exists, err)
 	}
-	activityEvents, err := events.List(ctx, "user-id", 10)
+	activityEvents, err := events.List(ctx, "user-id", "", 10)
 	if err != nil {
 		t.Fatalf("list activity: %v", err)
 	}

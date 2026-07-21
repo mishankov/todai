@@ -193,6 +193,27 @@ describe('Inbox', () => {
 		await expect.element(page.getByText('Publish plan')).toBeVisible();
 	});
 
+	it('removes a task after it is assigned to a section', async () => {
+		const active = testTask({ title: 'Sort this task' });
+		const update = vi.fn(async () =>
+			testTask({ ...active, sectionId: 'section-id', version: active.version + 1 })
+		);
+		render(Inbox, {
+			initialTasks: [active],
+			currentProjectId: active.projectId,
+			create: vi.fn(),
+			complete: vi.fn(),
+			reopen: vi.fn(),
+			update,
+			remove: vi.fn()
+		});
+
+		await page.getByRole('button', { name: 'Edit Sort this task' }).click();
+		await page.getByRole('button', { name: 'Save changes' }).click();
+
+		await expect.element(page.getByText('Inbox clear.')).toBeVisible();
+	});
+
 	it('groups tasks by their planned date', async () => {
 		const today = startOfDay(new Date());
 		const yesterday = addDays(today, -1);
@@ -246,7 +267,7 @@ function dateValue(value: Date): string {
 function testTask(overrides: Partial<TaskSummary> = {}): TaskSummary {
 	return {
 		id: 'task-id',
-		projectId: null,
+		projectId: 'project-id',
 		sectionId: null,
 		parentId: null,
 		title: 'Task',

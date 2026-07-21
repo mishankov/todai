@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { invalidate } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import { ProjectConflictError, type Project, createProject, updateProject } from './client';
 
 	interface Props {
@@ -27,6 +27,7 @@
 			projects = [...projects, created];
 			name = '';
 			await refreshProjectLoads();
+			await goto(resolve('/(authenticated)/projects/[id]', { id: created.id }));
 		} catch {
 			errorMessage = 'The project could not be created. Please try again.';
 		} finally {
@@ -198,7 +199,7 @@
 	}
 	header p {
 		margin: 0 0 0.4rem;
-		color: #52705a;
+		color: var(--theme-accent, #52705a);
 		font-size: 0.72rem;
 		font-weight: 750;
 		letter-spacing: 0.12em;
@@ -227,24 +228,24 @@
 		min-width: 0;
 		flex: 1;
 		padding: 0.8rem 0.9rem;
-		border: 1px solid #ccd6ca;
+		border: 1px solid var(--theme-border, #ccd6ca);
 		border-radius: 0.7rem;
 		background: #fff;
 	}
 	button {
 		padding: 0.65rem 0.8rem;
-		border: 1px solid #c8d3c7;
+		border: 1px solid var(--theme-border, #c8d3c7);
 		border-radius: 0.65rem;
-		color: #31523a;
+		color: var(--theme-accent, #31523a);
 		background: #fff;
 		font-weight: 700;
 		cursor: pointer;
 	}
 	.create button,
 	.rename button[type='submit'] {
-		border-color: #2d6540;
+		border-color: var(--theme-accent, #2d6540);
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 	}
 	button:disabled {
 		cursor: wait;
@@ -262,7 +263,7 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1rem 1.1rem;
-		border: 1px solid #dbe3d9;
+		border: 1px solid var(--theme-border, #dbe3d9);
 		border-radius: 0.85rem;
 		background: rgb(255 255 255 / 72%);
 	}
@@ -273,7 +274,7 @@
 		text-decoration: none;
 	}
 	li > a:hover {
-		color: #2d6540;
+		color: var(--theme-accent, #2d6540);
 	}
 	.actions {
 		display: flex;

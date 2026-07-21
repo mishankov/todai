@@ -5,72 +5,61 @@ import type { Project } from '$lib/projects/client';
 import AppShell from './AppShell.svelte';
 
 describe('AppShell', () => {
-	it('shows the authenticated user and signs out', async () => {
-		let loggedOut = false;
-		const onLogout = async () => {
-			loggedOut = true;
-		};
-		const view = render(AppShell, { username: 'owner', onLogout, currentPath: '/today' });
+	it('shows the active project as the top-level workspace', async () => {
+		const project = testProject({ id: 'work-id', name: 'Work', colorTheme: 'ocean' });
+		render(AppShell, {
+			username: 'owner',
+			projects: [project, testProject({ id: 'home-id', name: 'Home' })],
+			activeProject: project,
+			onLogout: vi.fn(),
+			currentPath: '/projects/work-id/today'
+		});
 
-		await expect.element(view.getByText('owner', { exact: true })).toHaveTextContent('owner');
+		await expect.element(page.getByLabelText('Project', { exact: true })).toHaveValue('work-id');
 		await expect
-			.element(view.getByRole('link', { name: 'Today' }))
+			.element(page.getByRole('link', { name: 'Today' }))
 			.toHaveAttribute('aria-current', 'page');
-
-		await view.getByRole('button', { name: 'Open navigation' }).click();
-		await view.getByRole('button', { name: 'Log out' }).click();
-		await vi.waitFor(() => expect(loggedOut).toBe(true));
+		await expect
+			.element(page.getByRole('link', { name: 'Inbox' }))
+			.toHaveAttribute('href', '/projects/work-id');
+		await expect
+			.element(page.getByRole('link', { name: 'Tasks' }))
+			.toHaveAttribute('href', '/projects/work-id/tasks');
+		await expect.element(page.getByRole('link', { name: 'Sections' })).not.toBeInTheDocument();
+		await expect.element(page.getByText('Organize', { exact: true })).not.toBeInTheDocument();
 	});
 
-	it('shows projects in the sidebar and marks the current project', async () => {
-		const project = testProject({ id: 'work-id', name: 'Work' });
+	it('marks Tasks as the active project view', async () => {
+		const project = testProject({ id: 'work-id' });
 		render(AppShell, {
 			username: 'owner',
 			projects: [project],
+			activeProject: project,
 			onLogout: vi.fn(),
-			currentPath: '/projects/work-id'
+			currentPath: '/projects/work-id/tasks'
 		});
 
 		await expect
-			.element(page.getByRole('link', { name: 'Work' }))
-			.toHaveAttribute('aria-current', 'page');
-		await expect.element(page.getByRole('link', { name: 'Inbox' })).toBeVisible();
-	});
-
-	it('marks All tasks as the current section', async () => {
-		render(AppShell, {
-			username: 'owner',
-			onLogout: vi.fn(),
-			currentPath: '/all'
-		});
-
-		await expect
-			.element(page.getByRole('link', { name: 'All tasks' }))
+			.element(page.getByRole('link', { name: 'Tasks' }))
 			.toHaveAttribute('aria-current', 'page');
 	});
 
-	it('links to activity and marks it as the current section', async () => {
+	it('marks project settings independently from account settings', async () => {
+		const project = testProject({ id: 'work-id' });
 		render(AppShell, {
 			username: 'owner',
+			projects: [project],
+			activeProject: project,
 			onLogout: vi.fn(),
-			currentPath: '/activity'
+			currentPath: '/projects/work-id/settings'
 		});
 
 		await expect
-			.element(page.getByRole('link', { name: 'Activity' }))
+			.element(page.getByRole('link', { name: 'Project settings' }))
 			.toHaveAttribute('aria-current', 'page');
-	});
-
-	it('links to settings and marks it as the current section', async () => {
-		render(AppShell, {
-			username: 'owner',
-			onLogout: vi.fn(),
-			currentPath: '/settings'
-		});
-
 		await expect
-			.element(page.getByRole('link', { name: 'Settings' }))
-			.toHaveAttribute('aria-current', 'page');
+			.element(page.getByRole('link', { name: 'Account settings' }))
+			.not.toHaveAttribute('aria-current');
 	});
 });
 
@@ -79,6 +68,9 @@ function testProject(overrides: Partial<Project> = {}): Project {
 		id: 'project-id',
 		name: 'Project',
 		layout: 'list',
+		colorTheme: 'sage',
+		agentModel: 'gpt-default',
+		agentThinkingEffort: 'medium',
 		position: 1024,
 		version: 1,
 		archivedAt: null,

@@ -24,7 +24,7 @@
 	let title = $derived(task.title);
 	let description = $derived(task.description ?? '');
 	let priority = $derived(task.priority);
-	let projectId = $derived(task.projectId ?? '');
+	let projectId = $derived(task.projectId);
 	let sectionId = $derived(task.sectionId ?? '');
 	let dueDate = $derived(task.dueDate ?? '');
 	let dueTime = $derived(task.dueTime ?? '');
@@ -32,7 +32,9 @@
 	let showDueTime = $derived(Boolean(task.dueTime));
 	let saving = $state(false);
 	let errorMessage = $state('');
-	let projectName = $derived(projects.find((project) => project.id === projectId)?.name ?? 'Inbox');
+	let projectName = $derived(
+		projects.find((project) => project.id === projectId)?.name ?? 'Project'
+	);
 	let sectionName = $derived(
 		sections?.find((section) => section.id === sectionId)?.name ?? 'No section'
 	);
@@ -55,8 +57,8 @@
 				dueTime: dueDate && dueTime ? dueTime : null,
 				dueTimezone: dueDate && dueTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
 			};
-			if (projectId !== (task.projectId ?? '')) {
-				update.projectId = projectId || null;
+			if (projectId !== task.projectId) {
+				update.projectId = projectId;
 			}
 			if (sections !== undefined && projectId === currentProjectId) {
 				update.sectionId = sectionId || null;
@@ -120,7 +122,6 @@
 						<label>
 							<span>Project</span>
 							<select aria-label="Project" bind:value={projectId}>
-								<option value="">Inbox</option>
 								{#each projects as project (project.id)}
 									<option value={project.id}>{project.name}</option>
 								{/each}
@@ -199,7 +200,6 @@
 			<label>
 				<span>Project</span>
 				<select bind:value={projectId}>
-					<option value="">Inbox</option>
 					{#each projects as project (project.id)}
 						<option value={project.id}>{project.name}</option>
 					{/each}
@@ -259,10 +259,10 @@
 		width: 100%;
 		gap: 1rem;
 		padding: 1.25rem;
-		border: 1px solid #cad8c9;
+		border: 1px solid var(--theme-border, #cad8c9);
 		border-radius: 1rem;
 		background: #fff;
-		box-shadow: 0 0.75rem 2.5rem rgb(24 56 34 / 7%);
+		box-shadow: 0 0.75rem 2.5rem color-mix(in srgb, var(--theme-accent, #2d6540) 7%, transparent);
 	}
 	.editor.dialog {
 		padding: 0;
@@ -295,7 +295,7 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 0.7rem 0.75rem;
-		border: 1px solid #ccd6ca;
+		border: 1px solid var(--theme-border, #ccd6ca);
 		border-radius: 0.65rem;
 		color: #17211a;
 		background: #fff;
@@ -305,8 +305,8 @@
 	input:focus,
 	textarea:focus,
 	select:focus {
-		border-color: #477d56;
-		box-shadow: 0 0 0 0.2rem rgb(71 125 86 / 12%);
+		border-color: var(--theme-accent, #477d56);
+		box-shadow: 0 0 0 0.2rem var(--theme-focus, rgb(71 125 86 / 12%));
 	}
 
 	textarea {
@@ -327,7 +327,7 @@
 			);
 		min-width: 0;
 		min-height: 2.85rem;
-		border: 1px solid #ccd6ca;
+		border: 1px solid var(--theme-border, #ccd6ca);
 		border-radius: 0.75rem;
 		background: #fff;
 	}
@@ -346,7 +346,7 @@
 		gap: 0.48rem;
 		padding: 0.45rem 0.68rem;
 		border: 0;
-		border-left: 1px solid #dce4da;
+		border-left: 1px solid var(--theme-border, #dce4da);
 		border-radius: 0;
 		color: #29332c;
 		background: transparent;
@@ -391,7 +391,7 @@
 	.property-segment:focus-within,
 	.add-time:hover:not(:disabled),
 	.add-time:focus-visible {
-		background: #f3f7f2;
+		background: var(--theme-hover, #f3f7f2);
 		outline: none;
 	}
 
@@ -475,10 +475,10 @@
 		width: min(19rem, calc(100vw - 3rem));
 		gap: 0.7rem;
 		padding: 0.8rem;
-		border: 1px solid #ccd6ca;
+		border: 1px solid var(--theme-border, #ccd6ca);
 		border-radius: 0.75rem;
 		background: #fff;
-		box-shadow: 0 0.8rem 2.2rem rgb(28 52 34 / 14%);
+		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 14%, transparent);
 	}
 
 	.location-popover label {
@@ -515,15 +515,15 @@
 	}
 
 	.cancel {
-		border: 1px solid #ccd6ca;
+		border: 1px solid var(--theme-border, #ccd6ca);
 		color: #4f5d53;
 		background: #fff;
 	}
 
 	.save {
-		border: 1px solid #2d6540;
+		border: 1px solid var(--theme-accent, #2d6540);
 		color: #fff;
-		background: #2d6540;
+		background: var(--theme-accent, #2d6540);
 	}
 
 	button:disabled {
@@ -553,7 +553,7 @@
 
 		.property-location,
 		.property-segment {
-			border: 1px solid #ccd6ca;
+			border: 1px solid var(--theme-border, #ccd6ca);
 			border-radius: 0.7rem;
 			background: #fff;
 		}

@@ -32,9 +32,9 @@ func TestEndpointsRequireSession(t *testing.T) {
 		httptest.NewRequest(http.MethodPost, "/tasks/task-id/comments", nil),
 		httptest.NewRequest(http.MethodPatch, "/tasks/task-id/comments/comment-id", nil),
 		httptest.NewRequest(http.MethodDelete, "/tasks/task-id/comments/comment-id", nil),
-		httptest.NewRequest(http.MethodGet, "/views/all", nil),
-		httptest.NewRequest(http.MethodGet, "/views/inbox", nil),
-		httptest.NewRequest(http.MethodGet, "/views/today?timezone=UTC", nil),
+		httptest.NewRequest(http.MethodGet, "/views/projects/project-id/all", nil),
+		httptest.NewRequest(http.MethodGet, "/views/projects/project-id/inbox", nil),
+		httptest.NewRequest(http.MethodGet, "/views/projects/project-id/today?timezone=UTC", nil),
 		httptest.NewRequest(http.MethodGet, "/views/projects/project-id", nil),
 	} {
 		response := httptest.NewRecorder()
@@ -51,7 +51,7 @@ func TestEndpointsRequireSession(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedUserCanCreateInboxTask(t *testing.T) {
+func TestAuthenticatedUserCanCreateProjectInboxTask(t *testing.T) {
 	t.Parallel()
 
 	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
@@ -60,7 +60,7 @@ func TestAuthenticatedUserCanCreateInboxTask(t *testing.T) {
 		handler,
 		http.MethodPost,
 		"/tasks",
-		map[string]string{"title": "Buy milk"},
+		map[string]string{"title": "Buy milk", "projectId": "project-id"},
 		authenticatedCookie(),
 	)
 	if response.Code != http.StatusCreated {
@@ -73,6 +73,39 @@ func TestAuthenticatedUserCanCreateInboxTask(t *testing.T) {
 	}
 	if created.Title != "Buy milk" || created.LastModifiedBy != "user-id" {
 		t.Errorf("created task = %#v", created)
+	}
+}
+
+func TestTopLevelTaskRequiresProject(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
+	response := serveJSON(
+		t, handler, http.MethodPost, "/tasks", map[string]string{"title": "Buy milk"},
+		authenticatedCookie(),
+	)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("create task status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
+func TestWorkspaceViewsPassProjectPathScope(t *testing.T) {
+	t.Parallel()
+
+	service := &viewRecordingTaskService{}
+	handler := testAPIWithService(&auth.User{ID: "user-id", Username: "owner"}, service)
+	for _, path := range []string{
+		"/views/projects/workspace-id/inbox",
+		"/views/projects/workspace-id/all",
+		"/views/projects/workspace-id/today?timezone=UTC",
+	} {
+		response := serveJSON(t, handler, http.MethodGet, path, nil, authenticatedCookie())
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, response.Code, http.StatusOK)
+		}
+	}
+	if service.projectIDs != 3 {
+		t.Fatalf("project-scoped calls = %d, want 3", service.projectIDs)
 	}
 }
 
@@ -146,7 +179,9 @@ func TestAuthenticatedMutationReceivesTrustedWebExecutionScope(t *testing.T) {
 		&auth.User{ID: "user-id", Username: "owner"},
 		service,
 	)
-	request := jsonRequest(t, http.MethodPost, "/tasks", map[string]string{"title": "Buy milk"})
+	request := jsonRequest(t, http.MethodPost, "/tasks", map[string]string{
+		"title": "Buy milk", "projectId": "project-id",
+	})
 	request.AddCookie(authenticatedCookie())
 	request.Header.Set("Platforma-Trace-Id", "caller-controlled")
 	request.Header.Set("X-Actor-Type", "system")
@@ -179,7 +214,10 @@ func TestTodayRequiresValidTimezone(t *testing.T) {
 	t.Parallel()
 
 	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
-	for _, path := range []string{"/views/today", "/views/today?timezone=Mars%2FOlympus_Mons"} {
+	for _, path := range []string{
+		"/views/projects/project-id/today",
+		"/views/projects/project-id/today?timezone=Mars%2FOlympus_Mons",
+	} {
 		response := serveJSON(
 			t,
 			handler,
@@ -479,11 +517,11 @@ func (fakeTaskService) Get(context.Context, string, string) (task.Task, error) {
 	return task.Task{}, task.ErrTaskNotFound
 }
 
-func (fakeTaskService) ListInbox(context.Context, string, bool) ([]task.TaskSummary, error) {
+func (fakeTaskService) ListInbox(context.Context, string, string, bool) ([]task.TaskSummary, error) {
 	return []task.TaskSummary{}, nil
 }
 
-func (fakeTaskService) ListAll(context.Context, string, bool) ([]task.TaskSummary, error) {
+func (fakeTaskService) ListAll(context.Context, string, string, bool) ([]task.TaskSummary, error) {
 	return []task.TaskSummary{}, nil
 }
 
@@ -492,7 +530,7 @@ func (fakeTaskService) ListProject(context.Context, string, string, bool) ([]tas
 }
 
 func (fakeTaskService) ListToday(
-	_ context.Context, _, timezone string, _ bool,
+	_ context.Context, _, _, timezone string, _ bool,
 ) ([]task.TaskSummary, error) {
 	if timezone == "Mars/Olympus_Mons" {
 		return nil, task.ErrInvalidTimezone
@@ -526,6 +564,38 @@ func (fakeTaskService) Delete(context.Context, execution.Scope, string, int64) e
 type scopeRecordingTaskService struct {
 	fakeTaskService
 	scopes chan execution.Scope
+}
+
+type viewRecordingTaskService struct {
+	fakeTaskService
+	projectIDs int
+}
+
+func (s *viewRecordingTaskService) ListInbox(
+	_ context.Context, _ string, projectID string, _ bool,
+) ([]task.TaskSummary, error) {
+	if projectID == "workspace-id" {
+		s.projectIDs++
+	}
+	return []task.TaskSummary{}, nil
+}
+
+func (s *viewRecordingTaskService) ListAll(
+	_ context.Context, _ string, projectID string, _ bool,
+) ([]task.TaskSummary, error) {
+	if projectID == "workspace-id" {
+		s.projectIDs++
+	}
+	return []task.TaskSummary{}, nil
+}
+
+func (s *viewRecordingTaskService) ListToday(
+	_ context.Context, _ string, projectID string, _ string, _ bool,
+) ([]task.TaskSummary, error) {
+	if projectID == "workspace-id" {
+		s.projectIDs++
+	}
+	return []task.TaskSummary{}, nil
 }
 
 func (s *scopeRecordingTaskService) Create(

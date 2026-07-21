@@ -17,7 +17,7 @@ import (
 
 const eventColumns = `
 	stream_offset, id, user_id, type, occurred_at, actor_type, actor_id, source,
-	aggregate_type, aggregate_id, correlation_id, agent_run_id, payload
+	project_id, aggregate_type, aggregate_id, correlation_id, agent_run_id, payload
 `
 
 var (
@@ -67,19 +67,23 @@ func (r *Repository) Append(
 	if err != nil {
 		return Event{}, err
 	}
+	projectID := newEvent.ProjectID
+	if projectID == nil {
+		projectID = scope.ProjectID
+	}
 
 	var appended Event
 	if err := sqlx.GetContext(ctx, executor, &appended, `
 		INSERT INTO activity_events (
 			id, user_id, type, actor_type, actor_id, source, aggregate_type,
-			aggregate_id, correlation_id, agent_run_id, payload
+			aggregate_id, correlation_id, agent_run_id, payload, project_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::JSONB)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::JSONB, $12)
 		RETURNING `+eventColumns,
 		uuid.NewString(), scope.UserID, strings.TrimSpace(newEvent.Type),
 		scope.ActorType, scope.ActorID, scope.Source,
 		trimmedPointer(newEvent.AggregateType), trimmedPointer(newEvent.AggregateID),
-		scope.CorrelationID, scope.AgentRunID, string(payload),
+		scope.CorrelationID, scope.AgentRunID, string(payload), trimmedPointer(projectID),
 	); err != nil {
 		return Event{}, fmt.Errorf("insert activity event: %w", err)
 	}
@@ -88,7 +92,7 @@ func (r *Repository) Append(
 }
 
 // List returns a user's newest activity events first.
-func (r *Repository) List(ctx context.Context, userID string, limit int) ([]Event, error) {
+func (r *Repository) List(ctx context.Context, userID, projectID string, limit int) ([]Event, error) {
 	if limit < 1 || limit > 200 {
 		return nil, ErrInvalidLimit
 	}
@@ -97,10 +101,10 @@ func (r *Repository) List(ctx context.Context, userID string, limit int) ([]Even
 	if err := r.db.SelectContext(ctx, &events, `
 		SELECT `+eventColumns+`
 		FROM activity_events
-		WHERE user_id = $1
+		WHERE user_id = $1 AND project_id IS NOT DISTINCT FROM NULLIF($2, '')
 		ORDER BY stream_offset DESC
-		LIMIT $2
-	`, userID, limit); err != nil {
+		LIMIT $3
+	`, userID, projectID, limit); err != nil {
 		return nil, fmt.Errorf("select activity events: %w", err)
 	}
 
@@ -108,13 +112,13 @@ func (r *Repository) List(ctx context.Context, userID string, limit int) ([]Even
 }
 
 // LatestOffset returns the newest durable event offset visible to a user.
-func (r *Repository) LatestOffset(ctx context.Context, userID string) (int64, error) {
+func (r *Repository) LatestOffset(ctx context.Context, userID, projectID string) (int64, error) {
 	var offset int64
 	if err := r.db.GetContext(ctx, &offset, `
 		SELECT COALESCE(MAX(stream_offset), 0)
 		FROM activity_events
-		WHERE user_id = $1
-	`, userID); err != nil {
+		WHERE user_id = $1 AND project_id IS NOT DISTINCT FROM NULLIF($2, '')
+	`, userID, projectID); err != nil {
 		return 0, fmt.Errorf("select latest activity offset: %w", err)
 	}
 	return offset, nil
@@ -123,7 +127,7 @@ func (r *Repository) LatestOffset(ctx context.Context, userID string) (int64, er
 // ListAfter returns a user's events after a durable stream cursor, oldest first.
 func (r *Repository) ListAfter(
 	ctx context.Context,
-	userID string,
+	userID, projectID string,
 	after int64,
 	limit int,
 ) ([]Event, error) {
@@ -138,10 +142,12 @@ func (r *Repository) ListAfter(
 	if err := r.db.SelectContext(ctx, &events, `
 		SELECT `+eventColumns+`
 		FROM activity_events
-		WHERE user_id = $1 AND stream_offset > $2
+		WHERE user_id = $1
+			AND project_id IS NOT DISTINCT FROM NULLIF($2, '')
+			AND stream_offset > $3
 		ORDER BY stream_offset
-		LIMIT $3
-	`, userID, after, limit); err != nil {
+		LIMIT $4
+	`, userID, projectID, after, limit); err != nil {
 		return nil, fmt.Errorf("select activity stream events: %w", err)
 	}
 	return events, nil

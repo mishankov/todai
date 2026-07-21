@@ -2,6 +2,9 @@ export interface Project {
 	id: string;
 	name: string;
 	layout: ProjectLayout;
+	colorTheme: ProjectColorTheme;
+	agentModel: string;
+	agentThinkingEffort: AgentThinkingEffort;
 	position: number;
 	version: number;
 	archivedAt: string | null;
@@ -11,6 +14,21 @@ export interface Project {
 }
 
 export type ProjectLayout = 'list' | 'board';
+export type ProjectColorTheme = 'sage' | 'ocean' | 'plum' | 'sand' | 'rose' | 'graphite';
+export type AgentThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export const projectColorThemes: ReadonlyArray<{
+	id: ProjectColorTheme;
+	name: string;
+	description: string;
+}> = [
+	{ id: 'sage', name: 'Sage', description: 'Calm green' },
+	{ id: 'ocean', name: 'Ocean', description: 'Clear blue' },
+	{ id: 'plum', name: 'Plum', description: 'Deep violet' },
+	{ id: 'sand', name: 'Sand', description: 'Warm neutral' },
+	{ id: 'rose', name: 'Rose', description: 'Soft red' },
+	{ id: 'graphite', name: 'Graphite', description: 'Quiet monochrome' }
+];
 
 export interface ProjectSection {
 	id: string;
@@ -28,6 +46,9 @@ export interface ProjectUpdate {
 	name?: string;
 	archived?: boolean;
 	layout?: ProjectLayout;
+	colorTheme?: ProjectColorTheme;
+	agentModel?: string;
+	agentThinkingEffort?: AgentThinkingEffort;
 }
 
 export class ProjectRequestError extends Error {

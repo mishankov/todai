@@ -12,8 +12,8 @@ describe('activity client', () => {
 				})
 		) as unknown as typeof fetch;
 
-		await expect(getActivity(fetcher, 25)).resolves.toEqual([event]);
-		expect(fetcher).toHaveBeenCalledWith('/api/activity/?limit=25', {
+		await expect(getActivity(fetcher, 'project/id', 25)).resolves.toEqual([event]);
+		expect(fetcher).toHaveBeenCalledWith('/api/activity?project_id=project%2Fid&limit=25', {
 			credentials: 'same-origin',
 			headers: { Accept: 'application/json' }
 		});
@@ -24,7 +24,7 @@ describe('activity client', () => {
 			async () => new Response(null, { status: 500 })
 		) as unknown as typeof fetch;
 
-		await expect(getActivity(fetcher)).rejects.toBeInstanceOf(ActivityRequestError);
+		await expect(getActivity(fetcher, 'project-id')).rejects.toBeInstanceOf(ActivityRequestError);
 	});
 });
 
