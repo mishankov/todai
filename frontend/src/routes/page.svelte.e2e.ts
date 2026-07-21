@@ -525,6 +525,19 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
 
+	const todayLink = page.getByRole('link', { name: 'Today' });
+	await page.keyboard.down(primaryModifier);
+	await expect
+		.poll(() => todayLink.evaluate((element) => getComputedStyle(element, '::after').opacity))
+		.toBe('1');
+	await expect
+		.poll(() => todayLink.evaluate((element) => getComputedStyle(element, '::after').content))
+		.toContain('3');
+	await page.keyboard.up(primaryModifier);
+	await expect
+		.poll(() => todayLink.evaluate((element) => getComputedStyle(element, '::after').opacity))
+		.toBe('0');
+
 	await page.keyboard.press(`${primaryModifier}+Alt+N`);
 	const quickAdd = page.getByRole('dialog', { name: 'Create a task' });
 	await expect(quickAdd).toBeVisible();

@@ -53,11 +53,21 @@
 	onMount(() => {
 		applePlatform = isApplePlatform(window.navigator.platform);
 		const openQuickAdd = () => requestQuickAdd();
+		const handleVisibilityChange = () => {
+			if (document.hidden) hideShortcutHints();
+		};
 		window.addEventListener(quickAddRequestEvent, openQuickAdd);
-		return () => window.removeEventListener(quickAddRequestEvent, openQuickAdd);
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		return () => {
+			window.removeEventListener(quickAddRequestEvent, openQuickAdd);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
+			hideShortcutHints();
+		};
 	});
 
 	function handleWindowKeydown(event: KeyboardEvent) {
+		if (isPrimaryModifierKey(event)) showShortcutHints();
+
 		if (event.key === 'Escape' && (helpOpen || quickAddOpen)) {
 			event.preventDefault();
 			event.stopImmediatePropagation();
@@ -71,6 +81,22 @@
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		void runCommand(command);
+	}
+
+	function handleWindowKeyup(event: KeyboardEvent) {
+		if (isPrimaryModifierKey(event)) hideShortcutHints();
+	}
+
+	function isPrimaryModifierKey(event: KeyboardEvent): boolean {
+		return event.key === (applePlatform ? 'Meta' : 'Control');
+	}
+
+	function showShortcutHints() {
+		document.documentElement.dataset.shortcutHints = 'visible';
+	}
+
+	function hideShortcutHints() {
+		delete document.documentElement.dataset.shortcutHints;
 	}
 
 	async function runCommand(command: ShortcutCommand) {
@@ -154,7 +180,11 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleWindowKeydown} />
+<svelte:window
+	onkeydown={handleWindowKeydown}
+	onkeyup={handleWindowKeyup}
+	onblur={hideShortcutHints}
+/>
 
 {#if quickAddOpen && activeProject}
 	<QuickAddDialog
@@ -174,3 +204,54 @@
 {#if helpOpen}
 	<ShortcutHelp {applePlatform} close={closeHelp} />
 {/if}
+
+<style>
+	:global([data-shortcut-hint]::after) {
+		position: absolute;
+		z-index: 2;
+		top: 50%;
+		right: 0.55rem;
+		padding: 0.24rem 0.42rem;
+		border: 1px solid color-mix(in srgb, var(--theme-accent, #2d6540) 24%, #d7d9d5);
+		border-bottom-width: 2px;
+		border-radius: 0.35rem;
+		color: var(--theme-accent, #2d6540);
+		background: #fff;
+		box-shadow: 0 0.35rem 1rem rgb(20 28 21 / 14%);
+		content: attr(data-shortcut-hint);
+		font-family: inherit;
+		font-size: 0.64rem;
+		font-weight: 780;
+		line-height: 1;
+		white-space: nowrap;
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-45%) scale(0.96);
+		pointer-events: none;
+		transition:
+			opacity 100ms ease,
+			transform 100ms ease,
+			visibility 100ms ease;
+	}
+	:global([data-shortcut-hint-position='left']::after) {
+		right: calc(100% + 0.55rem);
+	}
+	:global([data-shortcut-hint-position='below']::after) {
+		top: calc(100% + 0.4rem);
+		right: 0;
+		transform: translateY(-0.2rem) scale(0.96);
+	}
+	:global(html[data-shortcut-hints='visible'] [data-shortcut-hint]::after) {
+		opacity: 1;
+		visibility: visible;
+		transform: translateY(-50%) scale(1);
+	}
+	:global(html[data-shortcut-hints='visible'] [data-shortcut-hint-position='below']::after) {
+		transform: none;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		:global([data-shortcut-hint]::after) {
+			transition: none;
+		}
+	}
+</style>

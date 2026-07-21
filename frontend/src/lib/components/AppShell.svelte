@@ -8,7 +8,7 @@
 	import { quickAddRequestEvent } from '$lib/shortcuts/events';
 	import {
 		ariaShortcut,
-		formatShortcut,
+		formatShortcutHint,
 		formatShortcuts,
 		isApplePlatform,
 		shortcutCommand
@@ -39,7 +39,7 @@
 	let projectBase = $derived(activeProject ? `/projects/${activeProject.id}` : '/projects');
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
 	let quickAddCommand = shortcutCommand('quick-add');
-	let quickAddLabel = $derived(formatShortcut(quickAddCommand, applePlatform));
+	let quickAddHint = $derived(formatShortcutHint(quickAddCommand, applePlatform));
 	let quickAddDescription = $derived(formatShortcuts(quickAddCommand, applePlatform).join(' / '));
 
 	$effect(() => {
@@ -159,15 +159,21 @@
 				title={`Create task (${quickAddDescription})`}
 				aria-label={`Create task (${quickAddDescription})`}
 				aria-keyshortcuts={ariaShortcut(quickAddCommand, applePlatform)}
+				data-shortcut-hint={quickAddHint}
 				onclick={openQuickAdd}
 			>
-				<span aria-hidden="true">＋</span> Create task <kbd>{quickAddLabel}</kbd>
+				<span aria-hidden="true">＋</span> Create task
 			</button>
 			<nav class="primary-navigation" aria-label="Project navigation">
 				<a
 					href={projectHref(activeProject.id, '/overview')}
 					class:active={isActive('/overview')}
 					aria-current={isActive('/overview') ? 'page' : undefined}
+					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-overview'), applePlatform)}
+					data-shortcut-hint={formatShortcutHint(
+						shortcutCommand('project-overview'),
+						applePlatform
+					)}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -178,6 +184,8 @@
 					href={projectHref(activeProject.id)}
 					class:active={isActive()}
 					aria-current={isActive() ? 'page' : undefined}
+					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-inbox'), applePlatform)}
+					data-shortcut-hint={formatShortcutHint(shortcutCommand('project-inbox'), applePlatform)}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -188,6 +196,8 @@
 					href={projectHref(activeProject.id, '/today')}
 					class:active={isActive('/today')}
 					aria-current={isActive('/today') ? 'page' : undefined}
+					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-today'), applePlatform)}
+					data-shortcut-hint={formatShortcutHint(shortcutCommand('project-today'), applePlatform)}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -200,6 +210,8 @@
 					href={projectHref(activeProject.id, '/tasks')}
 					class:active={isActive('/tasks')}
 					aria-current={isActive('/tasks') ? 'page' : undefined}
+					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-tasks'), applePlatform)}
+					data-shortcut-hint={formatShortcutHint(shortcutCommand('project-tasks'), applePlatform)}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -210,6 +222,11 @@
 					href={projectHref(activeProject.id, '/activity')}
 					class:active={isActive('/activity')}
 					aria-current={isActive('/activity') ? 'page' : undefined}
+					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-activity'), applePlatform)}
+					data-shortcut-hint={formatShortcutHint(
+						shortcutCommand('project-activity'),
+						applePlatform
+					)}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -229,6 +246,11 @@
 					href={projectHref(activeProject.id, '/settings')}
 					class:active={isActive('/settings')}
 					aria-current={isActive('/settings') ? 'page' : undefined}
+					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-settings'), applePlatform)}
+					data-shortcut-hint={formatShortcutHint(
+						shortcutCommand('project-settings'),
+						applePlatform
+					)}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
@@ -402,6 +424,7 @@
 		border-color: var(--theme-accent);
 	}
 	.global-quick-add {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 0.55rem;
@@ -419,13 +442,6 @@
 	}
 	.global-quick-add:hover {
 		filter: brightness(0.98);
-	}
-	.global-quick-add kbd {
-		margin-left: auto;
-		color: #6b6b66;
-		font-family: inherit;
-		font-size: 0.65rem;
-		font-weight: 650;
 	}
 	.primary-navigation {
 		display: grid;
@@ -447,6 +463,10 @@
 		font-size: 0.84rem;
 		font-weight: 600;
 		text-decoration: none;
+	}
+	.primary-navigation a,
+	.session a {
+		position: relative;
 	}
 	.primary-navigation a:hover,
 	.session a:hover,

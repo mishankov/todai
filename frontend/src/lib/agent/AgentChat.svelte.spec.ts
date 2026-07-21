@@ -97,6 +97,9 @@ describe('AgentChat', () => {
 
 		render(AgentChat, { api, storage: testStorage('session-id') });
 		expect(api.getSession).not.toHaveBeenCalled();
+		await expect
+			.element(page.getByRole('button', { name: 'Open assistant' }))
+			.toHaveAttribute('data-shortcut-hint', 'J');
 
 		await page.getByRole('button', { name: 'Open assistant' }).click();
 		await expect.element(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();

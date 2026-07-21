@@ -20,6 +20,12 @@ describe('AppShell', () => {
 			.element(page.getByRole('link', { name: 'Today' }))
 			.toHaveAttribute('aria-current', 'page');
 		await expect
+			.element(page.getByRole('link', { name: 'Today' }))
+			.toHaveAttribute('data-shortcut-hint', '3');
+		await expect
+			.element(page.getByRole('link', { name: 'Today' }))
+			.toHaveAttribute('aria-keyshortcuts', expect.stringMatching(/^(Meta|Control)\+3$/));
+		await expect
 			.element(page.getByRole('link', { name: 'Inbox' }))
 			.toHaveAttribute('href', '/projects/work-id');
 		await expect
