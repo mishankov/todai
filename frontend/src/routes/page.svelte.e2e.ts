@@ -650,9 +650,17 @@ function testSection(overrides: Partial<ProjectSection> = {}): ProjectSection {
 	};
 }
 
+function todayDate(): string {
+	return localDate(0);
+}
+
 function tomorrowDate(): string {
+	return localDate(1);
+}
+
+function localDate(offset: number): string {
 	const date = new Date();
-	date.setDate(date.getDate() + 1);
+	date.setDate(date.getDate() + offset);
 	const year = date.getFullYear();
 	const month = String(date.getMonth() + 1).padStart(2, '0');
 	const day = String(date.getDate()).padStart(2, '0');

@@ -341,6 +341,25 @@
 		border-radius: 0.75rem;
 		background: #fafbf9;
 	}
+	@container (min-width: 40rem) {
+		.task-property-pickers {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			align-items: start;
+			gap: 0.45rem;
+		}
+		.location-pickers {
+			grid-row: 1;
+			grid-column: 1 / 3;
+		}
+		.schedule-pickers {
+			grid-row: 1;
+			grid-column: 3 / 5;
+		}
+		.priority-picker {
+			grid-row: 2;
+			grid-column: 1 / 3;
+		}
+	}
 	@media (max-width: 38rem) {
 		.priority-picker {
 			grid-template-columns: repeat(5, minmax(2.4rem, 1fr));

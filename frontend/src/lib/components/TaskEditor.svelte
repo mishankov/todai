@@ -104,6 +104,7 @@
 <style>
 	.editor {
 		display: grid;
+		container-type: inline-size;
 		box-sizing: border-box;
 		width: 100%;
 		gap: 1rem;
