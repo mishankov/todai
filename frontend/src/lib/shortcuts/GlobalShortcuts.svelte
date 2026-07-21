@@ -293,7 +293,7 @@
 		task={editingTask}
 		{projects}
 		sections={editingSections}
-		currentProjectId={activeProject?.id}
+		{loadSections}
 		save={savePaletteTask}
 		close={closePaletteTask}
 	/>
