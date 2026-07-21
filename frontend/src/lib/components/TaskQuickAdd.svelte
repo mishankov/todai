@@ -7,17 +7,11 @@
 </script>
 
 <script lang="ts">
-	import type { Project, ProjectSection } from '$lib/projects/client';
 	import type { Task, TaskCreateDraft } from '$lib/tasks/client';
-	import { untrack } from 'svelte';
-	import TaskPropertyPickers from './TaskPropertyPickers.svelte';
 
 	interface Props {
 		create: (draft: TaskCreateDraft) => Promise<Task>;
 		oncreated: (task: Task) => void;
-		projects?: Project[];
-		sections?: ProjectSection[];
-		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		initialProjectId: string;
 		initialSectionId?: string | null;
 		label?: string;
@@ -26,20 +20,11 @@
 	let {
 		create,
 		oncreated,
-		projects = [],
-		sections = [],
-		loadSections,
 		initialProjectId,
 		initialSectionId = null,
 		label = 'Task title'
 	}: Props = $props();
 	let title = $state('');
-	let projectId = $state(untrack(() => initialProjectId));
-	let sectionId = $state<string | null>(untrack(() => initialSectionId));
-	let priority = $state(0);
-	let dueDate = $state<string | null>(null);
-	let dueTime = $state<string | null>(null);
-	let dueTimezone = $state<string | null>(null);
 	let creating = $state(false);
 	let errorMessage = $state('');
 	const inputId = `task-quick-add-${createTaskQuickAddId()}`;
@@ -52,21 +37,15 @@
 		try {
 			const created = await create({
 				title: trimmedTitle,
-				projectId,
-				sectionId,
-				priority,
-				dueDate,
-				dueTime,
-				dueTimezone
+				projectId: initialProjectId,
+				sectionId: initialSectionId,
+				priority: 0,
+				dueDate: null,
+				dueTime: null,
+				dueTimezone: null
 			});
 			oncreated(created);
 			title = '';
-			projectId = initialProjectId;
-			sectionId = initialSectionId;
-			priority = 0;
-			dueDate = null;
-			dueTime = null;
-			dueTimezone = null;
 		} catch {
 			errorMessage = 'The task could not be created. Please try again.';
 		} finally {
@@ -101,19 +80,6 @@
 			{creating ? 'Adding…' : 'Add'}
 		</button>
 	</div>
-
-	<TaskPropertyPickers
-		bind:projectId
-		bind:sectionId
-		bind:priority
-		bind:dueDate
-		bind:dueTime
-		bind:dueTimezone
-		{projects}
-		{sections}
-		{loadSections}
-		compact
-	/>
 
 	{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 </form>

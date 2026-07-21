@@ -288,9 +288,6 @@
 		<TaskQuickAdd
 			{create}
 			oncreated={(created) => (tasks = [...tasks, summaryFromTask(created)])}
-			{projects}
-			{sections}
-			{loadSections}
 			initialProjectId={currentProjectId ?? projects[0]?.id ?? ''}
 			initialSectionId={currentSectionId ?? null}
 		/>

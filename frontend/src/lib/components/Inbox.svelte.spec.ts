@@ -17,6 +17,9 @@ describe('Inbox', () => {
 			remove: vi.fn()
 		});
 
+		await expect
+			.element(page.getByRole('group', { name: 'Task properties' }))
+			.not.toBeInTheDocument();
 		await page.getByLabelText('Task title').fill('Buy milk');
 		await page.getByRole('button', { name: 'Add task' }).click();
 
@@ -25,7 +28,8 @@ describe('Inbox', () => {
 				title: 'Buy milk',
 				priority: 0,
 				dueDate: null,
-				dueTime: null
+				dueTime: null,
+				dueTimezone: null
 			})
 		);
 		await expect.element(page.getByText('Buy milk')).toBeVisible();

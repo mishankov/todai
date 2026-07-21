@@ -738,9 +738,6 @@
 								...tasks.filter((item) => item.id !== created.id),
 								summaryFromTask(created)
 							])}
-						{projects}
-						{sections}
-						{loadSections}
 						initialProjectId={currentProject.id}
 						initialSectionId={group.section?.id ?? null}
 						label={`Add task to ${group.name}`}
