@@ -9,6 +9,7 @@
 	import {
 		ariaShortcut,
 		formatShortcut,
+		formatShortcuts,
 		isApplePlatform,
 		shortcutCommand
 	} from '$lib/shortcuts/registry';
@@ -39,6 +40,7 @@
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
 	let quickAddCommand = shortcutCommand('quick-add');
 	let quickAddLabel = $derived(formatShortcut(quickAddCommand, applePlatform));
+	let quickAddDescription = $derived(formatShortcuts(quickAddCommand, applePlatform).join(' / '));
 
 	$effect(() => {
 		if (browser) applePlatform = isApplePlatform(window.navigator.platform);
@@ -154,8 +156,8 @@
 			<button
 				class="global-quick-add"
 				type="button"
-				title={`Create task (${quickAddLabel})`}
-				aria-label={`Create task (${quickAddLabel})`}
+				title={`Create task (${quickAddDescription})`}
+				aria-label={`Create task (${quickAddDescription})`}
 				aria-keyshortcuts={ariaShortcut(quickAddCommand, applePlatform)}
 				onclick={openQuickAdd}
 			>
