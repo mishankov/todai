@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Today from '$lib/components/Today.svelte';
+	import { listProjectSections } from '$lib/projects/client';
 	import {
 		completeTask,
 		deleteTask,
@@ -24,6 +25,9 @@
 	function update(taskId: string, changes: TaskUpdate): Promise<Task> {
 		return updateTask(fetch, taskId, changes);
 	}
+	function loadSections(projectId: string) {
+		return listProjectSections(fetch, projectId);
+	}
 </script>
 
 <svelte:head><title>Today · {data.project.name} — Todai</title></svelte:head>
@@ -31,7 +35,9 @@
 <Today
 	initialTasks={data.tasks}
 	projects={data.projects}
+	sections={data.sections}
 	currentProjectId={data.project.id}
+	{loadSections}
 	{complete}
 	{reopen}
 	{update}

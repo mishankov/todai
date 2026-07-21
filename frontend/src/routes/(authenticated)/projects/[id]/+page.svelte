@@ -1,11 +1,13 @@
 <script lang="ts">
 	import Inbox from '$lib/components/Inbox.svelte';
+	import { listProjectSections } from '$lib/projects/client';
 	import {
 		completeTask,
-		createTask,
+		createTaskWithProperties,
 		deleteTask,
 		reopenTask,
 		type Task,
+		type TaskCreateDraft,
 		type TaskUpdate,
 		updateTask
 	} from '$lib/tasks/client';
@@ -13,8 +15,12 @@
 
 	let { data }: PageProps = $props();
 
-	function create(title: string): Promise<Task> {
-		return createTask(fetch, title, data.project.id);
+	function create(draft: TaskCreateDraft): Promise<Task> {
+		return createTaskWithProperties(fetch, draft);
+	}
+
+	function loadSections(projectId: string) {
+		return listProjectSections(fetch, projectId);
 	}
 
 	function complete(taskId: string, version: number): Promise<Task> {
@@ -41,7 +47,9 @@
 <Inbox
 	initialTasks={data.tasks}
 	projects={data.projects}
+	sections={data.sections}
 	currentProjectId={data.project.id}
+	{loadSections}
 	{create}
 	{complete}
 	{reopen}

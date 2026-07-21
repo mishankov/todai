@@ -4,6 +4,7 @@
 		createProjectSection,
 		deleteProjectSection,
 		reorderProjectSection,
+		listProjectSections,
 		type Project,
 		type ProjectLayout,
 		type ProjectSection,
@@ -12,11 +13,12 @@
 	} from '$lib/projects/client';
 	import {
 		completeTask,
-		createTask,
+		createTaskWithProperties,
 		deleteTask,
 		reopenTask,
 		reorderTask,
 		type Task,
+		type TaskCreateDraft,
 		type TaskSummary,
 		type TaskUpdate,
 		updateTask
@@ -25,8 +27,11 @@
 
 	let { data }: PageProps = $props();
 
-	function create(title: string, sectionId: string | null): Promise<Task> {
-		return createTask(fetch, title, data.project.id, sectionId ?? undefined);
+	function create(draft: TaskCreateDraft): Promise<Task> {
+		return createTaskWithProperties(fetch, draft);
+	}
+	function loadSections(projectId: string) {
+		return listProjectSections(fetch, projectId);
 	}
 	function complete(taskId: string, version: number): Promise<Task> {
 		return completeTask(fetch, taskId, version);
@@ -82,6 +87,7 @@
 		initialSections={data.sections}
 		initialTasks={data.tasks}
 		{create}
+		{loadSections}
 		{complete}
 		{reopen}
 		{update}

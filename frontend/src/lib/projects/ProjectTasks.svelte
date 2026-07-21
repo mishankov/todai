@@ -1,7 +1,8 @@
 <script lang="ts">
 	import TaskEditorModal from '$lib/components/TaskEditorModal.svelte';
+	import TaskQuickAdd from '$lib/components/TaskQuickAdd.svelte';
 	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
-	import type { Task, TaskSummary, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
 	import { untrack } from 'svelte';
 	import type { Project, ProjectLayout, ProjectSection } from './client';
 
@@ -10,7 +11,8 @@
 		projects: Project[];
 		initialSections: ProjectSection[];
 		initialTasks: TaskSummary[];
-		create: (title: string, sectionId: string | null) => Promise<Task>;
+		create: (draft: TaskCreateDraft) => Promise<Task>;
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
 		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
@@ -56,6 +58,7 @@
 		initialSections,
 		initialTasks,
 		create,
+		loadSections,
 		complete,
 		reopen,
 		update,
@@ -71,8 +74,6 @@
 	let currentProject = $state(untrack(() => project));
 	let sections = $state(untrack(() => [...initialSections]));
 	let tasks = $state(untrack(() => [...initialTasks]));
-	let titles = $state<Record<string, string>>({});
-	let creatingFor = $state<string | null>(null);
 	let newSectionName = $state('');
 	let creatingSection = $state(false);
 	let editingSectionId = $state<string | null>(null);
@@ -124,23 +125,6 @@
 			errorMessage = 'The project layout could not be changed. Please try again.';
 		} finally {
 			changingLayout = false;
-		}
-	}
-
-	async function addTask(sectionId: string | null) {
-		const key = sectionKey(sectionId);
-		const title = titles[key]?.trim();
-		if (!title) return;
-		creatingFor = key;
-		errorMessage = '';
-		try {
-			const created = await create(title, sectionId);
-			tasks = [...tasks.filter((item) => item.id !== created.id), summaryFromTask(created)];
-			titles[key] = '';
-		} catch {
-			errorMessage = 'The task could not be created. Please try again.';
-		} finally {
-			creatingFor = null;
 		}
 	}
 
@@ -747,27 +731,17 @@
 				</ul>
 
 				{#if !group.completed}
-					<form
-						class="quick-add"
-						onsubmit={(event) => {
-							event.preventDefault();
-							void addTask(group.section?.id ?? null);
-						}}
-					>
-						<label class="sr-only" for={`task-${group.key}`}>Add task to {group.name}</label>
-						<input
-							id={`task-${group.key}`}
-							placeholder="Add task"
-							maxlength="500"
-							bind:value={titles[sectionKey(group.section?.id ?? null)]}
-						/>
-						<button
-							type="submit"
-							aria-label={`Add task to ${group.name}`}
-							disabled={creatingFor === sectionKey(group.section?.id ?? null) ||
-								!titles[sectionKey(group.section?.id ?? null)]?.trim()}>Add</button
-						>
-					</form>
+					<TaskQuickAdd
+						{create}
+						oncreated={(created) =>
+							(tasks = [
+								...tasks.filter((item) => item.id !== created.id),
+								summaryFromTask(created)
+							])}
+						initialProjectId={currentProject.id}
+						initialSectionId={group.section?.id ?? null}
+						label={`Add task to ${group.name}`}
+					/>
 				{/if}
 			</section>
 		{/each}
@@ -810,7 +784,7 @@
 		task={editingTask}
 		{projects}
 		{sections}
-		currentProjectId={currentProject.id}
+		{loadSections}
 		save={(changes) => saveTask(editingTask, changes)}
 		close={() => (editingTaskId = null)}
 	/>
@@ -1129,6 +1103,9 @@
 		left: 0;
 		min-height: 3.25rem;
 	}
+	.task-dragging .board-sections .project-section :global(.task-quick-add) {
+		margin-top: 1.4rem;
+	}
 	.task-drop-end > .task-insertion-marker {
 		top: 50%;
 		transform: translateY(-50%);
@@ -1137,15 +1114,10 @@
 		top: 0.2rem;
 		transform: none;
 	}
-	.quick-add,
 	.add-section form,
 	.rename-section {
 		gap: 0.45rem;
 	}
-	.quick-add {
-		margin-top: 0.35rem;
-	}
-	.quick-add input,
 	.add-section input,
 	.rename-section input {
 		min-width: 0;
@@ -1156,13 +1128,11 @@
 		background: transparent;
 		outline: none;
 	}
-	.quick-add input:focus,
 	.add-section input:focus,
 	.rename-section input:focus {
 		border-color: color-mix(in srgb, var(--theme-accent, #2d6540) 42%, transparent);
 		background: #fff;
 	}
-	.quick-add button,
 	.add-section button,
 	.rename-section button {
 		padding: 0.48rem 0.6rem;
