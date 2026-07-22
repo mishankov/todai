@@ -1,0 +1,309 @@
+:root {
+	color-scheme: light dark;
+	--color-canvas: #f5f7f3;
+	--color-sidebar: #f1f5ef;
+	--color-surface: #ffffff;
+	--color-surface-elevated: #ffffff;
+	--color-control: #fbfcfa;
+	--color-text: #292927;
+	--color-text-secondary: #62645e;
+	--color-text-muted: #85857f;
+	--color-border: #dfe5dc;
+	--color-border-strong: #cbd5ca;
+	--color-hover: #eef4ed;
+	--color-selected: #e6ece4;
+	--color-overlay: rgb(20 28 21 / 28%);
+	--color-focus: rgb(71 125 86 / 70%);
+	--color-success: #2d6540;
+	--color-success-soft: #e4f1e6;
+	--color-warning: #8a5a20;
+	--color-warning-soft: #f8eddb;
+	--color-info: #47647f;
+	--color-info-soft: #eef3f8;
+	--color-agent: #6c4e87;
+	--color-agent-soft: #f5f0f8;
+	--color-error: #a33f37;
+	--color-error-soft: #fff0ee;
+	--color-priority: #a33f37;
+	--color-placeholder: #777b75;
+	--color-on-accent: #ffffff;
+	--shadow-small: 0 0.35rem 1rem rgb(31 54 38 / 10%);
+	--shadow-elevated: 0 1rem 3rem rgb(31 54 38 / 18%);
+	--shadow-modal: 0 1.5rem 4rem rgb(20 28 21 / 24%);
+	--theme-accent: #2d6540;
+	--theme-accent-solid: #2d6540;
+	--theme-accent-soft: #dfeadf;
+	--theme-sidebar: var(--color-sidebar);
+	--theme-canvas: var(--color-control);
+	--theme-border: var(--color-border);
+	--theme-hover: var(--color-hover);
+	--theme-focus: var(--color-focus);
+}
+
+[data-appearance='dark'] {
+	--color-canvas: #121512;
+	--color-sidebar: #171b17;
+	--color-surface: #1b1f1b;
+	--color-surface-elevated: #242924;
+	--color-control: #202520;
+	--color-text: #f1f4ef;
+	--color-text-secondary: #bdc6bd;
+	--color-text-muted: #919d91;
+	--color-border: #5f6d5f;
+	--color-border-strong: #748474;
+	--color-hover: #282f28;
+	--color-selected: #303930;
+	--color-overlay: rgb(0 0 0 / 58%);
+	--color-focus: rgb(116 207 142 / 70%);
+	--color-success: #79d392;
+	--color-success-soft: #1d3925;
+	--color-warning: #efb96f;
+	--color-warning-soft: #3b2d1b;
+	--color-info: #9fc9ee;
+	--color-info-soft: #233544;
+	--color-agent: #d3a9eb;
+	--color-agent-soft: #392a43;
+	--color-error: #ff9b91;
+	--color-error-soft: #452421;
+	--color-priority: #ff9b91;
+	--color-placeholder: #8d988d;
+	--color-on-accent: #ffffff;
+	--shadow-small: 0 0.35rem 1rem rgb(0 0 0 / 28%);
+	--shadow-elevated: 0 1rem 3rem rgb(0 0 0 / 48%);
+	--shadow-modal: 0 1.5rem 4rem rgb(0 0 0 / 62%);
+	--theme-accent: #79d392;
+	--theme-accent-solid: #307342;
+	--theme-accent-soft: #203b27;
+	--theme-sidebar: var(--color-sidebar);
+	--theme-canvas: var(--color-control);
+	--theme-border: var(--color-border);
+	--theme-hover: var(--color-hover);
+	--theme-focus: var(--color-focus);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-appearance]) {
+		--color-canvas: #121512;
+		--color-sidebar: #171b17;
+		--color-surface: #1b1f1b;
+		--color-surface-elevated: #242924;
+		--color-control: #202520;
+		--color-text: #f1f4ef;
+		--color-text-secondary: #bdc6bd;
+		--color-text-muted: #919d91;
+		--color-border: #5f6d5f;
+		--color-border-strong: #748474;
+		--color-hover: #282f28;
+		--color-selected: #303930;
+		--color-overlay: rgb(0 0 0 / 58%);
+		--color-focus: rgb(116 207 142 / 70%);
+		--color-success: #79d392;
+		--color-success-soft: #1d3925;
+		--color-warning: #efb96f;
+		--color-warning-soft: #3b2d1b;
+		--color-info: #9fc9ee;
+		--color-info-soft: #233544;
+		--color-agent: #d3a9eb;
+		--color-agent-soft: #392a43;
+		--color-error: #ff9b91;
+		--color-error-soft: #452421;
+		--color-priority: #ff9b91;
+		--color-placeholder: #8d988d;
+		--shadow-small: 0 0.35rem 1rem rgb(0 0 0 / 28%);
+		--shadow-elevated: 0 1rem 3rem rgb(0 0 0 / 48%);
+		--shadow-modal: 0 1.5rem 4rem rgb(0 0 0 / 62%);
+		--theme-accent: #79d392;
+		--theme-accent-solid: #307342;
+		--theme-accent-soft: #203b27;
+		--theme-sidebar: var(--color-sidebar);
+		--theme-canvas: var(--color-control);
+		--theme-border: var(--color-border);
+		--theme-hover: var(--color-hover);
+		--theme-focus: var(--color-focus);
+	}
+}
+
+.project-context {
+	--theme-accent: #2d6540;
+	--theme-accent-solid: #2d6540;
+	--theme-accent-soft: #dfeadf;
+	--theme-sidebar: #f1f5ef;
+	--theme-canvas: #fbfcfa;
+	--theme-border: #dfe5dc;
+	--theme-hover: #e6ece4;
+	--theme-focus: rgb(45 101 64 / 70%);
+}
+
+.project-context.theme-ocean {
+	--theme-accent: #28638c;
+	--theme-accent-solid: #28638c;
+	--theme-accent-soft: #dceaf3;
+	--theme-sidebar: #eef5f8;
+	--theme-canvas: #fbfdfe;
+	--theme-border: #d8e4ea;
+	--theme-hover: #e3eef3;
+	--theme-focus: rgb(40 99 140 / 70%);
+}
+
+.project-context.theme-plum {
+	--theme-accent: #6b477d;
+	--theme-accent-solid: #6b477d;
+	--theme-accent-soft: #ebe1ef;
+	--theme-sidebar: #f5f0f6;
+	--theme-canvas: #fdfbfe;
+	--theme-border: #e5dce8;
+	--theme-hover: #eee6f1;
+	--theme-focus: rgb(107 71 125 / 70%);
+}
+
+.project-context.theme-sand {
+	--theme-accent: #8a643f;
+	--theme-accent-solid: #76512e;
+	--theme-accent-soft: #eee3d7;
+	--theme-sidebar: #f7f2eb;
+	--theme-canvas: #fefcf9;
+	--theme-border: #e7ddd1;
+	--theme-hover: #efe7dc;
+	--theme-focus: rgb(138 100 63 / 70%);
+}
+
+.project-context.theme-rose {
+	--theme-accent: #94505e;
+	--theme-accent-solid: #894454;
+	--theme-accent-soft: #f1dfe3;
+	--theme-sidebar: #f8f0f2;
+	--theme-canvas: #fefbfc;
+	--theme-border: #eadce0;
+	--theme-hover: #f2e5e8;
+	--theme-focus: rgb(148 80 94 / 70%);
+}
+
+.project-context.theme-graphite {
+	--theme-accent: #52565d;
+	--theme-accent-solid: #52565d;
+	--theme-accent-soft: #e3e5e7;
+	--theme-sidebar: #f1f2f3;
+	--theme-canvas: #fcfcfc;
+	--theme-border: #dfe1e3;
+	--theme-hover: #e8e9eb;
+	--theme-focus: rgb(82 86 93 / 70%);
+}
+
+[data-appearance='dark'] .project-context {
+	--theme-accent: #79d392;
+	--theme-accent-solid: #307342;
+	--theme-accent-soft: #203b27;
+	--theme-sidebar: #172019;
+	--theme-canvas: #121713;
+	--theme-border: #526858;
+	--theme-hover: #243329;
+	--theme-focus: rgb(121 211 146 / 70%);
+}
+
+[data-appearance='dark'] .project-context.theme-ocean {
+	--theme-accent: #79c5f2;
+	--theme-accent-solid: #286b96;
+	--theme-accent-soft: #1d3442;
+	--theme-sidebar: #151f25;
+	--theme-canvas: #11171b;
+	--theme-border: #506875;
+	--theme-hover: #21323b;
+	--theme-focus: rgb(121 197 242 / 70%);
+}
+
+[data-appearance='dark'] .project-context.theme-plum {
+	--theme-accent: #d0a0e5;
+	--theme-accent-solid: #704985;
+	--theme-accent-soft: #382842;
+	--theme-sidebar: #211923;
+	--theme-canvas: #181219;
+	--theme-border: #755f7d;
+	--theme-hover: #34283a;
+	--theme-focus: rgb(208 160 229 / 70%);
+}
+
+[data-appearance='dark'] .project-context.theme-sand {
+	--theme-accent: #e3b77c;
+	--theme-accent-solid: #76502d;
+	--theme-accent-soft: #3b2f22;
+	--theme-sidebar: #201c17;
+	--theme-canvas: #181512;
+	--theme-border: #766553;
+	--theme-hover: #352e26;
+	--theme-focus: rgb(227 183 124 / 70%);
+}
+
+[data-appearance='dark'] .project-context.theme-rose {
+	--theme-accent: #efa2b0;
+	--theme-accent-solid: #844657;
+	--theme-accent-soft: #40272e;
+	--theme-sidebar: #21191c;
+	--theme-canvas: #191214;
+	--theme-border: #795c65;
+	--theme-hover: #38282e;
+	--theme-focus: rgb(239 162 176 / 70%);
+}
+
+[data-appearance='dark'] .project-context.theme-graphite {
+	--theme-accent: #c1c8d2;
+	--theme-accent-solid: #5d636d;
+	--theme-accent-soft: #30343a;
+	--theme-sidebar: #1b1d20;
+	--theme-canvas: #151618;
+	--theme-border: #626873;
+	--theme-hover: #2c2f34;
+	--theme-focus: rgb(193 200 210 / 70%);
+}
+
+.theme-option.theme-sage {
+	--preview-accent: #2d6540;
+}
+
+.theme-option.theme-ocean {
+	--preview-accent: #28638c;
+}
+
+.theme-option.theme-plum {
+	--preview-accent: #6b477d;
+}
+
+.theme-option.theme-sand {
+	--preview-accent: #8a643f;
+}
+
+.theme-option.theme-rose {
+	--preview-accent: #94505e;
+}
+
+.theme-option.theme-graphite {
+	--preview-accent: #52565d;
+}
+
+[data-appearance='dark'] .theme-option.theme-sage {
+	--preview-accent: #79d392;
+}
+
+[data-appearance='dark'] .theme-option.theme-ocean {
+	--preview-accent: #79c5f2;
+}
+
+[data-appearance='dark'] .theme-option.theme-plum {
+	--preview-accent: #d0a0e5;
+}
+
+[data-appearance='dark'] .theme-option.theme-sand {
+	--preview-accent: #e3b77c;
+}
+
+[data-appearance='dark'] .theme-option.theme-rose {
+	--preview-accent: #efa2b0;
+}
+
+[data-appearance='dark'] .theme-option.theme-graphite {
+	--preview-accent: #c1c8d2;
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+	outline: 3px solid var(--theme-focus);
+	outline-offset: 2px;
+}

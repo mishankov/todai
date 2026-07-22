@@ -2,10 +2,12 @@ package usersettings_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/platforma-dev/platforma/database"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -16,17 +18,19 @@ import (
 )
 
 func TestRepositoryPersistsVersionedSettingsAndActivity(t *testing.T) {
-	repository, events := settingsRepository(t)
+	repository, events, db := settingsRepository(t)
 	ctx := context.Background()
 	scope := execution.UserScope("user-id", "correlation-id")
 
 	created, err := repository.Update(ctx, scope, usersettings.Update{
-		Timezone: "Europe/Moscow", AgentModel: "gpt-fast", AgentThinkingEffort: "high", Version: 0,
+		Timezone: "Europe/Moscow", AgentModel: "gpt-fast", AgentThinkingEffort: "high",
+		Appearance: appearancePointer(usersettings.AppearanceDark), Version: 0,
 	})
 	if err != nil {
 		t.Fatalf("create settings: %v", err)
 	}
-	if created.Version != 1 || created.LastModifiedBy != "user-id" {
+	if created.Version != 1 || created.LastModifiedBy != "user-id" ||
+		created.Appearance != usersettings.AppearanceDark {
 		t.Errorf("created settings = %#v", created)
 	}
 	if _, err := repository.Update(ctx, scope, usersettings.Update{
@@ -41,7 +45,7 @@ func TestRepositoryPersistsVersionedSettingsAndActivity(t *testing.T) {
 		t.Fatalf("update settings: %v", err)
 	}
 	if updated.Version != 2 || updated.Timezone == nil || *updated.Timezone != "UTC" ||
-		updated.AgentThinkingEffort != "low" {
+		updated.AgentThinkingEffort != "low" || updated.Appearance != usersettings.AppearanceDark {
 		t.Errorf("updated settings = %#v", updated)
 	}
 
@@ -57,9 +61,22 @@ func TestRepositoryPersistsVersionedSettingsAndActivity(t *testing.T) {
 		activityEvents[0].CorrelationID != "correlation-id" {
 		t.Errorf("activity events = %#v", activityEvents)
 	}
+	var payload struct {
+		SchemaVersion int                     `json:"schemaVersion"`
+		Appearance    usersettings.Appearance `json:"appearance"`
+	}
+	if err := json.Unmarshal(activityEvents[0].Payload, &payload); err != nil {
+		t.Fatalf("decode activity payload: %v", err)
+	}
+	if payload.SchemaVersion != 3 || payload.Appearance != usersettings.AppearanceDark {
+		t.Errorf("activity payload = %#v", payload)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE user_settings SET appearance = 'sepia' WHERE user_id = 'user-id'`); err == nil {
+		t.Error("database accepted an invalid appearance")
+	}
 }
 
-func settingsRepository(t *testing.T) (*usersettings.Repository, *activity.Repository) {
+func settingsRepository(t *testing.T) (*usersettings.Repository, *activity.Repository, *sqlx.DB) {
 	t.Helper()
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -95,5 +112,5 @@ func settingsRepository(t *testing.T) (*usersettings.Repository, *activity.Repos
 	if _, err := db.ExecContext(ctx, `INSERT INTO users (id) VALUES ('user-id')`); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	return repository, events
+	return repository, events, db
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { updateSettings } from '$lib/settings/client';
+	import { publishSavedAppearance, type Appearance } from '$lib/appearance/theme';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 
@@ -7,6 +8,7 @@
 	const initial = initialForm();
 	let current = $state(initial.settings);
 	let timezone = $state(initial.timezone);
+	let appearance = $state<Appearance>(initial.appearance);
 	let saving = $state(false);
 	let saved = $state(false);
 	let errorMessage = $state('');
@@ -19,6 +21,7 @@
 			if (next.version === current.version) return;
 			current = next;
 			timezone = next.timezone ?? detectedTimezone();
+			appearance = next.appearance;
 			saved = false;
 		});
 	});
@@ -27,7 +30,8 @@
 		const settings = data.settings.settings;
 		return {
 			settings,
-			timezone: settings.timezone ?? detectedTimezone()
+			timezone: settings.timezone ?? detectedTimezone(),
+			appearance: settings.appearance
 		};
 	}
 
@@ -40,10 +44,13 @@
 				timezone,
 				agentModel: current.agentModel,
 				agentThinkingEffort: current.agentThinkingEffort,
+				appearance,
 				version: current.version
 			});
 			current = updated.settings;
 			timezone = updated.settings.timezone ?? timezone;
+			appearance = updated.settings.appearance;
+			publishSavedAppearance(updated.settings.appearance);
 			saved = true;
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Could not save settings.';
@@ -95,6 +102,22 @@
 			</label>
 		</section>
 
+		<section class="settings-group" aria-labelledby="appearance-settings">
+			<div>
+				<h2 id="appearance-settings">Appearance</h2>
+				<p>Choose how Todai looks across every project and device.</p>
+			</div>
+			<fieldset class="appearance-options">
+				<legend>Color scheme</legend>
+				{#each [{ id: 'system', label: 'System', description: 'Follow this device' }, { id: 'light', label: 'Light', description: 'Always use light' }, { id: 'dark', label: 'Dark', description: 'Always use dark' }] as option (option.id)}
+					<label class="appearance-option">
+						<input type="radio" name="appearance" value={option.id} bind:group={appearance} />
+						<span><strong>{option.label}</strong><small>{option.description}</small></span>
+					</label>
+				{/each}
+			</fieldset>
+		</section>
+
 		<footer>
 			{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 			{#if saved}<p class="success" role="status">Settings saved.</p>{/if}
@@ -109,7 +132,7 @@
 	.settings-page {
 		width: min(48rem, 100%);
 		margin: 0 auto;
-		color: #292927;
+		color: var(--color-text);
 	}
 
 	header {
@@ -118,7 +141,7 @@
 
 	header p {
 		margin: 0 0 0.55rem;
-		color: var(--theme-accent, #4f765c);
+		color: var(--theme-accent);
 		font-size: 0.75rem;
 		font-weight: 800;
 		letter-spacing: 0.12em;
@@ -133,7 +156,7 @@
 
 	header span,
 	.settings-group p {
-		color: #74746f;
+		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 	}
 
@@ -148,9 +171,9 @@
 		gap: 2.5rem;
 		align-items: center;
 		padding: 1.5rem;
-		border: 1px solid #dce4d9;
+		border: 1px solid var(--color-border);
 		border-radius: 0.9rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 
 	h2 {
@@ -174,17 +197,17 @@
 		width: 100%;
 		min-height: 2.8rem;
 		padding: 0 0.8rem;
-		border: 1px solid #cdd9ca;
+		border: 1px solid var(--color-border-strong);
 		border-radius: 0.55rem;
-		color: #292927;
-		background: var(--theme-canvas, #fbfcfa);
+		color: var(--color-text);
+		background: var(--color-control);
 		font: inherit;
 		font-size: 0.88rem;
 	}
 
 	select:focus {
-		outline: 3px solid rgb(45 101 64 / 16%);
-		border-color: var(--theme-accent, #4f765c);
+		outline: 3px solid var(--theme-focus, var(--color-focus));
+		border-color: var(--theme-accent);
 	}
 
 	footer {
@@ -201,18 +224,18 @@
 	}
 
 	.error {
-		color: #b83f34;
+		color: var(--color-error);
 	}
 	.success {
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 	}
 
 	button {
 		padding: 0.72rem 1rem;
 		border: 0;
 		border-radius: 0.55rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		font-weight: 750;
 		cursor: pointer;
 	}
@@ -220,6 +243,55 @@
 	button:disabled {
 		cursor: wait;
 		opacity: 0.55;
+	}
+
+	.appearance-options {
+		display: grid;
+		gap: 0.55rem;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.appearance-options legend {
+		margin-bottom: 0.5rem;
+		font-size: 0.78rem;
+		font-weight: 750;
+	}
+
+	.appearance-option {
+		display: flex;
+		grid-template-columns: none;
+		align-items: center;
+		gap: 0.7rem;
+		padding: 0.7rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.6rem;
+		background: var(--color-control);
+		cursor: pointer;
+	}
+
+	.appearance-option:has(input:checked) {
+		border-color: var(--theme-accent);
+		background: var(--theme-accent-soft);
+		box-shadow: 0 0 0 2px var(--theme-focus);
+	}
+
+	.appearance-option input {
+		width: 1rem;
+		height: 1rem;
+		accent-color: var(--theme-accent-solid, var(--theme-accent));
+	}
+
+	.appearance-option span {
+		display: grid;
+		gap: 0.12rem;
+	}
+
+	.appearance-option small {
+		color: var(--color-text-secondary);
+		font-size: 0.72rem;
+		font-weight: 500;
 	}
 
 	@media (max-width: 42rem) {

@@ -317,62 +317,10 @@
 
 <style>
 	.shell {
-		--theme-accent: #2d6540;
-		--theme-accent-soft: #dfeadf;
-		--theme-sidebar: #f1f5ef;
-		--theme-canvas: #fbfcfa;
-		--theme-border: #dfe5dc;
-		--theme-hover: #e6ece4;
-		--theme-focus: rgb(45 101 64 / 16%);
 		display: grid;
 		grid-template-columns: 17rem minmax(0, 1fr);
 		min-height: 100vh;
 		background: var(--theme-canvas);
-	}
-	.theme-ocean {
-		--theme-accent: #28638c;
-		--theme-accent-soft: #dceaf3;
-		--theme-sidebar: #eef5f8;
-		--theme-canvas: #fbfdfe;
-		--theme-border: #d8e4ea;
-		--theme-hover: #e3eef3;
-		--theme-focus: rgb(40 99 140 / 16%);
-	}
-	.theme-plum {
-		--theme-accent: #6b477d;
-		--theme-accent-soft: #ebe1ef;
-		--theme-sidebar: #f5f0f6;
-		--theme-canvas: #fdfbfe;
-		--theme-border: #e5dce8;
-		--theme-hover: #eee6f1;
-		--theme-focus: rgb(107 71 125 / 16%);
-	}
-	.theme-sand {
-		--theme-accent: #8a643f;
-		--theme-accent-soft: #eee3d7;
-		--theme-sidebar: #f7f2eb;
-		--theme-canvas: #fefcf9;
-		--theme-border: #e7ddd1;
-		--theme-hover: #efe7dc;
-		--theme-focus: rgb(138 100 63 / 16%);
-	}
-	.theme-rose {
-		--theme-accent: #94505e;
-		--theme-accent-soft: #f1dfe3;
-		--theme-sidebar: #f8f0f2;
-		--theme-canvas: #fefbfc;
-		--theme-border: #eadce0;
-		--theme-hover: #f2e5e8;
-		--theme-focus: rgb(148 80 94 / 16%);
-	}
-	.theme-graphite {
-		--theme-accent: #52565d;
-		--theme-accent-soft: #e3e5e7;
-		--theme-sidebar: #f1f2f3;
-		--theme-canvas: #fcfcfc;
-		--theme-border: #dfe1e3;
-		--theme-hover: #e8e9eb;
-		--theme-focus: rgb(82 86 93 / 16%);
 	}
 	aside {
 		position: sticky;
@@ -396,7 +344,7 @@
 		align-items: center;
 		gap: 0.65rem;
 		padding: 0.25rem 0.4rem;
-		color: #292927;
+		color: var(--color-text);
 		font-weight: 760;
 		letter-spacing: -0.025em;
 		text-decoration: none;
@@ -407,8 +355,8 @@
 		height: 1.75rem;
 		place-items: center;
 		border-radius: 0.5rem;
-		color: #fff;
-		background: var(--theme-accent);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 	.close-sidebar {
 		display: none;
@@ -421,7 +369,7 @@
 	.project-switcher label {
 		margin: 0;
 		padding: 0 0.3rem;
-		color: #74746f;
+		color: var(--color-text-secondary);
 		font-size: 0.68rem;
 		font-weight: 800;
 		letter-spacing: 0.09em;
@@ -433,7 +381,7 @@
 		padding: 0 2rem 0 0.7rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.6rem;
-		color: #292927;
+		color: var(--color-text);
 		background: var(--theme-canvas);
 		font: inherit;
 		font-size: 0.9rem;
@@ -469,7 +417,7 @@
 		padding: 0.58rem 0.7rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.55rem;
-		color: #555650;
+		color: var(--color-text-secondary);
 		background: var(--theme-canvas);
 		font: inherit;
 		font-size: 0.8rem;
@@ -488,7 +436,7 @@
 	}
 	.global-command-palette kbd {
 		margin-left: auto;
-		color: #777873;
+		color: var(--color-text-muted);
 		font-family: inherit;
 		font-size: 0.62rem;
 	}
@@ -510,7 +458,7 @@
 		padding: 0.5rem 0.6rem;
 		border: 0;
 		border-radius: 0.38rem;
-		color: #53534f;
+		color: var(--color-text-secondary);
 		background: transparent;
 		font-size: 0.84rem;
 		font-weight: 600;
@@ -566,7 +514,7 @@
 	.username {
 		display: block;
 		overflow: hidden;
-		color: #777;
+		color: var(--color-text-muted);
 		font-size: 0.74rem;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -583,7 +531,7 @@
 	}
 	.error {
 		margin: 0.6rem 0.5rem 0;
-		color: #b83f34;
+		color: var(--color-error);
 		font-size: 0.76rem;
 	}
 	@media (max-width: 48rem) {
@@ -596,7 +544,7 @@
 			left: 0;
 			width: min(19rem, 86vw);
 			transform: translateX(-102%);
-			box-shadow: 1rem 0 3rem rgb(30 29 27 / 14%);
+			box-shadow: var(--shadow-elevated);
 			transition: transform 160ms ease;
 		}
 		aside.open {
@@ -610,7 +558,7 @@
 			padding: 0;
 			border: 0;
 			border-radius: 0.4rem;
-			color: #66625f;
+			color: var(--color-text-secondary);
 			background: transparent;
 		}
 		.sidebar-backdrop {
@@ -619,7 +567,7 @@
 			inset: 0;
 			display: block;
 			border: 0;
-			background: rgb(23 22 20 / 30%);
+			background: var(--color-overlay);
 			opacity: 0;
 			pointer-events: none;
 			transition: opacity 160ms ease;
@@ -647,7 +595,7 @@
 			padding: 0;
 			border: 0;
 			border-radius: 0.45rem;
-			color: #4e4d49;
+			color: var(--color-text-secondary);
 			background: transparent;
 		}
 		.mobile-bar .brand {

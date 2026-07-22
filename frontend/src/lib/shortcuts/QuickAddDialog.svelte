@@ -266,15 +266,15 @@
 		display: grid;
 		place-items: start center;
 		padding: min(12vh, 6rem) 1rem 1rem;
-		background: rgb(24 25 23 / 45%);
+		background: var(--color-overlay);
 		backdrop-filter: blur(2px);
 	}
 	.dialog {
 		width: min(42rem, 100%);
-		border: 1px solid var(--theme-border, #dfe5dc);
+		border: 1px solid var(--theme-border);
 		border-radius: 1rem;
-		background: #fff;
-		box-shadow: 0 1.5rem 5rem rgb(20 28 21 / 24%);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-modal);
 		overflow: hidden;
 	}
 	header,
@@ -286,8 +286,8 @@
 	}
 	header {
 		padding: 1.25rem 1.35rem;
-		border-bottom: 1px solid var(--theme-border, #dfe5dc);
-		background: var(--theme-canvas, #fbfcfa);
+		border-bottom: 1px solid var(--theme-border);
+		background: var(--theme-canvas);
 	}
 	header p,
 	h2 {
@@ -295,7 +295,7 @@
 	}
 	header p {
 		margin-bottom: 0.35rem;
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		font-size: 0.68rem;
 		font-weight: 800;
 		letter-spacing: 0.1em;
@@ -314,7 +314,7 @@
 		cursor: pointer;
 	}
 	.close:hover {
-		background: var(--theme-hover, #e6ece4);
+		background: var(--theme-hover);
 	}
 	form {
 		display: grid;
@@ -324,7 +324,7 @@
 	label {
 		display: grid;
 		gap: 0.4rem;
-		color: #4b4b47;
+		color: var(--color-text-secondary);
 		font-size: 0.75rem;
 		font-weight: 750;
 	}
@@ -334,10 +334,10 @@
 		min-height: 2.7rem;
 		box-sizing: border-box;
 		padding: 0 0.75rem;
-		border: 1px solid var(--theme-border, #dfe5dc);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.55rem;
-		background: var(--theme-canvas, #fbfcfa);
-		color: #292927;
+		background: var(--theme-canvas);
+		color: var(--color-text);
 		font: inherit;
 		font-size: 0.88rem;
 	}
@@ -348,8 +348,8 @@
 	input:focus,
 	select:focus,
 	button:focus-visible {
-		outline: 3px solid var(--theme-focus, rgb(45 101 64 / 16%));
-		border-color: var(--theme-accent, #2d6540);
+		outline: 3px solid var(--theme-focus);
+		border-color: var(--theme-accent);
 	}
 	.field-grid {
 		display: grid;
@@ -358,22 +358,22 @@
 	}
 	.error {
 		margin: 0;
-		color: #b83f34;
+		color: var(--color-error);
 		font-size: 0.82rem;
 	}
 	footer {
 		padding-top: 0.3rem;
 	}
 	footer span {
-		color: #777772;
+		color: var(--color-text-muted);
 		font-size: 0.72rem;
 	}
 	footer button {
 		padding: 0.75rem 1rem;
 		border: 0;
 		border-radius: 0.55rem;
-		background: var(--theme-accent, #2d6540);
-		color: #fff;
+		background: var(--theme-accent-solid, var(--theme-accent));
+		color: var(--color-on-accent);
 		font-weight: 750;
 		cursor: pointer;
 	}

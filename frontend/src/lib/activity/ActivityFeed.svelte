@@ -239,7 +239,7 @@
 
 	.eyebrow {
 		margin: 0 0 0.55rem;
-		color: var(--theme-accent, #427052);
+		color: var(--theme-accent);
 		font-size: 0.72rem;
 		font-weight: 800;
 		letter-spacing: 0.13em;
@@ -248,7 +248,7 @@
 
 	h1 {
 		margin: 0;
-		color: #242422;
+		color: var(--color-text);
 		font-size: clamp(2.3rem, 7vw, 4rem);
 		letter-spacing: -0.055em;
 		line-height: 0.98;
@@ -257,7 +257,7 @@
 	.intro {
 		max-width: 34rem;
 		margin: 1rem 0 0;
-		color: #74746f;
+		color: var(--color-text-secondary);
 		font-size: 0.94rem;
 		line-height: 1.55;
 	}
@@ -265,7 +265,7 @@
 	.event-count {
 		flex: none;
 		padding-bottom: 0.35rem;
-		color: #85857f;
+		color: var(--color-text-muted);
 		font-size: 0.82rem;
 		font-weight: 650;
 	}
@@ -277,7 +277,7 @@
 
 	.day-group > h2 {
 		margin: 0 0 0.9rem;
-		color: #797974;
+		color: var(--color-text-muted);
 		font-size: 0.76rem;
 		font-weight: 760;
 		letter-spacing: 0.04em;
@@ -304,7 +304,7 @@
 		bottom: -0.2rem;
 		left: 1.1rem;
 		width: 1px;
-		background: var(--theme-border, #dfe6dc);
+		background: var(--theme-border);
 		content: '';
 	}
 
@@ -315,25 +315,25 @@
 		width: 2.25rem;
 		height: 2.25rem;
 		place-items: center;
-		border: 1px solid var(--theme-border, #d6e0d3);
+		border: 1px solid var(--theme-border);
 		border-radius: 50%;
-		color: var(--theme-accent, #3c6e4d);
-		background: var(--theme-accent-soft, #f4f8f2);
+		color: var(--theme-accent);
+		background: var(--theme-accent-soft);
 	}
 
 	.event-icon.project {
-		color: #766445;
-		background: #f8f5ed;
+		color: var(--color-text-secondary);
+		background: var(--color-warning-soft);
 	}
 
 	.event-icon.section {
-		color: #5a6678;
-		background: #f2f5f8;
+		color: var(--color-info);
+		background: var(--color-info-soft);
 	}
 
 	.event-icon.agent {
-		color: #6c4e87;
-		background: #f5f0f8;
+		color: var(--color-agent);
+		background: var(--color-agent-soft);
 	}
 
 	.event-icon svg {
@@ -361,14 +361,14 @@
 	.event-summary p {
 		min-width: 0;
 		margin: 0;
-		color: #51514d;
+		color: var(--color-text-secondary);
 		font-size: 0.94rem;
 		line-height: 1.45;
 	}
 
 	.actor,
 	.event-summary strong {
-		color: #292927;
+		color: var(--color-text);
 		font-weight: 720;
 	}
 
@@ -382,7 +382,7 @@
 
 	time {
 		flex: none;
-		color: #969690;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
 	}
@@ -393,15 +393,15 @@
 		flex-wrap: wrap;
 		gap: 0.45rem 0.8rem;
 		margin-top: 0.45rem;
-		color: #92928c;
+		color: var(--color-text-muted);
 		font-size: 0.7rem;
 	}
 
 	.event-meta > span:first-child {
 		padding: 0.15rem 0.4rem;
 		border-radius: 0.25rem;
-		color: var(--theme-accent, #587260);
-		background: var(--theme-accent-soft, #edf3eb);
+		color: var(--theme-accent);
+		background: var(--theme-accent-soft);
 		font-weight: 680;
 	}
 
@@ -410,7 +410,7 @@
 	}
 
 	summary {
-		color: #777772;
+		color: var(--color-text-muted);
 		cursor: pointer;
 	}
 
@@ -420,13 +420,13 @@
 		gap: 0.35rem 0.8rem;
 		margin: 0.65rem 0 0;
 		padding: 0.65rem 0.75rem;
-		border: 1px solid var(--theme-border, #e1e5df);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.45rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 
 	dt {
-		color: #777772;
+		color: var(--color-text-muted);
 		font-weight: 700;
 	}
 
@@ -441,7 +441,7 @@
 		display: grid;
 		justify-items: center;
 		padding: 5rem 1rem;
-		border: 1px dashed var(--theme-border, #d7dfd4);
+		border: 1px dashed var(--theme-border);
 		border-radius: 0.8rem;
 		text-align: center;
 	}
@@ -452,8 +452,8 @@
 		height: 3rem;
 		place-items: center;
 		border-radius: 50%;
-		color: var(--theme-accent, #557760);
-		background: var(--theme-accent-soft, #edf3eb);
+		color: var(--theme-accent);
+		background: var(--theme-accent-soft);
 	}
 
 	.empty-icon svg {
@@ -467,13 +467,13 @@
 
 	.empty-state h2 {
 		margin: 1rem 0 0.35rem;
-		color: #33332f;
+		color: var(--color-text);
 		font-size: 1.05rem;
 	}
 
 	.empty-state p {
 		margin: 0;
-		color: #85857f;
+		color: var(--color-text-muted);
 		font-size: 0.85rem;
 	}
 

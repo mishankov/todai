@@ -17,6 +17,8 @@ var (
 	ErrInvalidAgentModel = errors.New("settings agent model is not available")
 	// ErrInvalidAgentThinkingEffort indicates that Pi does not recognize the requested effort.
 	ErrInvalidAgentThinkingEffort = errors.New("settings agent thinking effort is not available")
+	// ErrInvalidAppearance indicates that the requested color-scheme preference is unsupported.
+	ErrInvalidAppearance = errors.New("settings appearance is invalid")
 	// ErrInvalidVersion indicates that the caller did not provide an observed version.
 	ErrInvalidVersion = errors.New("settings version must not be negative")
 	// ErrVersionConflict indicates that settings changed after the caller loaded them.
@@ -58,7 +60,7 @@ func (s *Service) Get(ctx context.Context, userID string) (View, error) {
 	if !found {
 		settings = Settings{
 			UserID: userID, AgentModel: s.defaultAgentModel,
-			AgentThinkingEffort: DefaultAgentThinkingEffort,
+			AgentThinkingEffort: DefaultAgentThinkingEffort, Appearance: AppearanceSystem,
 		}
 	}
 	return s.view(settings), nil
@@ -87,12 +89,19 @@ func (s *Service) Update(ctx context.Context, scope execution.Scope, update Upda
 	if !containsValue(availableAgentThinkingEfforts, update.AgentThinkingEffort) {
 		return View{}, ErrInvalidAgentThinkingEffort
 	}
+	if update.Appearance != nil && !validAppearance(*update.Appearance) {
+		return View{}, ErrInvalidAppearance
+	}
 
 	updated, err := s.repository.Update(ctx, scope, update)
 	if err != nil {
 		return View{}, fmt.Errorf("update user settings: %w", err)
 	}
 	return s.view(updated), nil
+}
+
+func validAppearance(appearance Appearance) bool {
+	return appearance == AppearanceSystem || appearance == AppearanceLight || appearance == AppearanceDark
 }
 
 // ResolveAgent returns the timezone, model and thinking effort effective for a new agent run.

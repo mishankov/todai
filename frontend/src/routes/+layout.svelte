@@ -1,5 +1,7 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import '$lib/appearance/theme.css';
+	import SystemAppearanceController from '$lib/appearance/SystemAppearanceController.svelte';
 
 	let { children } = $props();
 </script>
@@ -8,6 +10,7 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
+<SystemAppearanceController />
 {@render children()}
 
 <style>
@@ -24,8 +27,8 @@
 			BlinkMacSystemFont,
 			'Segoe UI',
 			sans-serif;
-		color: #292927;
-		background: #f5f7f3;
+		color: var(--color-text);
+		background: var(--color-canvas);
 	}
 
 	:global(body) {
@@ -35,7 +38,13 @@
 	}
 
 	:global(button),
-	:global(input) {
+	:global(input),
+	:global(select),
+	:global(textarea) {
 		font: inherit;
+	}
+
+	:global(::placeholder) {
+		color: var(--color-placeholder);
 	}
 </style>

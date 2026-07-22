@@ -489,9 +489,9 @@
 		padding: 0;
 		border: 0;
 		border-radius: 50%;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
-		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 28%, transparent);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
+		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent) 28%, transparent);
 		cursor: pointer;
 		transition:
 			transform 160ms ease,
@@ -500,10 +500,10 @@
 	}
 	.chat-launcher:hover {
 		transform: translateY(-2px);
-		box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--theme-accent, #2d6540) 34%, transparent);
+		box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--theme-accent) 34%, transparent);
 	}
 	.chat-launcher:focus-visible {
-		outline: 3px solid color-mix(in srgb, var(--theme-accent, #2d6540) 24%, transparent);
+		outline: 3px solid color-mix(in srgb, var(--theme-accent) 24%, transparent);
 		outline-offset: 3px;
 	}
 	.chat-launcher.hidden {
@@ -527,9 +527,9 @@
 		right: 0.15rem;
 		width: 0.75rem;
 		height: 0.75rem;
-		border: 2px solid #fff;
+		border: 2px solid var(--color-surface);
 		border-radius: 50%;
-		background: #e7b44b;
+		background: var(--color-warning);
 	}
 	.chat-popup {
 		position: fixed;
@@ -538,10 +538,10 @@
 		bottom: 1.5rem;
 		width: min(26rem, calc(100vw - 2rem));
 		height: min(42rem, calc(100dvh - 3rem));
-		border: 1px solid var(--theme-border, #dfe5dc);
+		border: 1px solid var(--theme-border);
 		border-radius: 1rem;
-		background: #fff;
-		box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--theme-accent, #2d6540) 22%, transparent);
+		background: var(--color-surface);
+		box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--theme-accent) 22%, transparent);
 		overflow: hidden;
 		opacity: 0;
 		visibility: hidden;
@@ -566,8 +566,8 @@
 		gap: 1rem;
 		height: 4.35rem;
 		padding: 0 0.85rem 0 1rem;
-		border-bottom: 1px solid var(--theme-border, #dfe5dc);
-		background: var(--theme-canvas, #fbfcfa);
+		border-bottom: 1px solid var(--theme-border);
+		background: var(--theme-canvas);
 	}
 	.popup-identity,
 	.popup-actions {
@@ -588,33 +588,33 @@
 		flex: none;
 		place-items: center;
 		border-radius: 0.6rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		font-weight: 800;
 	}
 	.popup-header h2 {
 		margin: 0;
-		color: #2d2d2a;
+		color: var(--color-text);
 		font-size: 0.95rem;
 		letter-spacing: -0.01em;
 	}
 	.popup-header p {
 		margin: 0.15rem 0 0;
-		color: #7c827b;
+		color: var(--color-text-muted);
 		font-size: 0.7rem;
 	}
 	.new-chat {
 		padding: 0.45rem 0.55rem;
 		border: 0;
 		border-radius: 0.45rem;
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		background: transparent;
 		font-size: 0.72rem;
 		font-weight: 720;
 		cursor: pointer;
 	}
 	.new-chat:hover:not(:disabled) {
-		background: var(--theme-hover, #e6ece4);
+		background: var(--theme-hover);
 	}
 	.new-chat:disabled {
 		cursor: not-allowed;
@@ -629,19 +629,19 @@
 		padding: 0;
 		border: 0;
 		border-radius: 0.45rem;
-		color: #6c716b;
+		color: var(--color-text-secondary);
 		background: transparent;
 		cursor: pointer;
 	}
 	.close-chat:hover {
-		color: #2d2d2a;
-		background: var(--theme-hover, #e6ece4);
+		color: var(--color-text);
+		background: var(--theme-hover);
 	}
 	.chat-panel {
 		display: grid;
 		grid-template-rows: minmax(0, 1fr) auto;
 		height: calc(100% - 4.35rem);
-		background: #fff;
+		background: var(--color-surface);
 	}
 	.conversation {
 		min-height: 0;
@@ -659,11 +659,11 @@
 		justify-self: end;
 		padding: 0.9rem 1rem;
 		border-radius: 0.85rem 0.85rem 0.2rem 0.85rem;
-		background: var(--theme-accent-soft, #dfeadf);
+		background: var(--theme-accent-soft);
 	}
 	.message-role {
 		margin: 0 0 0.35rem;
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		font-size: 0.7rem;
 		font-weight: 760;
 		letter-spacing: 0.04em;
@@ -671,7 +671,7 @@
 	}
 	.message-content {
 		margin: 0;
-		color: #30302d;
+		color: var(--color-text);
 		line-height: 1.62;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
@@ -686,13 +686,13 @@
 	}
 	.empty-state h2 {
 		margin: 1rem 0 0.45rem;
-		color: #31312e;
+		color: var(--color-text);
 		font-size: 1.35rem;
 	}
 	.empty-state p,
 	.loading-state {
 		margin: 0;
-		color: #7b7b75;
+		color: var(--color-text-muted);
 	}
 	.assistant-mark {
 		display: grid;
@@ -700,8 +700,8 @@
 		height: 2.6rem;
 		place-items: center;
 		border-radius: 0.8rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		font-weight: 800;
 	}
 	.suggestions {
@@ -713,22 +713,22 @@
 	}
 	.suggestions button {
 		padding: 0.55rem 0.75rem;
-		border: 1px solid var(--theme-border, #dfe5dc);
+		border: 1px solid var(--theme-border);
 		border-radius: 999px;
-		color: var(--theme-accent, #2d6540);
-		background: var(--theme-canvas, #fbfcfa);
+		color: var(--theme-accent);
+		background: var(--theme-canvas);
 		cursor: pointer;
 	}
 	.suggestions button:hover {
-		border-color: var(--theme-accent, #2d6540);
-		background: var(--theme-hover, #e6ece4);
+		border-color: var(--theme-accent);
+		background: var(--theme-hover);
 	}
 	.tool-activity {
 		display: grid;
 		gap: 0.4rem;
 		margin-top: 1.3rem;
 		padding-top: 1rem;
-		border-top: 1px solid var(--theme-border, #dfe5dc);
+		border-top: 1px solid var(--theme-border);
 	}
 	.tool-activity div,
 	.run-status {
@@ -736,16 +736,16 @@
 		align-items: center;
 		gap: 0.55rem;
 		margin: 0;
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		font-size: 0.8rem;
 	}
 	.tool-activity div.failed {
-		color: #ad493f;
+		color: var(--color-error);
 	}
 	.tool-activity div > span:first-child {
 		width: 0.55rem;
 		height: 0.55rem;
-		border: 1.5px solid color-mix(in srgb, var(--theme-accent, #2d6540) 62%, transparent);
+		border: 1.5px solid color-mix(in srgb, var(--theme-accent) 62%, transparent);
 		border-radius: 50%;
 	}
 	.tool-activity div > span:first-child.spinning {
@@ -757,19 +757,19 @@
 	}
 	.composer-area {
 		padding: 1rem;
-		border-top: 1px solid var(--theme-border, #dfe5dc);
-		background: var(--theme-canvas, #fbfcfa);
+		border-top: 1px solid var(--theme-border);
+		background: var(--theme-canvas);
 	}
 	form {
 		padding: 0.7rem 0.8rem 0.6rem;
-		border: 1px solid var(--theme-border, #dfe5dc);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.75rem;
-		background: #fff;
-		box-shadow: 0 0.4rem 1.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 5%, transparent);
+		background: var(--color-surface);
+		box-shadow: 0 0.4rem 1.2rem color-mix(in srgb, var(--theme-accent) 5%, transparent);
 	}
 	form:focus-within {
-		border-color: var(--theme-accent, #2d6540);
-		box-shadow: 0 0 0 3px var(--theme-focus, rgb(45 101 64 / 16%));
+		border-color: var(--theme-accent);
+		box-shadow: 0 0 0 3px var(--theme-focus);
 	}
 	label {
 		position: absolute;
@@ -789,13 +789,13 @@
 		padding: 0;
 		border: 0;
 		outline: 0;
-		color: #292927;
+		color: var(--color-text);
 		background: transparent;
 		font: inherit;
 		line-height: 1.5;
 	}
 	textarea::placeholder {
-		color: #999d96;
+		color: var(--color-text-muted);
 	}
 	textarea:disabled {
 		cursor: not-allowed;
@@ -808,7 +808,7 @@
 		margin-top: 0.45rem;
 	}
 	.composer-actions > span {
-		color: #93958f;
+		color: var(--color-text-muted);
 		font-size: 0.7rem;
 	}
 	.send,
@@ -821,12 +821,12 @@
 		cursor: pointer;
 	}
 	.send {
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 	.stop {
-		color: #9f3d35;
-		background: #f7eae8;
+		color: var(--color-error);
+		background: var(--color-error-soft);
 	}
 	.send:disabled,
 	.stop:disabled {
@@ -839,10 +839,10 @@
 		font-size: 0.78rem;
 	}
 	.error {
-		color: #ad493f;
+		color: var(--color-error);
 	}
 	.connection-status {
-		color: #777b75;
+		color: var(--color-text-muted);
 	}
 	@keyframes spin {
 		to {

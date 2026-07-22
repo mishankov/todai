@@ -25,7 +25,7 @@ func TestSettingsHTTPUpdatesAuthenticatedUserPreferences(t *testing.T) {
 	handler := settingsTestAPI(&auth.User{ID: "user-id", Username: "owner"}, service)
 	request := settingsJSONRequest(t, http.MethodPatch, "/settings", map[string]any{
 		"timezone": "Europe/Moscow", "agentModel": "gpt-fast",
-		"agentThinkingEffort": "high", "version": 0,
+		"agentThinkingEffort": "high", "appearance": "dark", "version": 0,
 	})
 	request.AddCookie(&http.Cookie{Name: "todai_session", Value: "session-id"})
 	response := httptest.NewRecorder()
@@ -41,7 +41,8 @@ func TestSettingsHTTPUpdatesAuthenticatedUserPreferences(t *testing.T) {
 		t.Errorf("execution scope = %#v, error = %v", scope, err)
 	}
 	if service.update.Timezone != "Europe/Moscow" || service.update.AgentModel != "gpt-fast" ||
-		service.update.AgentThinkingEffort != "high" {
+		service.update.AgentThinkingEffort != "high" || service.update.Appearance == nil ||
+		*service.update.Appearance != usersettings.AppearanceDark {
 		t.Errorf("update = %#v", service.update)
 	}
 }
@@ -55,6 +56,59 @@ func TestSettingsHTTPRequiresAuthentication(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestSettingsHTTPMapsValidationAndConflictErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{name: "invalid appearance", err: usersettings.ErrInvalidAppearance, wantStatus: http.StatusBadRequest},
+		{name: "stale version", err: usersettings.ErrVersionConflict, wantStatus: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			handler := settingsTestAPI(
+				&auth.User{ID: "user-id", Username: "owner"},
+				&recordingSettingsHTTPService{err: test.err},
+			)
+			request := settingsJSONRequest(t, http.MethodPatch, "/settings", map[string]any{
+				"timezone": "UTC", "agentModel": "gpt-fast",
+				"agentThinkingEffort": "medium", "appearance": "sepia", "version": 1,
+			})
+			request.AddCookie(&http.Cookie{Name: "todai_session", Value: "session-id"})
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != test.wantStatus {
+				t.Errorf("status = %d, want %d", response.Code, test.wantStatus)
+			}
+		})
+	}
+}
+
+func TestSettingsHTTPOmittedAppearanceRemainsAbsent(t *testing.T) {
+	t.Parallel()
+
+	service := &recordingSettingsHTTPService{}
+	handler := settingsTestAPI(&auth.User{ID: "user-id", Username: "owner"}, service)
+	request := settingsJSONRequest(t, http.MethodPatch, "/settings", map[string]any{
+		"timezone": "UTC", "agentModel": "gpt-fast",
+		"agentThinkingEffort": "medium", "version": 1,
+	})
+	request.AddCookie(&http.Cookie{Name: "todai_session", Value: "session-id"})
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || service.update.Appearance != nil {
+		t.Errorf("status = %d, update = %#v", response.Code, service.update)
 	}
 }
 
@@ -88,6 +142,7 @@ func settingsJSONRequest(t *testing.T, method, path string, body any) *http.Requ
 type recordingSettingsHTTPService struct {
 	scopes chan execution.Scope
 	update usersettings.Update
+	err    error
 }
 
 func (s *recordingSettingsHTTPService) Get(context.Context, string) (usersettings.View, error) {
@@ -100,13 +155,21 @@ func (s *recordingSettingsHTTPService) Update(
 	update usersettings.Update,
 ) (usersettings.View, error) {
 	s.update = update
+	if s.err != nil {
+		return usersettings.View{}, s.err
+	}
 	if s.scopes != nil {
 		s.scopes <- scope
 	}
 	timezone := update.Timezone
+	appearance := usersettings.AppearanceSystem
+	if update.Appearance != nil {
+		appearance = *update.Appearance
+	}
 	return usersettings.View{Settings: usersettings.Settings{
 		Timezone: &timezone, AgentModel: update.AgentModel,
-		AgentThinkingEffort: update.AgentThinkingEffort, Version: update.Version + 1,
+		AgentThinkingEffort: update.AgentThinkingEffort, Appearance: appearance,
+		Version: update.Version + 1,
 	}}, nil
 }
 

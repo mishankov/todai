@@ -108,10 +108,10 @@
 		width: 100%;
 		gap: 1rem;
 		padding: 1.25rem;
-		border: 1px solid var(--theme-border, #cad8c9);
+		border: 1px solid var(--theme-border);
 		border-radius: 1rem;
-		background: #fff;
-		box-shadow: 0 0.75rem 2.5rem color-mix(in srgb, var(--theme-accent, #2d6540) 7%, transparent);
+		background: var(--color-surface);
+		box-shadow: 0 0.75rem 2.5rem color-mix(in srgb, var(--theme-accent) 7%, transparent);
 	}
 	.editor.dialog {
 		padding: 0;
@@ -125,7 +125,7 @@
 		gap: 0.4rem;
 	}
 	label span {
-		color: #526058;
+		color: var(--color-text-secondary);
 		font-size: 0.75rem;
 		font-weight: 700;
 	}
@@ -134,16 +134,16 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 0.7rem 0.75rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.65rem;
-		color: #17211a;
-		background: #fff;
+		color: var(--color-text);
+		background: var(--color-surface);
 		outline: none;
 	}
 	input:focus,
 	textarea:focus {
-		border-color: var(--theme-accent, #477d56);
-		box-shadow: 0 0 0 0.2rem var(--theme-focus, rgb(71 125 86 / 12%));
+		border-color: var(--theme-accent);
+		box-shadow: 0 0 0 0.2rem var(--theme-focus);
 	}
 	textarea {
 		resize: vertical;
@@ -161,14 +161,14 @@
 		cursor: pointer;
 	}
 	.cancel {
-		border: 1px solid var(--theme-border, #ccd6ca);
-		color: #4f5d53;
-		background: #fff;
+		border: 1px solid var(--theme-border);
+		color: var(--color-text-secondary);
+		background: var(--color-surface);
 	}
 	.save {
-		border: 1px solid var(--theme-accent, #2d6540);
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		border: 1px solid var(--theme-accent);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 	button:disabled {
 		cursor: wait;
@@ -176,7 +176,7 @@
 	}
 	.error {
 		margin: 0;
-		color: #8c2828;
+		color: var(--color-error);
 		font-size: 0.82rem;
 	}
 </style>
