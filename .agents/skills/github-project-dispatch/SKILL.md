@@ -1,11 +1,11 @@
 ---
 name: github-project-dispatch
-description: Dispatch GitHub Project cards that are in "Ready for agent" into separate Codex tasks and isolated worktrees. Use when the user asks to start, assign, fan out, or create one Codex task per ready card in a GitHub Project, especially mishankov's todai project 8. Do not use to implement a card; delegate each card to github-project-worker.
+description: 'Dispatch GitHub Project work into separate Codex tasks: implementation issues from "Ready for agent" and draft items needing requirements from "Need requirements". Use when the user asks to start, assign, fan out, or create one Codex task per eligible Project card, especially in mishankov''s todai project 8. Do not implement cards in the dispatcher; delegate implementation issues to github-project-worker and requirements drafts to dedicated requirements tasks.'
 ---
 
 # GitHub Project Dispatch
 
-Create one user-visible Codex task per eligible GitHub Project card. Treat the Project status as the claim lock and leave implementation to `$github-project-worker`.
+Create one user-visible Codex task per eligible GitHub Project card. Treat the Project status as the claim lock. Leave implementation to `$github-project-worker`; let dedicated requirements tasks refine draft items and submit them for requirements review.
 
 ## Defaults
 
@@ -15,8 +15,10 @@ Use these values unless the user supplies another Project:
 - owner: `mishankov`
 - project number: `8`
 - repository: `mishankov/todai`
-- source status: `Ready for agent`
+- implementation source status: `Ready for agent`
+- requirements source status: `Need requirements`
 - claimed status: `In Progress`
+- requirements review status: `Requirements review`
 
 Discover project, field, option, and item node IDs at runtime. Never rely on copied node IDs.
 
@@ -24,21 +26,30 @@ Discover project, field, option, and item node IDs at runtime. Never rely on cop
 
 1. Require an explicit request to create or start separate Codex tasks. A request to inspect, count, or discuss ready cards is read-only.
 2. Verify `gh auth status` and ensure the active token can read repositories and write Projects.
-3. Read the Project and its fields with `gh project view` and `gh project field-list`. Verify the exact `Status`, `Ready for agent`, and `In Progress` names before mutating anything.
-4. List all items with `gh project item-list <number> --owner <owner> --limit 100 --format json`. Select only issue cards whose current status is exactly `Ready for agent`.
+3. Read the Project and its fields with `gh project view` and `gh project field-list`. Verify the exact `Status`, `Ready for agent`, `Need requirements`, `In Progress`, and `Requirements review` names before mutating anything.
+4. List all items with `gh project item-list <number> --owner <owner> --limit 100 --format json`. Partition eligible items into:
+   - issue cards whose current status is exactly `Ready for agent`;
+   - draft-issue cards whose current status is exactly `Need requirements`.
 5. Resolve the Codex saved project with the thread-management project-list tool. Match the repository or local checkout; do not create projectless coding tasks.
-6. Process eligible cards one at a time:
+6. Process eligible implementation issues one at a time:
    - Re-read the card immediately before claiming it. Skip it if it is no longer `Ready for agent`.
    - Set only that item's `Status` field to `In Progress` with `gh project item-edit`.
    - Create a separate Codex task in a new worktree based on the saved project's default branch. Do not inherit the dispatcher's working tree or detached HEAD.
-   - Put the worker prompt below into the new task and substitute all placeholders.
+   - Put the implementation worker prompt below into the new task and substitute all placeholders.
    - If task creation fails synchronously, return the item to `Ready for agent` and report the error. Do not roll back a successfully queued worktree.
    - When a thread ID is available, title it `[GH #<issue-number>] <issue-title>`.
-7. Report created, skipped, and failed cards with their issue URLs. Emit the app's created-thread directive for every successfully created thread or queued worktree.
+7. Process eligible requirements drafts one at a time:
+   - Re-read the draft immediately before claiming it. Skip it if it is no longer `Need requirements`.
+   - Set only that item's `Status` field to `In Progress` with `gh project item-edit`. This claim prevents duplicate requirements tasks.
+   - Create a separate Codex task associated with the saved project. A coding worktree is not required because this task must not implement the draft.
+   - Put the requirements worker prompt below into the new task and substitute all placeholders.
+   - If task creation fails synchronously, return the item to `Need requirements` and report the error.
+   - When a thread ID is available, title it `[Requirements] <draft-title>`.
+8. Report created, skipped, and failed cards. Include issue URLs for implementation cards and the Project URL plus item title for drafts. Emit the app's created-thread directive for every successfully created thread or queued worktree.
 
-Do not implement cards, wait for workers to finish, or move cards to `Review` in the dispatcher task.
+Do not implement cards, write requirements, wait for workers to finish, or perform worker-owned status transitions in the dispatcher task.
 
-## Worker prompt
+## Implementation worker prompt
 
 Use a prompt containing all durable rules so later follow-ups in the worker task preserve the workflow:
 
@@ -52,10 +63,32 @@ Use $github-project-worker for exactly this card:
 The dispatcher claimed the card by moving it to In Progress. Work only on this issue in this dedicated worktree. Implement the acceptance criteria, run the relevant checks, publish a PR that is ready for review, and keep the Project status synchronized. Before any later review-fix coding, move Review -> In Progress; after pushing verified fixes, move it back to Review. Move it to Done only after the PR is confirmed merged. For every future implementation or review-fix turn in this task, continue to apply $github-project-worker.
 ```
 
+## Requirements worker prompt
+
+Use a prompt containing the entire requirements workflow so clarifications and later follow-ups remain in the dedicated task:
+
+```text
+Develop requirements for exactly this GitHub Project draft:
+- Project: <project-url> (owner <owner>, number <project-number>)
+- Project item ID: <project-item-id>
+- Draft title: <draft-title>
+- Repository for context: <owner/repo>
+
+The dispatcher claimed the draft by moving it from Need requirements to In Progress. Work only on requirements for this draft; do not implement it and do not convert it to a repository issue.
+
+Inspect the draft body, the repository, and relevant linked context before writing. Produce requirements that are specific enough for a later implementation agent, including the goal and context, scope, relevant constraints, acceptance criteria, and explicit out-of-scope decisions when useful. Preserve useful facts from the original draft.
+
+If a material product or behavior choice cannot be inferred safely, ask the user focused clarification questions in this task. Keep the Project item In Progress while any blocking question remains. When the requirements are complete and no blocking questions remain, update the draft body with `gh project item-edit --id <project-item-id> --body <requirements>` and move only this item's Status to Requirements review. Discover the Project, Status field, and option node IDs at runtime; never copy node IDs from the prompt. Verify the updated body and final status before reporting completion.
+
+For every future clarification or requirements-editing turn in this task, continue this same workflow. Never move the item to Requirements review merely because a draft was produced; move it only when it is ready for the user to review.
+```
+
 ## Safety and idempotency
 
 - Use status, not titles or labels, as the eligibility gate.
-- Never create a second task for an item already in `In Progress`, `Review`, or `Done`.
-- Never dispatch `Backlog`, draft-issue, pull-request, or redacted cards without explicit user direction.
+- Never create a second task for an item already in `In Progress`, `Requirements review`, `Review`, or `Done`.
+- Dispatch draft issues only from `Need requirements`; never send them to `$github-project-worker`.
+- Never dispatch `Backlog`, pull-request, redacted, or other ineligible cards without explicit user direction.
 - Never change the status of one item because another item's task creation failed.
-- Keep a claimed item `In Progress` once its Codex task is successfully created; the worker owns subsequent transitions.
+- Keep a claimed item `In Progress` once its Codex task is successfully created; its dedicated worker owns subsequent transitions.
+- Requirements workers may edit only their draft's title/body and Project status. They must not implement code or alter unrelated items.
