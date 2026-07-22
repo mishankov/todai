@@ -618,7 +618,10 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 		page.getByRole('listbox', { name: 'project options' }).getByRole('option', { name: 'Personal' })
 	).toBeVisible();
 	await page.keyboard.press('Enter');
-	await expect(quickAdd.getByRole('button', { name: /project: Personal/ })).toBeVisible();
+	await expect(richTitle).toHaveValue('Created with the keyboard');
+	await expect(
+		quickAdd.getByRole('button', { name: 'Location: Personal / No section (Inbox)' })
+	).toBeVisible();
 	await page.keyboard.type(' /Personal');
 	await expect(
 		page
@@ -626,12 +629,15 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 			.getByRole('option', { name: personalSectionName })
 	).toBeVisible();
 	await page.keyboard.press('Enter');
-	await expect(quickAdd.getByRole('button', { name: /section: Personal plans/ })).toBeVisible();
+	await expect(
+		quickAdd.getByRole('button', { name: `Location: Personal / ${personalSectionName}` })
+	).toBeVisible();
 	await page.keyboard.type(' !High');
 	await expect(
 		page.getByRole('listbox', { name: 'priority options' }).getByRole('option', { name: 'High' })
 	).toBeVisible();
 	await page.keyboard.press('Enter');
+	await expect(quickAdd.getByRole('button', { name: 'Priority: High' })).toBeVisible();
 	await page.keyboard.type(' @Today');
 	await expect(
 		page.getByRole('listbox', { name: 'due options' }).getByRole('option', { name: /^Today/ })

@@ -149,6 +149,7 @@
 					placeholder="Task title"
 					disabled={saving}
 					{focusRequest}
+					showChips={false}
 				/>
 			</div>
 

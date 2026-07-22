@@ -1,4 +1,4 @@
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { Project, ProjectSection } from '$lib/projects/client';
@@ -18,7 +18,7 @@ describe('GlobalShortcuts', () => {
 		render(GlobalShortcuts, {
 			activeProject: project,
 			projects: [project],
-			currentPath: `/projects/${project.id}`,
+			currentPath: `/projects/${project.id}/sections/${section.id}`,
 			navigate: vi.fn(),
 			refresh,
 			loadSections: vi.fn(async () => [section]),
@@ -39,12 +39,31 @@ describe('GlobalShortcuts', () => {
 			document.querySelectorAll('[role="dialog"][aria-labelledby="quick-add-title"]')
 		).toHaveLength(1);
 
-		await dialog.getByLabelText('Title').fill('Plan the release');
+		await expect
+			.element(dialog.getByRole('button', { name: /^project: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^section: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		const title = dialog.getByLabelText('Title');
+		await title.fill('Plan the release !hi');
+		await userEvent.keyboard('{Enter}');
+		await expect.element(title).toHaveValue('Plan the release');
+		await expect
+			.element(dialog.getByRole('button', { name: 'Priority: High', exact: true }))
+			.toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: 'priority: High. Open picker' }))
+			.not.toBeInTheDocument();
 		await dialog.getByRole('button', { name: /^Location:/ }).click();
+		const locationPopover = dialog.getByRole('dialog', { name: 'Task location' });
+		await expect.element(locationPopover).toBeVisible();
+		expect(getComputedStyle(locationPopover.element()).position).toBe('fixed');
+		expect(locationPopover.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+			window.innerHeight
+		);
 		await dialog.getByRole('button', { name: /^Section:/ }).click();
 		await page.getByRole('option', { name: section.name }).click();
-		await dialog.getByRole('button', { name: 'Priority: None' }).click();
-		await page.getByRole('option', { name: 'High' }).click();
 		await dialog.getByRole('button', { name: 'Due date: No date' }).click();
 		await page.getByRole('option', { name: /^Tomorrow/ }).click();
 		await dialog.getByRole('button', { name: /^Due time:/ }).click();
