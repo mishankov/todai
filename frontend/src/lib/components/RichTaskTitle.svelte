@@ -42,6 +42,7 @@
 		placeholder?: string;
 		disabled?: boolean;
 		focusRequest?: number;
+		showChips?: boolean;
 		hidePresetLocationChips?: boolean;
 		locationChipResetKey?: number;
 	}
@@ -61,6 +62,7 @@
 		placeholder = 'Add task',
 		disabled = false,
 		focusRequest = -1,
+		showChips = true,
 		hidePresetLocationChips = false,
 		locationChipResetKey = 0
 	}: Props = $props();
@@ -90,7 +92,7 @@
 	let options = $derived(buildOptions(pickerKind));
 	let filteredOptions = $derived(filterTitleOptions(options, query));
 	let open = $derived(pickerKind !== null);
-	let chips = $derived(buildChips());
+	let chips = $derived(showChips ? buildChips() : []);
 
 	$effect(() => {
 		const incoming = sections;

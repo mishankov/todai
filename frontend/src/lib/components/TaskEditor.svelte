@@ -87,6 +87,7 @@
 			label="Title"
 			placeholder="Task title"
 			disabled={saving}
+			showChips={false}
 		/>
 	</div>
 

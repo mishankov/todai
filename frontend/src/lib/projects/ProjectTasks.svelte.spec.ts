@@ -151,14 +151,16 @@ describe('ProjectTasks', () => {
 	});
 
 	it('opens task editing as an accessible modal with the existing values', async () => {
+		const section = testSection({ id: 'doing', name: 'Doing' });
 		const task = testTask({
 			title: 'Draft proposal',
 			description: 'Share with the team',
+			sectionId: section.id,
 			priority: 3,
 			dueDate: '2026-07-20',
 			dueTime: '14:30'
 		});
-		renderProjectTasks({ tasks: [task] });
+		renderProjectTasks({ sections: [section], tasks: [task] });
 
 		await page.getByRole('button', { name: `Open ${task.title}` }).click();
 
@@ -173,6 +175,37 @@ describe('ProjectTasks', () => {
 			.toBeVisible();
 		await expect.element(dialog.getByRole('button', { name: /^Due date:/ })).toBeVisible();
 		await expect.element(dialog.getByRole('button', { name: /^Due time:/ })).toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: /^project: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^section: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^priority: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^due: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+	});
+
+	it('applies title autocomplete in the full editor without showing property pills', async () => {
+		const task = testTask({ title: 'Draft proposal' });
+		renderProjectTasks({ tasks: [task] });
+
+		await page.getByRole('button', { name: `Open ${task.title}` }).click();
+		const dialog = page.getByRole('dialog', { name: `Edit task: ${task.title}` });
+		const title = dialog.getByRole('combobox', { name: 'Title' });
+		await title.fill(`${task.title} !hi`);
+		await userEvent.keyboard('{Enter}');
+
+		await expect.element(title).toHaveValue(task.title);
+		await expect
+			.element(dialog.getByRole('button', { name: 'Priority: High', exact: true }))
+			.toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: 'priority: High. Open picker' }))
+			.not.toBeInTheDocument();
 	});
 
 	it('closes task editing with Escape without updating the task', async () => {
