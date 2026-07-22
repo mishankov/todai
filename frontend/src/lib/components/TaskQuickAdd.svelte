@@ -35,6 +35,7 @@
 	let dueTimezone = $state<string | null>(null);
 	let creating = $state(false);
 	let errorMessage = $state('');
+	let locationChipResetKey = $state(0);
 
 	async function submit() {
 		const trimmedTitle = cleanTaskTitle(title);
@@ -59,6 +60,7 @@
 			dueDate = null;
 			dueTime = null;
 			dueTimezone = null;
+			locationChipResetKey += 1;
 		} catch {
 			errorMessage = 'The task could not be created. Please try again.';
 		} finally {
@@ -88,6 +90,8 @@
 			{loadSections}
 			{label}
 			disabled={creating}
+			hidePresetLocationChips
+			{locationChipResetKey}
 		/>
 		<button
 			type="submit"

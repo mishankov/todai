@@ -118,6 +118,12 @@ describe('ProjectTasks', () => {
 		const create = vi.fn(async () => created);
 		renderProjectTasks({ sections: [section], create });
 
+		await expect
+			.element(page.getByRole('button', { name: 'project: Work. Open picker' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'section: Doing. Open picker' }))
+			.not.toBeInTheDocument();
 		await page.getByRole('combobox', { name: 'Add task to Doing' }).fill('Ship the change');
 		await page.getByRole('button', { name: 'Add task to Doing' }).click();
 

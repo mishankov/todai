@@ -16,6 +16,7 @@
 		initialDueTime?: string | null;
 		initialDueTimezone?: string | null;
 		showControls?: boolean;
+		hidePresetLocationChips?: boolean;
 	}
 
 	let {
@@ -29,7 +30,8 @@
 		initialDueDate = null,
 		initialDueTime = null,
 		initialDueTimezone = null,
-		showControls = false
+		showControls = false,
+		hidePresetLocationChips = false
 	}: Props = $props();
 	let title = $state(untrack(() => initialTitle));
 	let projectId = $state(untrack(() => initialProjectId));
@@ -51,6 +53,7 @@
 	{projects}
 	{sections}
 	{loadSections}
+	{hidePresetLocationChips}
 />
 
 {#if showControls}

@@ -5,6 +5,38 @@ import { render } from 'vitest-browser-svelte';
 import RichTaskTitleHarness from './RichTaskTitleHarness.svelte';
 
 describe('RichTaskTitle', () => {
+	it('hides preset location chips until the user explicitly selects them', async () => {
+		const project = testProject({ id: 'work', name: 'Work' });
+		const section = testSection({ id: 'planning', projectId: project.id, name: 'Planning' });
+		render(RichTaskTitleHarness, {
+			projects: [project],
+			sections: [section],
+			initialProjectId: project.id,
+			initialSectionId: section.id,
+			hidePresetLocationChips: true
+		});
+
+		await expect
+			.element(page.getByRole('button', { name: 'project: Work. Open picker' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'section: Planning. Open picker' }))
+			.not.toBeInTheDocument();
+		expect(readDraft()).toMatchObject({ projectId: project.id, sectionId: section.id });
+
+		const input = page.getByRole('combobox', { name: 'Task title' });
+		await input.fill('#work');
+		await userEvent.keyboard('{Enter}');
+		await expect
+			.element(page.getByRole('button', { name: 'project: Work. Open picker' }))
+			.toBeVisible();
+		await userEvent.keyboard(' /plan');
+		await userEvent.keyboard('{Enter}');
+		await expect
+			.element(page.getByRole('button', { name: 'section: Planning. Open picker' }))
+			.toBeVisible();
+	});
+
 	it('selects every property with the keyboard and leaves only a clean title', async () => {
 		const home = testProject({ id: 'home', name: 'Home' });
 		const work = testProject({ id: 'work', name: 'Work' });

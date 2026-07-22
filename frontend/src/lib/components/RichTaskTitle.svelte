@@ -42,6 +42,8 @@
 		placeholder?: string;
 		disabled?: boolean;
 		focusRequest?: number;
+		hidePresetLocationChips?: boolean;
+		locationChipResetKey?: number;
 	}
 
 	let {
@@ -58,7 +60,9 @@
 		label = 'Task title',
 		placeholder = 'Add task',
 		disabled = false,
-		focusRequest = -1
+		focusRequest = -1,
+		hidePresetLocationChips = false,
+		locationChipResetKey = 0
 	}: Props = $props();
 
 	const instanceId = richTitleId();
@@ -79,6 +83,7 @@
 	let composing = $state(false);
 	let panelStyle = $state('');
 	let announcement = $state('');
+	let explicitLocationTypes = $state<TitleProperty[]>([]);
 	let currentSections = $derived(cachedSections.filter((item) => item.projectId === projectId));
 	let pickerKind = $derived<PickerKind | null>(activeToken?.type ?? manualPicker);
 	let query = $derived(activeToken?.query ?? '');
@@ -106,6 +111,11 @@
 	$effect(() => {
 		const request = focusRequest;
 		if (request >= 0) void tick().then(() => input?.focus());
+	});
+
+	$effect(() => {
+		if (!hidePresetLocationChips || locationChipResetKey < 0) return;
+		untrack(() => (explicitLocationTypes = []));
 	});
 
 	onMount(() => {
@@ -190,12 +200,12 @@
 
 	function buildChips(): { type: TitleProperty; label: string }[] {
 		const result: { type: TitleProperty; label: string }[] = [];
-		if (projectId)
+		if (projectId && (!hidePresetLocationChips || explicitLocationTypes.includes('project')))
 			result.push({
 				type: 'project',
 				label: projects.find((item) => item.id === projectId)?.name ?? projectId
 			});
-		if (sectionId)
+		if (sectionId && (!hidePresetLocationChips || explicitLocationTypes.includes('section')))
 			result.push({
 				type: 'section',
 				label: currentSections.find((item) => item.id === sectionId)?.name ?? sectionId
@@ -283,15 +293,18 @@
 		const kind = pickerKind;
 		const caret = consumeToken();
 		if (kind === 'project') {
+			showLocationChip('project');
 			const changed = option.id !== projectId;
 			projectId = option.id;
 			if (changed && sectionId !== null) {
 				sectionId = null;
+				explicitLocationTypes = explicitLocationTypes.filter((type) => type !== 'section');
 				announcement = 'The previous section was removed because the project changed.';
 			}
 			void ensureSections(option.id);
 			closePicker();
 		} else if (kind === 'section') {
+			showLocationChip('section');
 			sectionId = option.id === '__inbox__' ? null : option.id;
 			closePicker();
 		} else if (kind === 'priority') {
@@ -324,6 +337,12 @@
 		await tick();
 		input?.focus();
 		input?.setSelectionRange(caret, caret);
+	}
+
+	function showLocationChip(type: 'project' | 'section') {
+		if (!explicitLocationTypes.includes(type)) {
+			explicitLocationTypes = [...explicitLocationTypes, type];
+		}
 	}
 
 	function chooseCustom(kind: 'date' | 'time', value: string) {
