@@ -25,7 +25,10 @@ export function rememberedProjectPath(projectId: string): string {
 }
 
 export function recordProjectPath(projectId: string, path: string): void {
-	if (!browser || !path.startsWith(`/projects/${projectId}`)) return;
+	const prefix = `/projects/${projectId}`;
+	if (!browser || !path.startsWith(prefix)) return;
+	const suffix = path.slice(prefix.length);
+	if (!isProjectViewSuffix(suffix)) return;
 	window.localStorage.setItem(lastProjectKey, projectId);
 	window.localStorage.setItem(lastViewKey(projectId), path);
 }

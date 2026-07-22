@@ -1,15 +1,12 @@
 <script lang="ts">
 	import Inbox from '$lib/components/Inbox.svelte';
-	import { listProjectSections } from '$lib/projects/client';
 	import {
 		completeTask,
 		createTaskWithProperties,
 		deleteTask,
 		reopenTask,
 		type Task,
-		type TaskCreateDraft,
-		type TaskUpdate,
-		updateTask
+		type TaskCreateDraft
 	} from '$lib/tasks/client';
 	import type { PageProps } from './$types';
 
@@ -17,10 +14,6 @@
 
 	function create(draft: TaskCreateDraft): Promise<Task> {
 		return createTaskWithProperties(fetch, draft);
-	}
-
-	function loadSections(projectId: string) {
-		return listProjectSections(fetch, projectId);
 	}
 
 	function complete(taskId: string, version: number): Promise<Task> {
@@ -34,10 +27,6 @@
 	function remove(taskId: string, version: number): Promise<void> {
 		return deleteTask(fetch, taskId, version);
 	}
-
-	function update(taskId: string, changes: TaskUpdate): Promise<Task> {
-		return updateTask(fetch, taskId, changes);
-	}
 </script>
 
 <svelte:head>
@@ -47,12 +36,9 @@
 <Inbox
 	initialTasks={data.tasks}
 	projects={data.projects}
-	sections={data.sections}
 	currentProjectId={data.project.id}
-	{loadSections}
 	{create}
 	{complete}
 	{reopen}
-	{update}
 	{remove}
 />

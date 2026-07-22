@@ -4,6 +4,9 @@ import type { Project, ProjectSection } from '$lib/projects/client';
 import type { Task, TaskComment } from '$lib/tasks/client';
 
 test('supports login, Inbox, project Tasks, Today, and logout', async ({ page }) => {
+	page.on('pageerror', (error) => {
+		throw error;
+	});
 	const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 	let authenticated = false;
 	let tasks: Task[] = [];
@@ -360,6 +363,19 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.route('**/api/tasks/*', async (route) => {
 		const method = route.request().method();
 		const taskId = new URL(route.request().url()).pathname.split('/').at(-1);
+		if (method === 'GET') {
+			if (taskId === 'search') {
+				await route.fallback();
+				return;
+			}
+			const found = tasks.find((item) => item.id === taskId);
+			await route.fulfill({
+				status: found ? 200 : 404,
+				contentType: 'application/json',
+				body: found ? JSON.stringify(found) : JSON.stringify({ message: 'not found' })
+			});
+			return;
+		}
 		if (method === 'PATCH') {
 			const changes = route.request().postDataJSON();
 			const updated = tasks.find((item) => item.id === taskId)!;
@@ -479,6 +495,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page.getByText('Buy milk')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Edit Buy milk' }).click();
+	await expect(page).toHaveURL(/\/projects\/project-1\/tasks\/task-2$/);
 	await page.getByRole('textbox', { name: 'Add a subtask' }).fill('Compare brands');
 	await page.getByRole('button', { name: 'Add subtask' }).click();
 	await expect(page.getByText('Compare brands', { exact: true })).toBeVisible();
@@ -584,6 +601,37 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 		.selectOption('project-1');
 	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
+	const planSprint = tasks.find((item) => item.title === 'Plan sprint')!;
+	await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+	await page.getByRole('button', { name: 'Open Plan sprint' }).click();
+	await expect(page).toHaveURL(
+		new RegExp(`/projects/project-1/tasks/${encodeURIComponent(planSprint.id)}$`)
+	);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-1');
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toBeVisible();
+	await page.getByRole('button', { name: 'Copy link' }).click();
+	await expect(page.getByText('Link copied', { exact: true })).toBeVisible();
+	expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
+		new RegExp(`/projects/project-1/tasks/${encodeURIComponent(planSprint.id)}$`)
+	);
+	await page.goBack();
+	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toHaveCount(0);
+	await page.goForward();
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toBeVisible();
+	await page.reload();
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toBeVisible();
+	await page.getByRole('button', { name: 'Close task editor' }).click();
+	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
+
+	await page.goto(`/projects/project-2/tasks/${encodeURIComponent(planSprint.id)}`);
+	await expect(page).toHaveURL(
+		new RegExp(`/projects/project-1/tasks/${encodeURIComponent(planSprint.id)}$`)
+	);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-1');
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
 
 	const todayLink = page.getByRole('link', { name: 'Today' });
 	await page.keyboard.down(primaryModifier);
@@ -632,6 +680,16 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL(/\/login$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome back.');
+
+	await page.goto(`/projects/project-1/tasks/${encodeURIComponent(planSprint.id)}`);
+	await expect(page).toHaveURL(/\/login\?returnTo=/);
+	await page.getByLabel('Username').fill('owner');
+	await page.getByLabel('Password').fill('correct horse battery staple');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page).toHaveURL(
+		new RegExp(`/projects/project-1/tasks/${encodeURIComponent(planSprint.id)}$`)
+	);
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toBeVisible();
 });
 
 function testProject(overrides: Partial<Project> = {}): Project {

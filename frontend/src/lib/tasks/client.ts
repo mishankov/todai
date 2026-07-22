@@ -72,6 +72,15 @@ export class TaskConflictError extends TaskRequestError {
 	}
 }
 
+export async function getTask(fetcher: typeof fetch, taskId: string): Promise<Task> {
+	const response = await fetcher(`/api/tasks/${encodeURIComponent(taskId)}`, {
+		credentials: 'same-origin',
+		headers: { Accept: 'application/json' }
+	});
+	if (!response.ok) throw new TaskRequestError('Could not load the task.');
+	return (await response.json()) as Task;
+}
+
 export async function getInbox(
 	fetcher: typeof fetch,
 	projectId: string,

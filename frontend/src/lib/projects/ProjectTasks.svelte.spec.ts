@@ -1,7 +1,7 @@
-import { page, userEvent, type Locator } from 'vitest/browser';
+import { page, type Locator } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
+import type { Task, TaskCreateDraft, TaskSummary } from '$lib/tasks/client';
 import type { Project, ProjectSection } from './client';
 import ProjectTasks from './ProjectTasks.svelte';
 
@@ -144,7 +144,7 @@ describe('ProjectTasks', () => {
 		await expect.element(view.getByText(external.title, { exact: true })).toBeVisible();
 	});
 
-	it('opens task editing as an accessible modal with the existing values', async () => {
+	it('opens tasks through their canonical routes', async () => {
 		const task = testTask({
 			title: 'Draft proposal',
 			description: 'Share with the team',
@@ -152,56 +152,12 @@ describe('ProjectTasks', () => {
 			dueDate: '2026-07-20',
 			dueTime: '14:30'
 		});
-		renderProjectTasks({ tasks: [task] });
+		const openTask = vi.fn();
+		renderProjectTasks({ tasks: [task], openTask });
 
 		await page.getByRole('button', { name: `Open ${task.title}` }).click();
 
-		const dialog = page.getByRole('dialog', { name: `Edit task: ${task.title}` });
-		await expect.element(dialog).toHaveAttribute('aria-modal', 'true');
-		await expect.element(dialog.getByRole('textbox', { name: 'Title' })).toHaveValue(task.title);
-		await expect
-			.element(dialog.getByRole('textbox', { name: 'Description' }))
-			.toHaveValue(task.description ?? '');
-		await expect.element(dialog.getByRole('button', { name: 'Priority: High' })).toBeVisible();
-		await expect.element(dialog.getByRole('button', { name: /^Due date:/ })).toBeVisible();
-		await expect.element(dialog.getByRole('button', { name: /^Due time:/ })).toBeVisible();
-	});
-
-	it('closes task editing with Escape without updating the task', async () => {
-		const task = testTask({ title: 'Draft proposal' });
-		const update = vi.fn();
-		renderProjectTasks({ tasks: [task], update });
-
-		await page.getByRole('button', { name: `Open ${task.title}` }).click();
-		await page
-			.getByRole('dialog', { name: `Edit task: ${task.title}` })
-			.getByLabelText('Title')
-			.fill('Changed title');
-		await userEvent.keyboard('{Escape}');
-
-		await expect
-			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
-			.not.toBeInTheDocument();
-		expect(update).not.toHaveBeenCalled();
-	});
-
-	it('saves task changes and closes the modal', async () => {
-		const task = testTask({ title: 'Draft proposal' });
-		const updated = testTask({ ...task, title: 'Final proposal', version: 2 });
-		const update = vi.fn(async () => updated);
-		renderProjectTasks({ tasks: [task], update });
-
-		await page.getByRole('button', { name: `Open ${task.title}` }).click();
-		const dialog = page.getByRole('dialog', { name: `Edit task: ${task.title}` });
-		await dialog.getByLabelText('Title').fill(updated.title);
-		await dialog.getByRole('button', { name: 'Save changes' }).click();
-
-		expect(update).toHaveBeenCalledWith(
-			task.id,
-			expect.objectContaining({ version: task.version, title: updated.title })
-		);
-		await expect.element(dialog).not.toBeInTheDocument();
-		await expect.element(page.getByText(updated.title, { exact: true })).toBeVisible();
+		expect(openTask).toHaveBeenCalledWith(task);
 	});
 
 	it('does not open task editing from complete or delete actions', async () => {
@@ -464,7 +420,7 @@ interface RenderOptions {
 	tasks?: TaskSummary[];
 	create?: (draft: TaskCreateDraft) => Promise<Task>;
 	complete?: (taskId: string, version: number) => Promise<Task>;
-	update?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
+	openTask?: (task: Task) => void;
 	remove?: (taskId: string, version: number) => Promise<void>;
 	reorder?: (
 		taskId: string,
@@ -484,13 +440,12 @@ function renderProjectTasks(options: RenderOptions = {}) {
 	const project = options.project ?? testProject();
 	return render(ProjectTasks, {
 		project,
-		projects: [project],
 		initialSections: options.sections ?? [],
 		initialTasks: options.tasks ?? [],
 		create: options.create ?? vi.fn(),
 		complete: options.complete ?? vi.fn(),
 		reopen: vi.fn(),
-		update: options.update ?? vi.fn(),
+		openTask: options.openTask,
 		remove: options.remove ?? vi.fn(),
 		reorder: options.reorder ?? vi.fn(),
 		changeLayout: options.changeLayout ?? vi.fn(),

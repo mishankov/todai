@@ -1,14 +1,6 @@
 <script lang="ts">
 	import Today from '$lib/components/Today.svelte';
-	import { listProjectSections } from '$lib/projects/client';
-	import {
-		completeTask,
-		deleteTask,
-		reopenTask,
-		type Task,
-		type TaskUpdate,
-		updateTask
-	} from '$lib/tasks/client';
+	import { completeTask, deleteTask, reopenTask, type Task } from '$lib/tasks/client';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -22,12 +14,6 @@
 	function remove(taskId: string, version: number): Promise<void> {
 		return deleteTask(fetch, taskId, version);
 	}
-	function update(taskId: string, changes: TaskUpdate): Promise<Task> {
-		return updateTask(fetch, taskId, changes);
-	}
-	function loadSections(projectId: string) {
-		return listProjectSections(fetch, projectId);
-	}
 </script>
 
 <svelte:head><title>Today · {data.project.name} — Todai</title></svelte:head>
@@ -35,11 +21,8 @@
 <Today
 	initialTasks={data.tasks}
 	projects={data.projects}
-	sections={data.sections}
 	currentProjectId={data.project.id}
-	{loadSections}
 	{complete}
 	{reopen}
-	{update}
 	{remove}
 />

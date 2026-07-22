@@ -6,6 +6,7 @@ import {
 	deleteTaskComment,
 	getAllTasks,
 	getInbox,
+	getTask,
 	getTaskComments,
 	getTaskSubtasks,
 	getToday,
@@ -17,6 +18,17 @@ import {
 } from './client';
 
 describe('task client relationships', () => {
+	it('loads one saved task through the protected task endpoint', async () => {
+		const task = testTask({ id: 'task/id' });
+		const fetcher = jsonFetcher(task);
+
+		await expect(getTask(fetcher, task.id)).resolves.toEqual(task);
+		expect(fetcher).toHaveBeenCalledWith('/api/tasks/task%2Fid', {
+			credentials: 'same-origin',
+			headers: { Accept: 'application/json' }
+		});
+	});
+
 	it('loads built-in views only inside the selected project', async () => {
 		const fetcher = jsonFetcher({ tasks: [] });
 

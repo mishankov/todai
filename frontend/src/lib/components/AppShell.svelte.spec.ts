@@ -87,6 +87,25 @@ describe('AppShell', () => {
 			.element(page.getByRole('link', { name: 'Account settings' }))
 			.not.toHaveAttribute('aria-current');
 	});
+
+	it('does not remember a task deep link as the project view', async () => {
+		const project = testProject({ id: 'work-id' });
+		localStorage.removeItem('todai.project.work-id.last-view');
+		const view = render(AppShell, {
+			username: 'owner',
+			projects: [project],
+			activeProject: project,
+			onLogout: vi.fn(),
+			currentPath: '/projects/work-id/tasks'
+		});
+		await expect
+			.poll(() => localStorage.getItem('todai.project.work-id.last-view'))
+			.toBe('/projects/work-id/tasks');
+
+		await view.rerender({ currentPath: '/projects/work-id/tasks/task-id' });
+
+		expect(localStorage.getItem('todai.project.work-id.last-view')).toBe('/projects/work-id/tasks');
+	});
 });
 
 function testProject(overrides: Partial<Project> = {}): Project {

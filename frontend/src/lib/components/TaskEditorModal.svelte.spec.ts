@@ -276,6 +276,55 @@ describe('TaskEditorModal relationships', () => {
 		expect(loadSubtasks).toHaveBeenCalledTimes(2);
 		expect(loadComments).toHaveBeenCalledTimes(2);
 	});
+
+	it('copies the absolute canonical task URL and announces success', async () => {
+		const task = testTask({ projectId: 'project with space', id: 'task/id' });
+		const copyLink = vi.fn(async () => {});
+		renderModal({ task, copyLink });
+
+		await page.getByRole('button', { name: 'Copy link' }).click();
+
+		expect(copyLink).toHaveBeenCalledWith(
+			`${window.location.origin}/projects/project%20with%20space/tasks/task%2Fid`
+		);
+		await expect
+			.element(page.getByText('Link copied', { exact: true }))
+			.toHaveAttribute('role', 'status');
+	});
+
+	it('reports clipboard failures without closing the editor', async () => {
+		const task = testTask({ title: 'Retry copy' });
+		renderModal({
+			task,
+			copyLink: vi.fn(async () => {
+				throw new Error('clipboard denied');
+			})
+		});
+
+		await page.getByRole('button', { name: 'Copy link' }).click();
+
+		await expect
+			.element(page.getByText('The link could not be copied. Please try again.', { exact: true }))
+			.toHaveAttribute('role', 'alert');
+		await expect
+			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
+			.toBeVisible();
+	});
+
+	it('restores focus to the opener when the modal is removed', async () => {
+		const opener = document.createElement('button');
+		opener.textContent = 'Open task';
+		document.body.append(opener);
+		opener.focus();
+		const view = renderModal({ task: testTask({ title: 'Focus task' }) });
+
+		await expect.element(page.getByRole('textbox', { name: 'Title' })).toHaveFocus();
+		view.unmount();
+		await Promise.resolve();
+
+		expect(document.activeElement).toBe(opener);
+		opener.remove();
+	});
 });
 
 interface ModalOverrides {
@@ -293,6 +342,7 @@ interface ModalOverrides {
 	addComment?: (body: string) => Promise<TaskComment>;
 	removeComment?: (commentId: string, version: number) => Promise<void>;
 	decomposeTask?: (task: Task) => Promise<void>;
+	copyLink?: (url: string) => Promise<void>;
 }
 
 function renderModal(overrides: ModalOverrides = {}) {
@@ -312,7 +362,8 @@ function renderModal(overrides: ModalOverrides = {}) {
 		loadComments: overrides.loadComments ?? vi.fn(async () => []),
 		addComment: overrides.addComment ?? vi.fn(),
 		removeComment: overrides.removeComment ?? vi.fn(),
-		decomposeTask: overrides.decomposeTask ?? vi.fn(async () => {})
+		decomposeTask: overrides.decomposeTask ?? vi.fn(async () => {}),
+		copyLink: overrides.copyLink
 	});
 }
 

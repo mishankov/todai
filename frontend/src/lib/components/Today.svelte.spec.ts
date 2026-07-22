@@ -12,7 +12,6 @@ describe('Today', () => {
 			],
 			complete: vi.fn(),
 			reopen: vi.fn(),
-			update: vi.fn(),
 			remove: vi.fn()
 		});
 
