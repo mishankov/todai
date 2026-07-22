@@ -177,6 +177,7 @@
 		if (sectionId) {
 			recentSectionIds = rememberRecentId(localStorage, sectionStorageKey(projectId), sectionId);
 		}
+		locationOpen = false;
 	}
 
 	function chooseDate(value: string) {

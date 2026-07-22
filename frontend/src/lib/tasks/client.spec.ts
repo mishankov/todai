@@ -66,24 +66,22 @@ describe('task client relationships', () => {
 		});
 	});
 
-	it('persists quick-add properties only when the draft is submitted', async () => {
-		const created = testTask({ id: 'created-id', version: 1 });
+	it('creates a configured task in one atomic request', async () => {
 		const configured = testTask({
-			...created,
+			id: 'created-id',
+			description: 'Release notes',
 			priority: 3,
 			dueDate: '2026-07-22',
 			dueTime: '09:00',
 			dueTimezone: 'Europe/Moscow',
-			version: 2
+			version: 1
 		});
-		const fetcher = vi
-			.fn()
-			.mockResolvedValueOnce(jsonResponse(created, 201))
-			.mockResolvedValueOnce(jsonResponse(configured)) as unknown as typeof fetch;
+		const fetcher = jsonFetcher(configured, 201);
 
 		await expect(
 			createTaskWithProperties(fetcher, {
 				title: 'Plan release',
+				description: 'Release notes',
 				projectId: 'project-id',
 				sectionId: null,
 				priority: 3,
@@ -92,21 +90,22 @@ describe('task client relationships', () => {
 				dueTimezone: 'Europe/Moscow'
 			})
 		).resolves.toEqual(configured);
-		expect(fetcher).toHaveBeenCalledTimes(2);
-		expect(fetcher).toHaveBeenNthCalledWith(
-			2,
-			'/api/tasks/created-id',
-			expect.objectContaining({
-				method: 'PATCH',
-				body: JSON.stringify({
-					version: 1,
-					priority: 3,
-					dueDate: '2026-07-22',
-					dueTime: '09:00',
-					dueTimezone: 'Europe/Moscow'
-				})
+		expect(fetcher).toHaveBeenCalledTimes(1);
+		expect(fetcher).toHaveBeenCalledWith('/api/tasks', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				title: 'Plan release',
+				description: 'Release notes',
+				projectId: 'project-id',
+				sectionId: null,
+				priority: 3,
+				dueDate: '2026-07-22',
+				dueTime: '09:00',
+				dueTimezone: 'Europe/Moscow'
 			})
-		);
+		});
 	});
 
 	it('loads subtasks for the selected task', async () => {

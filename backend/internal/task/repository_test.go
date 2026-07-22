@@ -112,6 +112,61 @@ func TestCreateRollsBackTaskWhenActivityAppendFails(t *testing.T) {
 	}
 }
 
+func TestCreateWithPropertiesPersistsOneFinalCreationEvent(t *testing.T) {
+	db := taskRepositoryDatabase(t)
+	ctx := context.Background()
+	events := activity.NewRepository(db)
+	scope := execution.UserScope("user-id", "complete-create")
+	createdProject, err := project.NewService(project.NewRepository(db, events)).Create(ctx, scope, "Work")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	description := "Final description"
+	dueDate := task.Date("2026-07-23")
+	dueTime := task.TimeOfDay("09:30")
+	timezone := "Europe/Moscow"
+
+	created, err := task.NewRepository(db, events).CreateWithProperties(ctx, scope, task.CreateInput{
+		Title: "Plan sprint", Description: &description, ProjectID: &createdProject.ID,
+		Priority: 4, DueDate: &dueDate, DueTime: &dueTime, DueTimezone: &timezone,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if created.Version != 1 || created.Description == nil || *created.Description != description ||
+		created.Priority != 4 || created.DueDate == nil || *created.DueDate != dueDate ||
+		created.DueTime == nil || *created.DueTime != dueTime ||
+		created.DueTimezone == nil || *created.DueTimezone != timezone {
+		t.Errorf("created task = %#v", created)
+	}
+
+	activityEvents, err := events.List(ctx, "user-id", createdProject.ID, 100)
+	if err != nil {
+		t.Fatalf("list activity: %v", err)
+	}
+	creationEvents := make([]activity.Event, 0, 1)
+	for _, event := range activityEvents {
+		if event.Type == "task.created" {
+			creationEvents = append(creationEvents, event)
+		}
+		if event.Type == "task.updated" {
+			t.Errorf("unexpected intermediate update event: %s", event.Payload)
+		}
+	}
+	if len(creationEvents) != 1 {
+		t.Fatalf("task.created events = %d, want 1", len(creationEvents))
+	}
+	payload := creationEvents[0].Payload
+	for _, fragment := range []string{
+		`"description": "Final description"`, `"priority": 4`, `"dueDate": "2026-07-23"`,
+		`"dueTime": "09:30"`, `"dueTimezone": "Europe/Moscow"`, `"version": 1`,
+	} {
+		if !jsonContains(payload, fragment) {
+			t.Errorf("creation payload missing %s: %s", fragment, payload)
+		}
+	}
+}
+
 func TestSearchScopesTextStatusAndLimitToActiveUserProject(t *testing.T) {
 	db := taskRepositoryDatabase(t)
 	ctx := context.Background()

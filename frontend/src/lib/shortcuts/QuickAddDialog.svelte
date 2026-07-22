@@ -1,7 +1,10 @@
 <script lang="ts">
 	import type { Project, ProjectSection } from '$lib/projects/client';
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
-	import { onMount, tick, untrack } from 'svelte';
+	import type { Task, TaskCreateDraft } from '$lib/tasks/client';
+	import { cleanTaskTitle } from '$lib/tasks/rich-title';
+	import RichTaskTitle from '$lib/components/RichTaskTitle.svelte';
+	import TaskPropertyPickers from '$lib/components/TaskPropertyPickers.svelte';
+	import { untrack } from 'svelte';
 
 	interface Props {
 		projects: Project[];
@@ -10,8 +13,7 @@
 		shortcutLabel: string;
 		focusRequest: number;
 		loadSections: (projectId: string) => Promise<ProjectSection[]>;
-		createTask: (title: string, projectId: string, sectionId: string | null) => Promise<Task>;
-		updateTask: (taskId: string, changes: TaskUpdate) => Promise<Task>;
+		createTask: (draft: TaskCreateDraft) => Promise<Task>;
 		close: () => void;
 		saved: (task: Task) => void | Promise<void>;
 	}
@@ -24,84 +26,47 @@
 		focusRequest,
 		loadSections,
 		createTask,
-		updateTask,
 		close,
 		saved
 	}: Props = $props();
 	let title = $state('');
 	let projectId = $state(untrack(() => initialProjectId));
-	let sectionId = $state(untrack(() => initialSectionId ?? ''));
+	let sectionId = $state<string | null>(untrack(() => initialSectionId));
 	let sections = $state<ProjectSection[]>([]);
-	let priority = $state('0');
-	let dueDate = $state('');
-	let dueTime = $state('');
-	let loadingSections = $state(false);
+	let priority = $state(0);
+	let dueDate = $state<string | null>(null);
+	let dueTime = $state<string | null>(null);
+	let dueTimezone = $state<string | null>(null);
 	let saving = $state(false);
 	let errorMessage = $state('');
-	let stagedTask = $state<Task | null>(null);
-	let titleInput: HTMLInputElement;
 	let dialog: HTMLDivElement;
-	let sectionLoad = 0;
 
-	onMount(() => {
-		void refreshSections(projectId, true);
-		void tick().then(() => titleInput?.focus());
-	});
-
-	$effect(() => {
-		focusTitle(focusRequest);
-	});
-
-	function focusTitle(request: number) {
-		if (request < 0) return;
-		void tick().then(() => titleInput?.focus());
-	}
-
-	async function changeProject(event: Event) {
-		projectId = (event.currentTarget as HTMLSelectElement).value;
-		sectionId = '';
-		await refreshSections(projectId, false);
-	}
-
-	async function refreshSections(nextProjectId: string, keepInitial: boolean) {
-		const request = ++sectionLoad;
-		loadingSections = true;
+	async function loadAndCacheSections(nextProjectId: string) {
 		try {
 			const loaded = await loadSections(nextProjectId);
-			if (request !== sectionLoad) return;
-			sections = loaded;
-			if (!keepInitial || !loaded.some((section) => section.id === sectionId)) sectionId = '';
+			sections = [...sections.filter((section) => section.projectId !== nextProjectId), ...loaded];
+			return loaded;
 		} catch {
-			if (request !== sectionLoad) return;
-			sections = [];
-			sectionId = '';
 			errorMessage = 'Sections could not be loaded. You can still create the task in Inbox.';
-		} finally {
-			if (request === sectionLoad) loadingSections = false;
+			return [];
 		}
 	}
 
 	async function save() {
-		if (!title.trim() || !projectId || saving) return;
+		const cleanTitle = cleanTaskTitle(title);
+		if (!cleanTitle || !projectId || saving) return;
 		saving = true;
 		errorMessage = '';
 		try {
-			let task = stagedTask;
-			if (!task) {
-				task = await createTask(title.trim(), projectId, sectionId || null);
-				stagedTask = task;
-			}
-
-			const changes = taskChanges(task.version);
-			const needsUpdate =
-				task.title !== changes.title ||
-				task.projectId !== changes.projectId ||
-				task.sectionId !== changes.sectionId ||
-				task.priority !== changes.priority ||
-				task.dueDate !== changes.dueDate ||
-				task.dueTime !== changes.dueTime ||
-				task.dueTimezone !== changes.dueTimezone;
-			if (needsUpdate) task = await updateTask(task.id, changes);
+			const task = await createTask({
+				title: cleanTitle,
+				projectId,
+				sectionId,
+				priority,
+				dueDate,
+				dueTime: dueDate ? dueTime : null,
+				dueTimezone: dueDate && dueTime ? dueTimezone : null
+			});
 			await saved(task);
 		} catch (error) {
 			errorMessage =
@@ -111,28 +76,6 @@
 		} finally {
 			saving = false;
 		}
-	}
-
-	function taskChanges(version: number): TaskUpdate & {
-		title: string;
-		projectId: string;
-		sectionId: string | null;
-		priority: number;
-		dueDate: string | null;
-		dueTime: string | null;
-		dueTimezone: string | null;
-	} {
-		const hasTime = Boolean(dueDate && dueTime);
-		return {
-			version,
-			title: title.trim(),
-			projectId,
-			sectionId: sectionId || null,
-			priority: Number(priority),
-			dueDate: dueDate || null,
-			dueTime: hasTime ? dueTime : null,
-			dueTimezone: hasTime ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
-		};
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -189,68 +132,43 @@
 				void save();
 			}}
 		>
-			<label class="title-field">
+			<div class="title-field">
 				<span>Title</span>
-				<input
-					bind:this={titleInput}
-					bind:value={title}
-					name="title"
-					maxlength="500"
-					autocomplete="off"
-					required
+				<RichTaskTitle
+					bind:title
+					bind:projectId
+					bind:sectionId
+					bind:priority
+					bind:dueDate
+					bind:dueTime
+					bind:dueTimezone
+					{projects}
+					{sections}
+					loadSections={loadAndCacheSections}
+					label="Title"
+					placeholder="Task title"
+					disabled={saving}
+					{focusRequest}
 				/>
-			</label>
-
-			<div class="field-grid">
-				<label>
-					<span>Project</span>
-					<select
-						value={projectId}
-						onchange={changeProject}
-						disabled={saving || stagedTask !== null}
-					>
-						{#each projects as project (project.id)}
-							<option value={project.id}>{project.name}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					<span>Section</span>
-					<select
-						bind:value={sectionId}
-						disabled={loadingSections || saving || stagedTask !== null}
-					>
-						<option value="">Inbox (no section)</option>
-						{#each sections as section (section.id)}
-							<option value={section.id}>{section.name}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					<span>Priority</span>
-					<select bind:value={priority}>
-						<option value="0">None</option>
-						<option value="1">Low</option>
-						<option value="2">Medium</option>
-						<option value="3">High</option>
-						<option value="4">Urgent</option>
-					</select>
-				</label>
-				<label>
-					<span>Due date</span>
-					<input type="date" bind:value={dueDate} />
-				</label>
-				<label>
-					<span>Due time</span>
-					<input type="time" bind:value={dueTime} disabled={!dueDate} />
-				</label>
 			</div>
+
+			<TaskPropertyPickers
+				bind:projectId
+				bind:sectionId
+				bind:priority
+				bind:dueDate
+				bind:dueTime
+				bind:dueTimezone
+				{projects}
+				{sections}
+				loadSections={loadAndCacheSections}
+			/>
 
 			{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 
 			<footer>
 				<span>Enter to save · Shift+Enter does not save</span>
-				<button type="submit" disabled={saving || !title.trim() || !projectId}>
+				<button type="submit" disabled={saving || !cleanTaskTitle(title) || !projectId}>
 					{saving ? 'Saving…' : 'Create task'}
 				</button>
 			</footer>
@@ -321,40 +239,16 @@
 		gap: 1.1rem;
 		padding: 1.35rem;
 	}
-	label {
+	.title-field {
 		display: grid;
 		gap: 0.4rem;
 		color: #4b4b47;
 		font-size: 0.75rem;
 		font-weight: 750;
 	}
-	input,
-	select {
-		width: 100%;
-		min-height: 2.7rem;
-		box-sizing: border-box;
-		padding: 0 0.75rem;
-		border: 1px solid var(--theme-border, #dfe5dc);
-		border-radius: 0.55rem;
-		background: var(--theme-canvas, #fbfcfa);
-		color: #292927;
-		font: inherit;
-		font-size: 0.88rem;
-	}
-	.title-field input {
-		min-height: 3.25rem;
-		font-size: 1.05rem;
-	}
-	input:focus,
-	select:focus,
 	button:focus-visible {
 		outline: 3px solid var(--theme-focus, rgb(45 101 64 / 16%));
 		border-color: var(--theme-accent, #2d6540);
-	}
-	.field-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.85rem;
 	}
 	.error {
 		margin: 0;
@@ -377,9 +271,7 @@
 		font-weight: 750;
 		cursor: pointer;
 	}
-	button:disabled,
-	select:disabled,
-	input:disabled {
+	button:disabled {
 		cursor: not-allowed;
 		opacity: 0.55;
 	}
@@ -390,9 +282,6 @@
 		}
 		.dialog {
 			border-radius: 1rem 1rem 0 0;
-		}
-		.field-grid {
-			grid-template-columns: 1fr;
 		}
 		footer {
 			align-items: stretch;

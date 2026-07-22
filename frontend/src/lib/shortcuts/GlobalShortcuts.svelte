@@ -8,9 +8,9 @@
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { listProjectSections } from '$lib/projects/client';
 	import { rememberedProjectPath } from '$lib/projects/navigation';
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft, TaskUpdate } from '$lib/tasks/client';
 	import {
-		createTask as createTaskRequest,
+		createTaskWithProperties as createTaskRequest,
 		updateTask as updateTaskRequest
 	} from '$lib/tasks/client';
 	import { onMount, tick } from 'svelte';
@@ -32,7 +32,7 @@
 		navigate?: (href: string) => void | Promise<void>;
 		refresh?: () => void | Promise<void>;
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
-		createTask?: (title: string, projectId: string, sectionId: string | null) => Promise<Task>;
+		createTask?: (draft: TaskCreateDraft) => Promise<Task>;
 		updateTask?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 	}
 
@@ -43,8 +43,7 @@
 		navigate = (href) => goto(href),
 		refresh = () => invalidateAll(),
 		loadSections = (projectId) => listProjectSections(fetch, projectId),
-		createTask = (title, projectId, sectionId) =>
-			createTaskRequest(fetch, title, projectId, sectionId ?? undefined),
+		createTask = (draft) => createTaskRequest(fetch, draft),
 		updateTask = (taskId, changes) => updateTaskRequest(fetch, taskId, changes)
 	}: Props = $props();
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
@@ -278,7 +277,6 @@
 		{focusRequest}
 		{loadSections}
 		{createTask}
-		{updateTask}
 		close={closeQuickAdd}
 		saved={taskSaved}
 	/>

@@ -287,9 +287,19 @@
 	{#if create}
 		<TaskQuickAdd
 			{create}
-			oncreated={(created) => (tasks = [...tasks, summaryFromTask(created)])}
+			oncreated={(created) => {
+				const remainsInView =
+					(currentProjectId === undefined || created.projectId === currentProjectId) &&
+					(currentSectionId === undefined || created.sectionId === currentSectionId);
+				if (remainsInView) {
+					tasks = [...tasks, summaryFromTask(created)];
+				}
+			}}
 			initialProjectId={currentProjectId ?? projects[0]?.id ?? ''}
 			initialSectionId={currentSectionId ?? null}
+			{projects}
+			{sections}
+			{loadSections}
 		/>
 	{/if}
 

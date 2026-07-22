@@ -22,6 +22,7 @@ type taskHandlers struct {
 // HTTPService describes the task operations exposed over HTTP.
 type HTTPService interface {
 	Create(context.Context, execution.Scope, string, *string, *string) (Task, error)
+	CreateWithProperties(context.Context, execution.Scope, CreateInput) (Task, error)
 	CreateSubtask(context.Context, execution.Scope, string, string) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListSubtasks(context.Context, string, string) ([]Task, error)
@@ -48,10 +49,15 @@ type HTTPModule struct {
 }
 
 type createTaskRequest struct {
-	Title     string  `json:"title"`
-	ProjectID *string `json:"projectId"`
-	SectionID *string `json:"sectionId"`
-	ParentID  *string `json:"parentId"`
+	Title       string           `json:"title"`
+	Description nullable[string] `json:"description"`
+	ProjectID   *string          `json:"projectId"`
+	SectionID   *string          `json:"sectionId"`
+	ParentID    *string          `json:"parentId"`
+	Priority    optional[int]    `json:"priority"`
+	DueDate     nullable[string] `json:"dueDate"`
+	DueTime     nullable[string] `json:"dueTime"`
+	DueTimezone nullable[string] `json:"dueTimezone"`
 }
 
 type updateTaskRequest struct {
@@ -223,23 +229,38 @@ func (h taskHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var created Task
-	var err error
 	if request.ParentID != nil {
 		if request.ProjectID != nil || request.SectionID != nil {
 			writeTaskError(w, r, "create", ErrSubtaskPlacement)
 			return
 		}
-		created, err = h.service.CreateSubtask(r.Context(), scope, request.Title, *request.ParentID)
 	} else {
 		if request.ProjectID == nil {
 			writeTaskError(w, r, "create", ErrProjectRequired)
 			return
 		}
-		created, err = h.service.Create(
-			r.Context(), scope, request.Title, request.ProjectID, request.SectionID,
-		)
 	}
+
+	input := CreateInput{
+		Title:       request.Title,
+		Description: request.Description.Value,
+		ProjectID:   request.ProjectID,
+		SectionID:   request.SectionID,
+		ParentID:    request.ParentID,
+		DueTimezone: request.DueTimezone.Value,
+	}
+	if request.Priority.Set {
+		input.Priority = request.Priority.Value
+	}
+	if request.DueDate.Value != nil {
+		value := Date(*request.DueDate.Value)
+		input.DueDate = &value
+	}
+	if request.DueTime.Value != nil {
+		value := TimeOfDay(*request.DueTime.Value)
+		input.DueTime = &value
+	}
+	created, err := h.service.CreateWithProperties(r.Context(), scope, input)
 	if err != nil {
 		writeTaskError(w, r, "create", err)
 		return

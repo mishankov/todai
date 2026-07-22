@@ -74,6 +74,7 @@ var (
 
 type repository interface {
 	Create(context.Context, execution.Scope, string, *string, *string, *string) (Task, error)
+	CreateWithProperties(context.Context, execution.Scope, CreateInput) (Task, error)
 	Get(context.Context, string, string) (Task, error)
 	ListSubtasks(context.Context, string, string) ([]Task, error)
 	ListInbox(context.Context, string, string, bool) ([]TaskSummary, error)
@@ -134,22 +135,25 @@ func (s *Service) Create(
 	projectID *string,
 	sectionID *string,
 ) (Task, error) {
+	return s.CreateWithProperties(ctx, scope, CreateInput{
+		Title: title, ProjectID: projectID, SectionID: sectionID,
+	})
+}
+
+// CreateWithProperties creates a task atomically with its complete initial state.
+func (s *Service) CreateWithProperties(
+	ctx context.Context,
+	scope execution.Scope,
+	input CreateInput,
+) (Task, error) {
 	if err := scope.Validate(); err != nil {
 		return Task{}, fmt.Errorf("validate execution scope: %w", err)
 	}
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return Task{}, ErrTitleRequired
-	}
-	if utf8.RuneCountInString(title) > maxTitleLength {
-		return Task{}, ErrTitleTooLong
+	if err := validateCreateInput(&input); err != nil {
+		return Task{}, err
 	}
 
-	if projectID == nil || strings.TrimSpace(*projectID) == "" {
-		return Task{}, ErrProjectRequired
-	}
-
-	created, err := s.repository.Create(ctx, scope, title, projectID, sectionID, nil)
+	created, err := s.repository.CreateWithProperties(ctx, scope, input)
 	if err != nil {
 		return Task{}, fmt.Errorf("create task: %w", err)
 	}
@@ -164,24 +168,7 @@ func (s *Service) CreateSubtask(
 	title string,
 	parentID string,
 ) (Task, error) {
-	if strings.TrimSpace(parentID) == "" {
-		return Task{}, ErrTaskNotFound
-	}
-	if err := scope.Validate(); err != nil {
-		return Task{}, fmt.Errorf("validate execution scope: %w", err)
-	}
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return Task{}, ErrTitleRequired
-	}
-	if utf8.RuneCountInString(title) > maxTitleLength {
-		return Task{}, ErrTitleTooLong
-	}
-	created, err := s.repository.Create(ctx, scope, title, nil, nil, &parentID)
-	if err != nil {
-		return Task{}, fmt.Errorf("create subtask: %w", err)
-	}
-	return created, nil
+	return s.CreateWithProperties(ctx, scope, CreateInput{Title: title, ParentID: &parentID})
 }
 
 // ListSubtasks returns the direct children of a user-owned task in position order.
@@ -525,5 +512,59 @@ func validateUpdate(update *Update) error {
 		update.DueTimezone = &Nullable[string]{}
 	}
 
+	return nil
+}
+
+func validateCreateInput(input *CreateInput) error {
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Title == "" {
+		return ErrTitleRequired
+	}
+	if utf8.RuneCountInString(input.Title) > maxTitleLength {
+		return ErrTitleTooLong
+	}
+	if input.ParentID != nil {
+		parentID := strings.TrimSpace(*input.ParentID)
+		if parentID == "" {
+			return ErrTaskNotFound
+		}
+		input.ParentID = &parentID
+		if input.ProjectID != nil || input.SectionID != nil {
+			return ErrSubtaskPlacement
+		}
+	} else if input.ProjectID == nil || strings.TrimSpace(*input.ProjectID) == "" {
+		return ErrProjectRequired
+	}
+
+	title := input.Title
+	update := Update{
+		Version:     1,
+		Title:       &title,
+		Description: &Nullable[string]{Value: input.Description},
+		Priority:    &input.Priority,
+		DueDate:     &Nullable[Date]{Value: input.DueDate},
+		DueTime:     &Nullable[TimeOfDay]{Value: input.DueTime},
+		DueTimezone: &Nullable[string]{Value: input.DueTimezone},
+	}
+	if input.ParentID == nil {
+		update.ProjectID = &Nullable[string]{Value: input.ProjectID}
+		update.SectionID = &Nullable[string]{Value: input.SectionID}
+	}
+	if err := validateUpdate(&update); err != nil {
+		return err
+	}
+
+	input.Title = *update.Title
+	input.Description = update.Description.Value
+	input.Priority = *update.Priority
+	input.DueDate = update.DueDate.Value
+	input.DueTime = update.DueTime.Value
+	input.DueTimezone = update.DueTimezone.Value
+	if update.ProjectID != nil {
+		input.ProjectID = update.ProjectID.Value
+	}
+	if update.SectionID != nil {
+		input.SectionID = update.SectionID.Value
+	}
 	return nil
 }

@@ -12,16 +12,7 @@ describe('GlobalShortcuts', () => {
 		const project = testProject();
 		const section = testSection();
 		const created = testTask();
-		const updated = testTask({
-			priority: 3,
-			dueDate: '2026-07-22',
-			dueTime: '09:30',
-			dueTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-			sectionId: section.id,
-			version: 2
-		});
 		const createTask = vi.fn(async () => created);
-		const updateTask = vi.fn(async () => updated);
 		const refresh = vi.fn(async () => {});
 
 		render(GlobalShortcuts, {
@@ -32,7 +23,7 @@ describe('GlobalShortcuts', () => {
 			refresh,
 			loadSections: vi.fn(async () => [section]),
 			createTask,
-			updateTask
+			updateTask: vi.fn()
 		});
 
 		dispatchShortcut('KeyN', true);
@@ -49,21 +40,26 @@ describe('GlobalShortcuts', () => {
 		).toHaveLength(1);
 
 		await dialog.getByLabelText('Title').fill('Plan the release');
-		await dialog.getByLabelText('Section').selectOptions(section.id);
-		await dialog.getByLabelText('Priority').selectOptions('3');
-		await dialog.getByLabelText('Due date').fill('2026-07-22');
-		await dialog.getByLabelText('Due time').fill('09:30');
+		await dialog.getByRole('button', { name: /^Location:/ }).click();
+		await dialog.getByRole('button', { name: /^Section:/ }).click();
+		await page.getByRole('option', { name: section.name }).click();
+		await dialog.getByRole('button', { name: 'Priority: None' }).click();
+		await page.getByRole('option', { name: 'High' }).click();
+		await dialog.getByRole('button', { name: 'Due date: No date' }).click();
+		await page.getByRole('option', { name: /^Tomorrow/ }).click();
+		await dialog.getByRole('button', { name: /^Due time:/ }).click();
+		await page.getByRole('option', { name: /^Morning/ }).click();
 		await dialog.getByRole('button', { name: 'Create task' }).click();
 
-		expect(createTask).toHaveBeenCalledWith('Plan the release', project.id, section.id);
-		expect(updateTask).toHaveBeenCalledWith(
-			created.id,
+		expect(createTask).toHaveBeenCalledWith(
 			expect.objectContaining({
-				version: created.version,
+				title: 'Plan the release',
+				projectId: project.id,
+				sectionId: section.id,
 				priority: 3,
-				dueDate: '2026-07-22',
-				dueTime: '09:30',
-				sectionId: section.id
+				dueDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+				dueTime: '09:00',
+				dueTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
 			})
 		);
 		await expect.element(dialog).not.toBeInTheDocument();
