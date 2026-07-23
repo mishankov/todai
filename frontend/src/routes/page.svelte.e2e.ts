@@ -15,6 +15,8 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	let sections: ProjectSection[] = [];
 	let taskCreatePayloads: Record<string, unknown>[] = [];
 	let inboxLoads = 0;
+	let taskLoads = 0;
+	let delayTaskLoads = false;
 	let realtimeEventReady = false;
 	let realtimeEventDelivered = false;
 	const activityEvents: ActivityEvent[] = [
@@ -375,6 +377,8 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 				await route.fallback();
 				return;
 			}
+			taskLoads += 1;
+			if (delayTaskLoads) await new Promise((resolve) => setTimeout(resolve, 500));
 			const found = tasks.find((item) => item.id === taskId);
 			await route.fulfill({
 				status: found ? 200 : 404,
@@ -564,6 +568,15 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks');
 	await expect(page.getByText('Buy oat milk')).toHaveCount(0);
 	await expect(page.getByText('Plan sprint')).toBeVisible();
+	const taskLoadsBeforeBoardOpen = taskLoads;
+	delayTaskLoads = true;
+	await page.getByRole('button', { name: 'Open Plan sprint' }).click();
+	await expect(page.getByRole('dialog', { name: 'Loading task editor' })).toHaveCount(0);
+	await expect(page.getByRole('dialog', { name: 'Edit task: Plan sprint' })).toBeVisible();
+	expect(taskLoads).toBe(taskLoadsBeforeBoardOpen);
+	delayTaskLoads = false;
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
 
 	await page.keyboard.press(`${primaryModifier}+K`);
 	await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();

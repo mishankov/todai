@@ -3,6 +3,7 @@
 import { browser } from '$app/environment';
 import { goto, pushState, replaceState } from '$app/navigation';
 import { page } from '$app/state';
+import type { ProjectSection } from '$lib/projects/client';
 import type { Task } from './client';
 
 export interface TaskRoute {
@@ -10,7 +11,13 @@ export interface TaskRoute {
 	taskId: string;
 }
 
+export interface TaskNavigationSnapshot {
+	task: Task;
+	sections: ProjectSection[];
+}
+
 export const taskNavigationEvent = 'todai:task-navigation';
+let pendingTaskSnapshot: TaskNavigationSnapshot | undefined;
 
 const authenticatedPaths = [
 	/^\/$/,
@@ -77,12 +84,35 @@ export function validPostLoginRedirect(value: unknown): value is string {
 	);
 }
 
-export function openTask(task: Task): void {
-	openTaskRoute({ projectId: task.projectId, taskId: task.id });
+export function openTask(task: Task, sections?: ProjectSection[]): void {
+	navigateToTaskRoute(
+		{ projectId: task.projectId, taskId: task.id },
+		sections === undefined
+			? undefined
+			: {
+					task: { ...task },
+					sections: sections.map((section) => ({ ...section }))
+				}
+	);
 }
 
 export function openTaskRoute(route: TaskRoute): void {
+	navigateToTaskRoute(route);
+}
+
+export function consumeTaskNavigationSnapshot(
+	route: TaskRoute
+): TaskNavigationSnapshot | undefined {
+	const snapshot = pendingTaskSnapshot;
+	pendingTaskSnapshot = undefined;
+	if (snapshot?.task.id !== route.taskId || snapshot.task.projectId !== route.projectId)
+		return undefined;
+	return snapshot;
+}
+
+function navigateToTaskRoute(route: TaskRoute, snapshot?: TaskNavigationSnapshot): void {
 	if (!browser) return;
+	pendingTaskSnapshot = snapshot;
 	const currentRoute = parseTaskPath(window.location.pathname);
 	const existingReturn = page.state.taskModal?.returnTo;
 	const returnTo = validTaskReturnLocation(existingReturn)

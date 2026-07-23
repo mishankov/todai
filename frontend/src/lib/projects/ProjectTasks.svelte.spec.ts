@@ -163,7 +163,7 @@ describe('ProjectTasks', () => {
 
 		await page.getByRole('button', { name: `Open ${task.title}` }).click();
 
-		expect(openTask).toHaveBeenCalledWith(task);
+		expect(openTask).toHaveBeenCalledWith(task, []);
 	});
 
 	it('does not open task editing from complete or delete actions', async () => {
@@ -426,7 +426,7 @@ interface RenderOptions {
 	tasks?: TaskSummary[];
 	create?: (draft: TaskCreateDraft) => Promise<Task>;
 	complete?: (taskId: string, version: number) => Promise<Task>;
-	openTask?: (task: Task) => void;
+	openTask?: (task: Task, sections?: ProjectSection[]) => void;
 	remove?: (taskId: string, version: number) => Promise<void>;
 	reorder?: (
 		taskId: string,

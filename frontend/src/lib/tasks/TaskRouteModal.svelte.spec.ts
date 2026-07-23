@@ -49,6 +49,42 @@ describe('TaskRouteModal', () => {
 		await page.getByRole('button', { name: 'Return to tasks' }).click();
 		expect(closeRoute).toHaveBeenCalledWith(route);
 	});
+
+	it('opens immediately from an in-app task snapshot without showing the loading dialog', async () => {
+		const task = testTask();
+		const sections = [
+			{
+				id: 'section-id',
+				projectId: task.projectId,
+				name: 'Next',
+				position: 1024,
+				version: 1,
+				createdAt: '2026-07-22T10:00:00Z',
+				updatedAt: '2026-07-22T10:00:00Z',
+				lastModifiedBy: 'user-id'
+			}
+		];
+		const loadTask = vi.fn();
+		const loadSections = vi.fn();
+
+		render(TaskRouteModal, {
+			projects: [testProject()],
+			routeOverride: { projectId: task.projectId, taskId: task.id },
+			readNavigationSnapshot: vi.fn(() => ({ task, sections })),
+			loadTask,
+			loadSections,
+			closeRoute: vi.fn()
+		});
+
+		await expect
+			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
+			.toBeVisible();
+		await expect
+			.element(page.getByRole('dialog', { name: 'Loading task editor' }))
+			.not.toBeInTheDocument();
+		expect(loadTask).not.toHaveBeenCalled();
+		expect(loadSections).not.toHaveBeenCalled();
+	});
 });
 
 function deferred<T>() {

@@ -8,9 +8,11 @@
 	import { getTask, type Task, type TaskUpdate, updateTask } from './client';
 	import {
 		closeTask,
+		consumeTaskNavigationSnapshot,
 		parseTaskPath,
 		replaceMismatchedTaskRoute,
 		taskNavigationEvent,
+		type TaskNavigationSnapshot,
 		type TaskRoute
 	} from './navigation';
 	import { onMount } from 'svelte';
@@ -23,6 +25,7 @@
 		refresh?: () => Promise<void>;
 		routeOverride?: TaskRoute;
 		closeRoute?: (route: TaskRoute) => void;
+		readNavigationSnapshot?: (route: TaskRoute) => TaskNavigationSnapshot | undefined;
 	}
 
 	let {
@@ -32,7 +35,8 @@
 		saveTask = (taskId, changes) => updateTask(fetch, taskId, changes),
 		refresh = () => invalidateAll(),
 		routeOverride,
-		closeRoute = closeTask
+		closeRoute = closeTask,
+		readNavigationSnapshot = consumeTaskNavigationSnapshot
 	}: Props = $props();
 
 	let task = $state<Task | undefined>();
@@ -60,13 +64,22 @@
 	$effect(() => {
 		const nextRoute = route;
 		const version = ++requestVersion;
-		task = undefined;
-		sections = undefined;
 		errorMessage = '';
 		if (!nextRoute) {
+			task = undefined;
+			sections = undefined;
 			loading = false;
 			return;
 		}
+		const snapshot = readNavigationSnapshot(nextRoute);
+		if (snapshot && validTask(snapshot.task)) {
+			task = snapshot.task;
+			sections = snapshot.sections;
+			loading = false;
+			return;
+		}
+		task = undefined;
+		sections = undefined;
 		loading = true;
 		void prepareTask(nextRoute, version);
 	});
@@ -75,10 +88,7 @@
 		try {
 			const loadedTask = await loadTask(nextRoute.taskId);
 			if (version !== requestVersion) return;
-			if (
-				loadedTask.parentId !== null ||
-				!projects.some((item) => item.id === loadedTask.projectId)
-			) {
+			if (!validTask(loadedTask)) {
 				throw new Error('Task is not an available top-level task.');
 			}
 			if (await replaceMismatchedTaskRoute(loadedTask, nextRoute)) return;
@@ -93,6 +103,10 @@
 		} finally {
 			if (version === requestVersion) loading = false;
 		}
+	}
+
+	function validTask(candidate: Task): boolean {
+		return candidate.parentId === null && projects.some((item) => item.id === candidate.projectId);
 	}
 
 	async function save(changes: TaskUpdate) {

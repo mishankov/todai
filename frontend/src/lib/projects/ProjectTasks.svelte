@@ -15,7 +15,7 @@
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
-		openTask?: (task: Task) => void;
+		openTask?: (task: Task, sections?: ProjectSection[]) => void;
 		remove: (taskId: string, version: number) => Promise<void>;
 		reorder: (
 			taskId: string,
@@ -223,7 +223,7 @@
 	}
 
 	function openTaskEditor(item: TaskSummary) {
-		openTask(item);
+		openTask(item, sections);
 	}
 
 	function summaryFromTask(task: Task): TaskSummary {
