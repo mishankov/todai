@@ -15,6 +15,7 @@ import (
 	"github.com/platforma-dev/platforma/log"
 
 	"github.com/mishankov/todai/backend/internal/agent"
+	"github.com/mishankov/todai/backend/internal/piruntime/jsonl"
 )
 
 const (
@@ -200,16 +201,14 @@ func scanRecords(reader io.Reader, maximumLine int) <-chan scannedRecord {
 	records := make(chan scannedRecord)
 	go func() {
 		defer close(records)
-		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 64*1024), maximumLine)
-		for scanner.Scan() {
-			decoded, err := decodeEnvelope(scanner.Bytes())
+		decodeFailed := false
+		err := jsonl.Scan(reader, maximumLine, func(line []byte) error {
+			decoded, err := decodeEnvelope(line)
 			records <- scannedRecord{envelope: decoded, err: err}
-			if err != nil {
-				return
-			}
-		}
-		if err := scanner.Err(); err != nil {
+			decodeFailed = err != nil
+			return err
+		})
+		if err != nil && !decodeFailed {
 			records <- scannedRecord{err: fmt.Errorf("%w: read JSONL: %v", ErrInvalidProtocol, err)}
 		}
 	}()

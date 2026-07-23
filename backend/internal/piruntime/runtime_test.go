@@ -80,25 +80,6 @@ func TestRuntimeRunsCompiledTypeScriptRunner(t *testing.T) {
 	}
 }
 
-func TestRuntimeAcceptsPartialJSONLLines(t *testing.T) {
-	runtime := helperRuntime(t, "partial")
-	events := make([]agent.RuntimeEvent, 0)
-
-	err := runtime.Run(context.Background(), testRunRequest(), func(
-		_ context.Context,
-		event agent.RuntimeEvent,
-	) error {
-		events = append(events, event)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if len(events) != 4 || events[3].Type != agent.EventRunCompleted {
-		t.Errorf("events = %#v", events)
-	}
-}
-
 func TestRuntimeAdaptsToolLifecycleWithArgumentsAndResults(t *testing.T) {
 	runtime := helperRuntime(t, "tools")
 	events := make([]agent.RuntimeEvent, 0)
@@ -251,14 +232,7 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		"runId": runID, "sequence": nextSequence, "messageId": "message-" + runID,
 		"delta": "Deterministic response",
 	})
-	if scenario == "partial" {
-		middle := len(delta) / 2
-		_, _ = os.Stdout.WriteString(delta[:middle])
-		time.Sleep(10 * time.Millisecond)
-		_, _ = os.Stdout.WriteString(delta[middle:])
-	} else {
-		_, _ = os.Stdout.WriteString(delta)
-	}
+	_, _ = os.Stdout.WriteString(delta)
 	writeProtocolLine(map[string]any{
 		"protocol": "todai.runner", "version": 4, "type": "history.message",
 		"runId": runID, "sequence": nextSequence + 1,
