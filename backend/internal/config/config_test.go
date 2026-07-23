@@ -16,6 +16,9 @@ func TestLoadUsesDefaults(t *testing.T) {
 	if cfg.DatabaseURL != defaultDatabaseURL {
 		t.Errorf("DatabaseURL = %q, want %q", cfg.DatabaseURL, defaultDatabaseURL)
 	}
+	if cfg.Environment != "development" || cfg.LogFormat != "text" {
+		t.Errorf("environment configuration = %#v", cfg)
+	}
 	if cfg.HTTPPort != defaultHTTPPort {
 		t.Errorf("HTTPPort = %q, want %q", cfg.HTTPPort, defaultHTTPPort)
 	}
@@ -39,9 +42,11 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		"TODAI_DATABASE_URL":           "postgres://example",
+		"TODAI_ENVIRONMENT":            "production",
+		"TODAI_DATABASE_URL":           "postgres://app:secret@db.example.test/todai",
 		"TODAI_HTTP_PORT":              "9090",
 		"TODAI_SESSION_COOKIE_NAME":    "custom_session",
+		"TODAI_LOG_FORMAT":             "json",
 		"TODAI_RUNNER_EXECUTABLE":      "/usr/local/bin/node",
 		"TODAI_RUNNER_ENTRY":           "/srv/todai/runner.js",
 		"TODAI_RUNNER_STARTUP_TIMEOUT": "7s",
@@ -65,6 +70,9 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	if cfg.DatabaseURL != values["TODAI_DATABASE_URL"] {
 		t.Errorf("DatabaseURL = %q", cfg.DatabaseURL)
 	}
+	if cfg.Environment != "production" || cfg.LogFormat != "json" {
+		t.Errorf("environment configuration = %#v", cfg)
+	}
 	if cfg.HTTPPort != values["TODAI_HTTP_PORT"] {
 		t.Errorf("HTTPPort = %q", cfg.HTTPPort)
 	}
@@ -82,6 +90,71 @@ func TestLoadReadsEnvironment(t *testing.T) {
 		cfg.PiProvider != "openai-codex" || cfg.PiModel != "gpt-5.6-sol" ||
 		len(cfg.PiModels) != 2 || cfg.PiModels[1] != "gpt-5.6-terra" {
 		t.Errorf("agent configuration = %#v", cfg)
+	}
+}
+
+func TestLoadProductionDefaultsToJSONLogging(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]string{
+		"TODAI_ENVIRONMENT":  "production",
+		"TODAI_DATABASE_URL": "postgres://app:secret@postgres/todai",
+	}
+	cfg, err := load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("LogFormat = %q, want json", cfg.LogFormat)
+	}
+}
+
+func TestLoadRejectsUnsafeProductionConfiguration(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{
+			name:   "missing database URL",
+			values: map[string]string{"TODAI_ENVIRONMENT": "production"},
+		},
+		{
+			name: "development credentials",
+			values: map[string]string{
+				"TODAI_ENVIRONMENT":  "production",
+				"TODAI_DATABASE_URL": "postgres://todai:todai@postgres/todai",
+			},
+		},
+		{
+			name: "relative Pi directory",
+			values: map[string]string{
+				"TODAI_ENVIRONMENT":   "production",
+				"TODAI_DATABASE_URL":  "postgres://app:secret@postgres/todai",
+				"TODAI_AGENT_RUNTIME": "pi",
+				"TODAI_PI_AGENT_DIR":  "pi-agent",
+				"TODAI_PI_PROVIDER":   "provider",
+				"TODAI_PI_MODEL":      "model",
+			},
+		},
+		{
+			name: "missing Pi model",
+			values: map[string]string{
+				"TODAI_ENVIRONMENT":   "production",
+				"TODAI_DATABASE_URL":  "postgres://app:secret@postgres/todai",
+				"TODAI_AGENT_RUNTIME": "pi",
+				"TODAI_PI_AGENT_DIR":  "/var/lib/todai/pi-agent",
+				"TODAI_PI_PROVIDER":   "provider",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := load(func(key string) string { return test.values[key] }); err == nil {
+				t.Fatal("load config succeeded with unsafe production configuration")
+			}
+		})
 	}
 }
 

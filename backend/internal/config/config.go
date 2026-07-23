@@ -7,15 +7,18 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
+	defaultEnvironment   = "development"
 	defaultDatabaseURL   = "postgres://todai:todai@localhost:5432/todai?sslmode=disable"
 	defaultHTTPPort      = "8080"
 	defaultCookieName    = "todai_session"
+	defaultLogFormat     = "text"
 	defaultRunnerExec    = "node"
 	defaultRunnerEntry   = "../pi-runner/dist/cli/main.js"
 	defaultRunnerLine    = 1024 * 1024
@@ -25,9 +28,11 @@ const (
 
 // Config contains the process configuration required by the backend.
 type Config struct {
+	Environment       string
 	DatabaseURL       string
 	HTTPPort          string
 	SessionCookieName string
+	LogFormat         string
 	RunnerExecutable  string
 	RunnerEntry       string
 	RunnerStartup     time.Duration
@@ -50,9 +55,11 @@ func Load() (Config, error) {
 
 func load(getenv func(string) string) (Config, error) {
 	cfg := Config{
+		Environment:       valueOrDefault(getenv("TODAI_ENVIRONMENT"), defaultEnvironment),
 		DatabaseURL:       valueOrDefault(getenv("TODAI_DATABASE_URL"), defaultDatabaseURL),
 		HTTPPort:          valueOrDefault(getenv("TODAI_HTTP_PORT"), defaultHTTPPort),
 		SessionCookieName: valueOrDefault(getenv("TODAI_SESSION_COOKIE_NAME"), defaultCookieName),
+		LogFormat:         valueOrDefault(getenv("TODAI_LOG_FORMAT"), defaultLogFormat),
 		RunnerExecutable:  valueOrDefault(getenv("TODAI_RUNNER_EXECUTABLE"), defaultRunnerExec),
 		RunnerEntry:       valueOrDefault(getenv("TODAI_RUNNER_ENTRY"), defaultRunnerEntry),
 		AgentRuntime:      valueOrDefault(getenv("TODAI_AGENT_RUNTIME"), defaultAgentRuntime),
@@ -60,6 +67,20 @@ func load(getenv func(string) string) (Config, error) {
 		PiProvider:        strings.TrimSpace(getenv("TODAI_PI_PROVIDER")),
 		PiModel:           strings.TrimSpace(getenv("TODAI_PI_MODEL")),
 		PiModels:          commaSeparatedValues(getenv("TODAI_PI_MODELS")),
+	}
+	if cfg.Environment != "development" && cfg.Environment != "production" {
+		return Config{}, errors.New("TODAI_ENVIRONMENT must be development or production")
+	}
+	if cfg.Environment == "production" && getenv("TODAI_LOG_FORMAT") == "" {
+		cfg.LogFormat = "json"
+	}
+	if cfg.LogFormat != "json" && cfg.LogFormat != "text" {
+		return Config{}, errors.New("TODAI_LOG_FORMAT must be json or text")
+	}
+	if cfg.Environment == "production" {
+		if err := validateProductionDatabaseURL(getenv("TODAI_DATABASE_URL")); err != nil {
+			return Config{}, err
+		}
 	}
 	if len(cfg.PiModels) == 0 && cfg.PiModel != "" {
 		cfg.PiModels = []string{cfg.PiModel}
@@ -103,6 +124,14 @@ func load(getenv func(string) string) (Config, error) {
 	if cfg.AgentRuntime != "fake" && cfg.AgentRuntime != "pi" {
 		return Config{}, errors.New("TODAI_AGENT_RUNTIME must be fake or pi")
 	}
+	if cfg.Environment == "production" && cfg.AgentRuntime == "pi" {
+		if !filepath.IsAbs(cfg.PiAgentDirectory) {
+			return Config{}, errors.New("TODAI_PI_AGENT_DIR must be an absolute path when TODAI_AGENT_RUNTIME=pi")
+		}
+		if cfg.PiProvider == "" || cfg.PiModel == "" {
+			return Config{}, errors.New("TODAI_PI_PROVIDER and TODAI_PI_MODEL are required when TODAI_AGENT_RUNTIME=pi")
+		}
+	}
 	cfg.InternalAPIURL = strings.TrimRight(valueOrDefault(
 		getenv("TODAI_INTERNAL_API_URL"), "http://127.0.0.1:"+cfg.HTTPPort,
 	), "/")
@@ -115,6 +144,26 @@ func load(getenv func(string) string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func validateProductionDatabaseURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return errors.New("TODAI_DATABASE_URL is required in production")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") ||
+		parsed.Hostname() == "" || parsed.User == nil || strings.Trim(parsed.Path, "/") == "" {
+		return errors.New("invalid production TODAI_DATABASE_URL: expected a PostgreSQL URL with host, database, and credentials")
+	}
+	username := parsed.User.Username()
+	password, hasPassword := parsed.User.Password()
+	if username == "" || !hasPassword || password == "" {
+		return errors.New("invalid production TODAI_DATABASE_URL: username and password are required")
+	}
+	if username == "todai" || password == "todai" {
+		return errors.New("development PostgreSQL credentials are not allowed in production")
+	}
+	return nil
 }
 
 func valueOrDefault(value, fallback string) string {

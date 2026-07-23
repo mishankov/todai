@@ -1,0 +1,116 @@
+name: Production images
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  smoke:
+    name: Smoke (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build images for the target platform
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          created="$(git show --no-patch --format=%cI "$GITHUB_SHA")"
+          common_args=(
+            --platform "$PLATFORM"
+            --load
+            --build-arg "BUILD_DATE=$created"
+            --build-arg "VCS_REF=$GITHUB_SHA"
+            --build-arg "VERSION=smoke"
+          )
+          docker buildx build "${common_args[@]}" \
+            --tag todai-backend:smoke --file backend/Dockerfile .
+          docker buildx build "${common_args[@]}" \
+            --tag todai-frontend:smoke --file frontend/Dockerfile .
+      - name: Verify image contents and packaged fake runner
+        env:
+          BACKEND_IMAGE: todai-backend:smoke
+          FRONTEND_IMAGE: todai-frontend:smoke
+        run: deploy/smoke-images.sh
+      - name: Verify Compose, same-origin SSE, persistence, backup, and restore
+        env:
+          TODAI_BACKEND_IMAGE: todai-backend
+          TODAI_FRONTEND_IMAGE: todai-frontend
+          TODAI_VERSION: smoke
+        run: deploy/smoke-compose.sh
+
+  publish:
+    name: Publish multi-platform images
+    if: github.event_name == 'push'
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve immutable tag
+        id: release
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            immutable_tag="$GITHUB_REF_NAME"
+          else
+            immutable_tag="sha-$GITHUB_SHA"
+          fi
+          echo "immutable_tag=$immutable_tag" >> "$GITHUB_OUTPUT"
+      - name: Refuse to overwrite immutable tags
+        env:
+          IMMUTABLE_TAG: ${{ steps.release.outputs.immutable_tag }}
+        run: |
+          for image in todai-backend todai-frontend; do
+            if docker buildx imagetools inspect \
+              "ghcr.io/mishankov/${image}:${IMMUTABLE_TAG}" >/dev/null 2>&1; then
+              echo "::error::Refusing to overwrite ghcr.io/mishankov/${image}:${IMMUTABLE_TAG}"
+              exit 1
+            fi
+          done
+      - name: Build and publish
+        env:
+          IMMUTABLE_TAG: ${{ steps.release.outputs.immutable_tag }}
+        run: |
+          created="$(git show --no-patch --format=%cI "$GITHUB_SHA")"
+          common_args=(
+            --platform linux/amd64,linux/arm64
+            --push
+            --provenance=true
+            --sbom=true
+            --build-arg "BUILD_DATE=$created"
+            --build-arg "VCS_REF=$GITHUB_SHA"
+            --build-arg "VERSION=$IMMUTABLE_TAG"
+          )
+          backend_tags=(--tag "ghcr.io/mishankov/todai-backend:$IMMUTABLE_TAG")
+          frontend_tags=(--tag "ghcr.io/mishankov/todai-frontend:$IMMUTABLE_TAG")
+          if [[ "$GITHUB_REF_TYPE" == "branch" ]]; then
+            backend_tags+=(--tag ghcr.io/mishankov/todai-backend:edge)
+            frontend_tags+=(--tag ghcr.io/mishankov/todai-frontend:edge)
+          fi
+          docker buildx build "${common_args[@]}" "${backend_tags[@]}" \
+            --file backend/Dockerfile .
+          docker buildx build "${common_args[@]}" "${frontend_tags[@]}" \
+            --file frontend/Dockerfile .

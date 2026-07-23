@@ -82,3 +82,9 @@ The backend uses the globally installed `golangci-lint` with its default configu
 Platforma's configurable auth routes, cookie policy and session-expiration behavior are tracked in
 [platforma-dev/platforma#93](https://github.com/platforma-dev/platforma/issues/93). Until that work
 is complete, Todai mounts the allowed auth handlers individually and does not expose `/register`.
+
+## Self-managed deployment
+
+Released frontend and backend images, the production Compose stack, and the complete install,
+upgrade, backup, restore, and rollback lifecycle are documented in
+[`docs/deployment.md`](./docs/deployment.md).

@@ -15,6 +15,7 @@ import (
 
 func main() {
 	ctx := context.Background()
+	log.SetDefault(log.New(os.Stdout, "text", log.LevelInfo, nil).With("component", "backend"))
 	if err := run(ctx, os.Args, os.Stdin, os.Stdout, os.Stderr); err != nil {
 		log.ErrorContext(ctx, "application finished with error", "error", err)
 		os.Exit(1)
@@ -26,6 +27,7 @@ func run(ctx context.Context, args []string, stdin *os.File, stdout, stderr *os.
 	if err != nil {
 		return err
 	}
+	log.SetDefault(log.New(stdout, cfg.LogFormat, log.LevelInfo, nil).With("component", "backend"))
 
 	if len(args) > 1 && args[1] == "bootstrap-user" {
 		return runBootstrap(ctx, cfg, args[2:], stdin, stdout, stderr)
