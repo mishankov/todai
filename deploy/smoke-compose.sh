@@ -74,12 +74,20 @@ curl --silent --fail --cookie "$cookie_file" \
   --data "{\"projectId\":\"${project_id}\",\"message\":\"Exercise the packaged runner\"}" \
   "${base_url}/api/agent/sessions/${session_id}/messages" >/dev/null
 
-set +e
-curl --silent --show-error --max-time 10 --no-buffer --cookie "$cookie_file" \
-  "${base_url}/api/agent/sessions/${session_id}/events" >"$sse_file"
-sse_status=$?
-set -e
-test "$sse_status" -eq 0 || test "$sse_status" -eq 28
+curl --silent --show-error --no-buffer --cookie "$cookie_file" \
+  "${base_url}/api/agent/sessions/${session_id}/events" >"$sse_file" &
+sse_pid=$!
+for _ in $(seq 1 60); do
+  if grep -q 'agent.run.completed' "$sse_file"; then
+    break
+  fi
+  if ! kill -0 "$sse_pid" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+kill "$sse_pid" >/dev/null 2>&1 || true
+wait "$sse_pid" 2>/dev/null || true
 grep -q 'agent.run.completed' "$sse_file"
 "${compose[@]}" logs --no-color --no-log-prefix backend |
   grep -q '"subsystem":"pi-runner"'
