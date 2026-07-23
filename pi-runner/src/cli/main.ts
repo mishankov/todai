@@ -3,8 +3,11 @@ import {
   decodeCommand,
   encodeMessage,
 } from "../protocol/codec.js";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { FramingError, JsonlFramer } from "../protocol/framing.js";
 import { Runner } from "../runtime/runner.js";
+
+registerBunOAuthFlows();
 
 const framer = new JsonlFramer();
 const runner = new Runner((message) =>

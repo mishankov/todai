@@ -3,45 +3,45 @@ version: '3'
 tasks:
   install:
     cmds:
-      - pnpm install --frozen-lockfile
+      - bun install --frozen-lockfile
 
   browsers:
     desc: Install browsers required by component and end-to-end tests
     cmds:
-      - pnpm exec playwright install chromium chromium-headless-shell
+      - bun x playwright install chromium chromium-headless-shell
 
   dev:
     desc: Run the SvelteKit development server
     cmds:
-      - pnpm run dev
+      - bun run dev
 
   lint:
     cmds:
-      - pnpm run lint
+      - bun run lint
 
   types:
     cmds:
-      - pnpm run check
+      - bun run check
 
   test:
     cmds:
-      - pnpm run test:unit -- --run
+      - bun run test:unit --run
 
   test:e2e:
     cmds:
-      - pnpm run test:e2e
+      - bun run test:e2e
 
   build:
     cmds:
-      - pnpm run build
+      - bun run build
 
   format:
     cmds:
-      - pnpm run format
+      - bun run format
 
   check:
     cmds:
-      - pnpm run lint
-      - pnpm run check
-      - pnpm run test:unit -- --run
-      - pnpm run build
+      - bun run lint
+      - bun run check
+      - bun run test:unit --run
+      - bun run build

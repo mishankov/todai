@@ -3,16 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.13.1",
+  "packageManager": "bun@1.3.14",
   "scripts": {
-    "dev": "tsx src/cli/main.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/cli/main.js",
+    "dev": "bun src/cli/main.ts",
+    "build": "bun run build:types && bun run build:standalone",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build:standalone": "bun build --compile --minify --sourcemap src/cli/main.ts --outfile dist/pi-runner",
+    "build:linux:x64": "bun build --compile --minify --sourcemap --target=bun-linux-x64-baseline src/cli/main.ts --outfile dist/pi-runner-linux-x64",
+    "build:linux:arm64": "bun build --compile --minify --sourcemap --target=bun-linux-arm64 src/cli/main.ts --outfile dist/pi-runner-linux-arm64",
+    "start": "./dist/pi-runner",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
+    "test:standalone": "vitest run tests/cli/main.test.ts",
+    "test:integration": "vitest run tests/integration/real-pi.test.ts",
+    "check": "bun run lint && bun run typecheck && bun run test && bun run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -20,19 +26,16 @@
     "eslint": "^10.7.0",
     "globals": "^17.7.0",
     "prettier": "^3.9.5",
-    "tsx": "^4.23.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "0.80.10",
     "@earendil-works/pi-coding-agent": "0.80.10",
     "typebox": "1.1.38"
   },
-  "pnpm": {
-    "ignoredBuiltDependencies": [
-      "@google/genai",
-      "protobufjs"
-    ]
-  }
+  "trustedDependencies": [
+    "esbuild"
+  ]
 }

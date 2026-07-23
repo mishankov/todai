@@ -70,14 +70,13 @@ describe("runner CLI", () => {
 });
 
 async function runCli(input: string, terminalType: RunnerOutput["type"]) {
-  const child = spawn(
-    process.execPath,
-    ["--import", "tsx", "src/cli/main.ts"],
-    {
-      cwd: componentDirectory,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  const standalone = process.env.TODAI_RUNNER_EXECUTABLE?.trim();
+  const executable = standalone || process.execPath;
+  const args = standalone ? [] : ["src/cli/main.ts"];
+  const child = spawn(executable, args, {
+    cwd: componentDirectory,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   const stdout: RunnerOutput[] = [];
   let stdoutBuffer = "";
   let stderr = "";

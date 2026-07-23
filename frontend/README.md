@@ -1,42 +1,22 @@
-# sv
+# Todai frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+The frontend is a SvelteKit application. Bun 1.3.14 is its only JavaScript package manager and
+runtime prerequisite.
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
+```shell
+bun install --frozen-lockfile
+bun x playwright install chromium chromium-headless-shell
+bun run dev
 ```
 
-To recreate this project with the same configuration:
+Run the complete local frontend check with:
 
-```sh
-# recreate this project
-pnpm dlx sv@0.16.3 create --template minimal --types ts --add prettier eslint vitest="usages:unit,component" playwright --install pnpm frontend
+```shell
+bun run lint
+bun run check
+bun run test:unit --run
+bun run build
+bun run test:e2e
 ```
 
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+SvelteKit proxies `/api` to `TODAI_API_URL`, or to `http://localhost:8080` when it is unset.

@@ -22,8 +22,8 @@ func TestLoadUsesDefaults(t *testing.T) {
 	if cfg.SessionCookieName != defaultCookieName {
 		t.Errorf("SessionCookieName = %q, want %q", cfg.SessionCookieName, defaultCookieName)
 	}
-	if cfg.RunnerExecutable != defaultRunnerExec || cfg.RunnerEntry != defaultRunnerEntry {
-		t.Errorf("runner = (%q, %q)", cfg.RunnerExecutable, cfg.RunnerEntry)
+	if cfg.RunnerExecutable != defaultRunnerExec {
+		t.Errorf("RunnerExecutable = %q, want %q", cfg.RunnerExecutable, defaultRunnerExec)
 	}
 	if cfg.RunnerStartup != 5*time.Second || cfg.RunnerRunTimeout != 2*time.Minute ||
 		cfg.RunnerAbort != 2*time.Second || cfg.RunnerMaximumLine != defaultRunnerLine {
@@ -42,8 +42,7 @@ func TestLoadReadsEnvironment(t *testing.T) {
 		"TODAI_DATABASE_URL":           "postgres://example",
 		"TODAI_HTTP_PORT":              "9090",
 		"TODAI_SESSION_COOKIE_NAME":    "custom_session",
-		"TODAI_RUNNER_EXECUTABLE":      "/usr/local/bin/node",
-		"TODAI_RUNNER_ENTRY":           "/srv/todai/runner.js",
+		"TODAI_RUNNER_EXECUTABLE":      "/srv/todai/pi-runner",
 		"TODAI_RUNNER_STARTUP_TIMEOUT": "7s",
 		"TODAI_RUNNER_RUN_TIMEOUT":     "3m",
 		"TODAI_RUNNER_ABORT_TIMEOUT":   "4s",
@@ -72,7 +71,7 @@ func TestLoadReadsEnvironment(t *testing.T) {
 		t.Errorf("SessionCookieName = %q", cfg.SessionCookieName)
 	}
 	if cfg.RunnerExecutable != values["TODAI_RUNNER_EXECUTABLE"] ||
-		cfg.RunnerEntry != values["TODAI_RUNNER_ENTRY"] || cfg.RunnerStartup != 7*time.Second ||
+		cfg.RunnerStartup != 7*time.Second ||
 		cfg.RunnerRunTimeout != 3*time.Minute || cfg.RunnerAbort != 4*time.Second ||
 		cfg.RunnerMaximumLine != 2048 {
 		t.Errorf("runner configuration = %#v", cfg)

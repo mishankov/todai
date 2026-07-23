@@ -71,7 +71,6 @@ func New(cfg config.Config) (*application.Application, *Resources, error) {
 	productApp.RegisterDomain("task", databaseName, taskDomain)
 	runnerRuntime := piruntime.New(piruntime.Config{
 		Executable:     cfg.RunnerExecutable,
-		Args:           []string{cfg.RunnerEntry},
 		StartupTimeout: cfg.RunnerStartup,
 		RunTimeout:     cfg.RunnerRunTimeout,
 		AbortTimeout:   cfg.RunnerAbort,

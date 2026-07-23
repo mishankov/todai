@@ -16,8 +16,7 @@ const (
 	defaultDatabaseURL   = "postgres://todai:todai@localhost:5432/todai?sslmode=disable"
 	defaultHTTPPort      = "8080"
 	defaultCookieName    = "todai_session"
-	defaultRunnerExec    = "node"
-	defaultRunnerEntry   = "../pi-runner/dist/cli/main.js"
+	defaultRunnerExec    = "../pi-runner/dist/pi-runner"
 	defaultRunnerLine    = 1024 * 1024
 	defaultAgentRuntime  = "fake"
 	defaultAgentTokenTTL = 15 * time.Minute
@@ -29,7 +28,6 @@ type Config struct {
 	HTTPPort          string
 	SessionCookieName string
 	RunnerExecutable  string
-	RunnerEntry       string
 	RunnerStartup     time.Duration
 	RunnerRunTimeout  time.Duration
 	RunnerAbort       time.Duration
@@ -54,7 +52,6 @@ func load(getenv func(string) string) (Config, error) {
 		HTTPPort:          valueOrDefault(getenv("TODAI_HTTP_PORT"), defaultHTTPPort),
 		SessionCookieName: valueOrDefault(getenv("TODAI_SESSION_COOKIE_NAME"), defaultCookieName),
 		RunnerExecutable:  valueOrDefault(getenv("TODAI_RUNNER_EXECUTABLE"), defaultRunnerExec),
-		RunnerEntry:       valueOrDefault(getenv("TODAI_RUNNER_ENTRY"), defaultRunnerEntry),
 		AgentRuntime:      valueOrDefault(getenv("TODAI_AGENT_RUNTIME"), defaultAgentRuntime),
 		PiAgentDirectory:  strings.TrimSpace(getenv("TODAI_PI_AGENT_DIR")),
 		PiProvider:        strings.TrimSpace(getenv("TODAI_PI_PROVIDER")),

@@ -8,7 +8,8 @@ agents. The current repository contains the development skeleton described in
 
 - `backend` — Go HTTP API built on Platforma.
 - `frontend` — SvelteKit web application created with the official Svelte CLI.
-- `pi-runner` — isolated TypeScript process that exposes the stable agent JSONL protocol.
+- `pi-runner` — isolated Bun process that exposes the stable agent JSONL protocol and compiles to a
+  standalone production executable.
 - `infrastructure` — local PostgreSQL configuration.
 - `docs/adr` — accepted architectural decisions.
 
@@ -18,14 +19,13 @@ component will be added later.
 ## Prerequisites
 
 - Go 1.25
-- Node.js 22.19 or newer
-- pnpm 11
+- Bun 1.3.14
 - Docker with Docker Compose
 - [Task](https://taskfile.dev/)
 
 ## First local run
 
-Install frontend dependencies:
+Install frontend and runner dependencies from their committed `bun.lock` files:
 
 ```shell
 task setup
@@ -78,6 +78,11 @@ the backend never sends provider credentials to the runner. Each run receives a 
 token that can call only Todai's internal task tools.
 
 The backend uses the globally installed `golangci-lint` with its default configuration.
+
+Both JavaScript components pin Bun 1.3.14 in package metadata and `.bun-version`. Their
+`bunfig.toml` files force Node-shebang tools to execute with Bun and disable runtime auto-install.
+Use `bun install --frozen-lockfile` when working in either component. The backend directly launches
+`pi-runner/dist/pi-runner`; build it with `task pi-runner:build`.
 
 Platforma's configurable auth routes, cookie policy and session-expiration behavior are tracked in
 [platforma-dev/platforma#93](https://github.com/platforma-dev/platforma/issues/93). Until that work

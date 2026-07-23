@@ -49,9 +49,9 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 	}
 
 	port := availablePort(t)
-	runnerEntry := filepath.Clean(filepath.Join(moduleRoot(t), "../pi-runner/dist/cli/main.js"))
+	runnerExecutable := filepath.Clean(filepath.Join(moduleRoot(t), "../pi-runner/dist/pi-runner"))
 	runnerAvailable := true
-	if _, err := os.Stat(runnerEntry); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(runnerExecutable); errors.Is(err, os.ErrNotExist) {
 		runnerAvailable = false
 	} else if err != nil {
 		t.Fatalf("stat compiled runner: %v", err)
@@ -63,7 +63,10 @@ func TestApplicationAuthenticationAndInboxFlow(t *testing.T) {
 		"TODAI_HTTP_PORT="+port,
 	)
 	if runnerAvailable {
-		processEnvironment = append(processEnvironment, "TODAI_RUNNER_ENTRY="+runnerEntry)
+		processEnvironment = append(
+			processEnvironment,
+			"TODAI_RUNNER_EXECUTABLE="+runnerExecutable,
+		)
 	}
 	runBinaryCommand(t, ctx, binary, processEnvironment, nil, "migrate")
 	runBinaryCommand(
