@@ -300,7 +300,24 @@
 								disabled={savingAppearance !== null}
 								onclick={() => void changeAppearance(option)}
 							>
-								{appearanceLabel(option)}
+								{#if option === 'system'}
+									<svg viewBox="0 0 24 24" aria-hidden="true"
+										><rect x="3" y="4" width="18" height="13" rx="2" /><path
+											d="M8 21h8M12 17v4"
+										/></svg
+									>
+								{:else if option === 'light'}
+									<svg viewBox="0 0 24 24" aria-hidden="true"
+										><circle cx="12" cy="12" r="4" /><path
+											d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+										/></svg
+									>
+								{:else}
+									<svg viewBox="0 0 24 24" aria-hidden="true"
+										><path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3z" /></svg
+									>
+								{/if}
+								<span>{appearanceLabel(option)}</span>
 							</button>
 						{/each}
 					</div>
@@ -308,39 +325,56 @@
 				{#if appearanceError}<p class="appearance-error" role="alert">{appearanceError}</p>{/if}
 				{#if appearanceStatus}<p class="sr-only" role="status">{appearanceStatus}</p>{/if}
 			{/if}
-			{#if activeProject}
+			<nav class="utility-navigation" aria-label="Settings">
+				{#if activeProject}
+					<a
+						href={projectHref(activeProject.id, '/settings')}
+						class:active={isActive('/settings')}
+						aria-current={isActive('/settings') ? 'page' : undefined}
+						aria-keyshortcuts={ariaShortcut(shortcutCommand('project-settings'), applePlatform)}
+						data-shortcut-hint={formatShortcutHint(
+							shortcutCommand('project-settings'),
+							applePlatform
+						)}
+						onclick={closeSidebar}
+					>
+						<svg viewBox="0 0 24 24" aria-hidden="true"
+							><circle cx="12" cy="12" r="3" /><path
+								d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6-.7-2H8.5l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4z"
+							/></svg
+						><span>Project settings</span>
+					</a>
+				{/if}
 				<a
-					href={projectHref(activeProject.id, '/settings')}
-					class:active={isActive('/settings')}
-					aria-current={isActive('/settings') ? 'page' : undefined}
-					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-settings'), applePlatform)}
-					data-shortcut-hint={formatShortcutHint(
-						shortcutCommand('project-settings'),
-						applePlatform
-					)}
+					href={resolve('/projects')}
+					class:active={currentPath === '/projects'}
+					aria-current={currentPath === '/projects' ? 'page' : undefined}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><circle cx="12" cy="12" r="3" /><path
-							d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6-.7-2H8.5l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4z"
-						/></svg
-					><span>Project settings</span>
+						><path d="M3 7.5h7l2 2h9v9.5H3zM3 7.5V5h7l2 2.5" /></svg
+					><span>Manage projects</span>
 				</a>
-			{/if}
-			<a
-				href={resolve('/projects')}
-				class:active={currentPath === '/projects'}
-				aria-current={currentPath === '/projects' ? 'page' : undefined}
-				onclick={closeSidebar}><span>Manage projects</span></a
-			>
-			<a
-				href={resolve('/settings')}
-				class:active={currentPath === '/settings'}
-				aria-current={currentPath === '/settings' ? 'page' : undefined}
-				onclick={closeSidebar}><span>Account settings</span></a
-			>
-			<div class="profile"><span class="username">{username}</span></div>
-			<button type="button" disabled={signingOut} onclick={signOut}>Log out</button>
+				<a
+					href={resolve('/settings')}
+					class:active={currentPath === '/settings'}
+					aria-current={currentPath === '/settings' ? 'page' : undefined}
+					onclick={closeSidebar}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></svg
+					><span>Account settings</span>
+				</a>
+			</nav>
+			<div class="profile">
+				<span class="avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
+				<span class="username">{username}</span>
+				<button class="logout" type="button" disabled={signingOut} onclick={signOut}>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" /></svg
+					><span>{signingOut ? 'Logging out…' : 'Log out'}</span>
+				</button>
+			</div>
 			{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 		</div>
 	</aside>
@@ -504,8 +538,7 @@
 		gap: 0.15rem;
 	}
 	.primary-navigation a,
-	.session a,
-	.session button,
+	.utility-navigation a,
 	.empty-projects {
 		display: flex;
 		align-items: center;
@@ -521,23 +554,22 @@
 		text-decoration: none;
 	}
 	.primary-navigation a,
-	.session a {
+	.utility-navigation a {
 		position: relative;
 	}
 	.primary-navigation a:hover,
-	.session a:hover,
-	.session button:hover:not(:disabled),
+	.utility-navigation a:hover,
 	.empty-projects:hover {
 		background: var(--theme-hover);
 	}
 	.primary-navigation a.active,
-	.session a.active {
+	.utility-navigation a.active {
 		color: var(--theme-accent);
 		background: var(--theme-accent-soft);
 		font-weight: 750;
 	}
 	.primary-navigation svg,
-	.session svg,
+	.utility-navigation svg,
 	.mobile-bar svg,
 	.close-sidebar svg {
 		width: 1.2rem;
@@ -550,55 +582,74 @@
 	}
 	.session {
 		display: grid;
-		gap: 0.1rem;
+		gap: 0.75rem;
 		margin-top: auto;
-		padding-top: 1.5rem;
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--theme-border);
 	}
 	.appearance-switcher {
 		display: grid;
-		gap: 0.4rem;
-		margin: 0 0 0.65rem;
+		gap: 0.35rem;
+		margin: 0;
 		padding: 0;
 		border: 0;
 	}
 	.appearance-switcher legend {
-		padding: 0 0.3rem;
-		color: var(--color-text-muted);
-		font-size: 0.64rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
+		padding: 0 0.2rem;
+		color: var(--color-text-secondary);
+		font-size: 0.68rem;
+		font-weight: 700;
 	}
 	.appearance-switcher > div {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.18rem;
-		padding: 0.2rem;
+		gap: 0.15rem;
+		padding: 0.18rem;
 		border: 1px solid var(--theme-border);
-		border-radius: 0.55rem;
-		background: var(--theme-canvas);
+		border-radius: 0.65rem;
+		background: var(--theme-control);
 	}
 	.appearance-switcher button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.3rem;
 		min-width: 0;
-		padding: 0.42rem 0.2rem;
+		padding: 0.42rem 0.16rem;
 		border: 0;
-		border-radius: 0.35rem;
+		border-radius: 0.46rem;
 		color: var(--color-text-muted);
 		background: transparent;
 		font: inherit;
-		font-size: 0.68rem;
+		font-size: 0.66rem;
 		font-weight: 700;
 		text-align: center;
 		cursor: pointer;
+		transition:
+			color 120ms ease,
+			background 120ms ease,
+			box-shadow 120ms ease;
+	}
+	.appearance-switcher button svg {
+		width: 0.92rem;
+		height: 0.92rem;
+		flex: 0 0 auto;
+		fill: none;
+		stroke: currentColor;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.7;
 	}
 	.appearance-switcher button:hover:not(:disabled) {
 		color: var(--color-text);
-		background: var(--theme-hover);
+		background: color-mix(in srgb, var(--theme-surface) 72%, transparent);
 	}
 	.appearance-switcher button[aria-pressed='true'] {
 		color: var(--theme-accent);
-		background: var(--theme-accent-soft);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 38%, var(--theme-border));
+		background: var(--theme-surface-elevated);
+		box-shadow:
+			0 1px 2px color-mix(in srgb, var(--color-text) 12%, transparent),
+			inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 25%, var(--theme-border));
 	}
 	.appearance-switcher.saving {
 		opacity: 0.62;
@@ -612,26 +663,73 @@
 		font-size: 0.7rem;
 		line-height: 1.35;
 	}
-	.session button {
-		width: 100%;
-		cursor: pointer;
-		text-align: left;
-	}
-	.session button:disabled {
-		cursor: wait;
-		opacity: 0.55;
+	.utility-navigation {
+		display: grid;
+		gap: 0.08rem;
 	}
 	.profile {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
 		min-width: 0;
-		padding: 0.65rem 0.6rem 0.2rem;
+		padding: 0.7rem 0.2rem 0;
+		border-top: 1px solid var(--theme-border);
+	}
+	.avatar {
+		display: grid;
+		width: 1.65rem;
+		height: 1.65rem;
+		flex: 0 0 auto;
+		place-items: center;
+		border-radius: 50%;
+		color: var(--theme-accent);
+		background: var(--theme-accent-soft);
+		font-size: 0.68rem;
+		font-weight: 800;
 	}
 	.username {
 		display: block;
+		min-width: 0;
 		overflow: hidden;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		font-size: 0.74rem;
+		font-weight: 650;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.logout {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		width: auto;
+		margin-left: auto;
+		padding: 0.35rem 0.4rem;
+		border: 0;
+		border-radius: 0.38rem;
+		color: var(--color-text-muted);
+		background: transparent;
+		font: inherit;
+		font-size: 0.68rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.logout:hover:not(:disabled) {
+		color: var(--color-text);
+		background: var(--theme-hover);
+	}
+	.logout:disabled {
+		cursor: wait;
+		opacity: 0.55;
+	}
+	.logout svg {
+		width: 0.95rem;
+		height: 0.95rem;
+		flex: 0 0 auto;
+		fill: none;
+		stroke: currentColor;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.7;
 	}
 	.content {
 		min-width: 0;

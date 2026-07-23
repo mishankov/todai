@@ -222,6 +222,9 @@ test('applies system and saved appearance across reloads, projects, and unauthen
 	await expect(
 		sidebarAppearance.getByRole('button', { name: 'Use light appearance' })
 	).toHaveAttribute('aria-pressed', 'true');
+	await expect(
+		sidebarAppearance.getByRole('button', { name: 'Use dark appearance' })
+	).toHaveAttribute('aria-pressed', 'false');
 
 	await sidebarAppearance.getByRole('button', { name: 'Use system appearance' }).click();
 	await expect(
