@@ -8,6 +8,14 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 		throw error;
 	});
 	const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+	const commandPaletteSearch = page.getByRole('combobox', {
+		name: 'Search commands, projects, and tasks'
+	});
+	const openCommandPalette = async () => {
+		await page.keyboard.press(`${primaryModifier}+K`);
+		await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+		await expect(commandPaletteSearch).toBeFocused();
+	};
 	let authenticated = false;
 	let tasks: Task[] = [];
 	let comments: TaskComment[] = [];
@@ -593,7 +601,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.getByRole('link', { name: 'Tasks' }).click();
 	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
 
-	await page.keyboard.press(`${primaryModifier}+K`);
+	await openCommandPalette();
 	await page.keyboard.type('Manage projects');
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/\/projects\?project=project-2$/);
@@ -606,7 +614,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.reload();
 	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
 
-	await page.keyboard.press(`${primaryModifier}+K`);
+	await openCommandPalette();
 	await page.keyboard.type('Account settings');
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/\/settings\?project=project-2$/);
@@ -625,25 +633,24 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks');
 	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
 
-	await page.keyboard.press(`${primaryModifier}+K`);
-	await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+	await openCommandPalette();
 	await page.keyboard.type('Today');
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/\/projects\/project-2\/today$/);
 
-	await page.keyboard.press(`${primaryModifier}+K`);
+	await openCommandPalette();
 	await page.keyboard.type('Personal');
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/\/projects\/project-1/);
 
-	await page.keyboard.press(`${primaryModifier}+K`);
+	await openCommandPalette();
 	await page.keyboard.type('Buy oat milk');
 	await expect(page.getByRole('option', { name: /Buy oat milk/ })).toBeVisible();
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('dialog', { name: 'Edit task: Buy oat milk' })).toBeVisible();
 	await page.keyboard.press('Escape');
 
-	await page.keyboard.press(`${primaryModifier}+K`);
+	await openCommandPalette();
 	await page.keyboard.type('Work');
 	await page.keyboard.press('End');
 	await page.keyboard.press('Enter');
