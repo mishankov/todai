@@ -47,6 +47,9 @@ jobs:
           FRONTEND_IMAGE: todai-frontend:smoke
         run: deploy/smoke-images.sh
       - name: Verify Compose, same-origin SSE, persistence, backup, and restore
+        # The packaged runner is exercised directly on both architectures above.
+        # Avoid nested arm64 child-process emulation inside an x86 QEMU container.
+        if: matrix.platform == 'linux/amd64'
         env:
           TODAI_BACKEND_IMAGE: todai-backend
           TODAI_FRONTEND_IMAGE: todai-frontend
