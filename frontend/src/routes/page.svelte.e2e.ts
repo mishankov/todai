@@ -489,7 +489,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page).toHaveURL(/\/projects$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
 	await page.getByLabel('Project name').fill('Personal');
-	await page.getByRole('button', { name: 'Create' }).click();
+	await page.getByRole('button', { name: 'Create', exact: true }).click();
 	await expect(page).toHaveURL(/\/projects\/project-1$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Inbox');
 	await expect.poll(() => inboxLoads).toBeGreaterThanOrEqual(2);
@@ -536,9 +536,11 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	});
 
 	await page.getByRole('link', { name: 'Manage projects' }).click();
+	await expect(page).toHaveURL(/\/projects\?project=project-1$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-1');
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Projects');
 	await page.getByLabel('Project name').fill('Work');
-	await page.getByRole('button', { name: 'Create' }).click();
+	await page.getByRole('button', { name: 'Create', exact: true }).click();
 	await expect(page).toHaveURL(/\/projects\/project-2$/);
 	await page.getByRole('link', { name: 'Tasks' }).click();
 	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
@@ -577,6 +579,51 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	delayTaskLoads = false;
 	await page.keyboard.press('Escape');
 	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
+
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('todai.project.project-2.last-view')))
+		.toBe('/projects/project-2/tasks');
+	await page.getByRole('link', { name: 'Account settings' }).click();
+	await expect(page).toHaveURL(/\/settings\?project=project-2$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Settings');
+	await page.reload();
+	await expect(page).toHaveURL(/\/settings\?project=project-2$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
+	await page.getByRole('link', { name: 'Tasks' }).click();
+	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
+
+	await page.keyboard.press(`${primaryModifier}+K`);
+	await page.keyboard.type('Manage projects');
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/projects\?project=project-2$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/projects\/project-2\/tasks$/);
+	await page.goForward();
+	await expect(page).toHaveURL(/\/projects\?project=project-2$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
+	await page.reload();
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
+
+	await page.keyboard.press(`${primaryModifier}+K`);
+	await page.keyboard.type('Account settings');
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/settings\?project=project-2$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
+	expect(await page.evaluate(() => localStorage.getItem('todai.project.project-2.last-view'))).toBe(
+		'/projects/project-2/tasks'
+	);
+
+	await page.goto('/settings');
+	await expect(page).toHaveURL(/\/settings$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('');
+	await page.goto('/projects');
+	await expect(page).toHaveURL(/\/projects$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('');
+	await page.goto('/projects/project-2/tasks');
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks');
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('project-2');
 
 	await page.keyboard.press(`${primaryModifier}+K`);
 	await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
@@ -746,6 +793,20 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await expect(page).toHaveURL(/\/activity$/);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Activity');
 	await expect(page.getByText('“Buy oat milk”')).toBeVisible();
+
+	await page.getByRole('link', { name: 'Manage projects' }).click();
+	await page.getByLabel('Project name').fill('Disposable');
+	await page.getByRole('button', { name: 'Create', exact: true }).click();
+	await expect(page).toHaveURL(/\/projects\/project-3$/);
+	await page.getByRole('link', { name: 'Manage projects' }).click();
+	await expect(page).toHaveURL(/\/projects\?project=project-3$/);
+	await page
+		.getByRole('listitem')
+		.filter({ hasText: 'Disposable' })
+		.getByRole('button', { name: 'Archive' })
+		.click();
+	await expect(page).toHaveURL(/\/projects$/);
+	await expect(page.getByLabel('Project', { exact: true })).toHaveValue('');
 
 	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL(/\/login$/);
