@@ -7,4 +7,4 @@
 
 <svelte:head><title>Projects — Todai</title></svelte:head>
 
-<ProjectList initialProjects={data.projects} />
+<ProjectList initialProjects={data.projects} contextualProjectId={data.contextualProjectId} />

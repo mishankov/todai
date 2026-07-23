@@ -106,6 +106,34 @@ describe('GlobalShortcuts', () => {
 		}
 	});
 
+	it('uses the active project in shared account command destinations', async () => {
+		const project = testProject({ id: 'project/with space' });
+		const navigate = vi.fn(async () => {});
+		render(GlobalShortcuts, {
+			activeProject: project,
+			projects: [project],
+			currentPath: `/projects/${encodeURIComponent(project.id)}/tasks`,
+			navigate,
+			loadSections: vi.fn(async () => [])
+		});
+
+		dispatchShortcut('KeyK');
+		const palette = page.getByRole('dialog', { name: 'Command palette' });
+		await palette
+			.getByRole('combobox', { name: 'Search commands, projects, and tasks' })
+			.fill('Manage projects');
+		await userEvent.keyboard('{Enter}');
+		expect(navigate).toHaveBeenLastCalledWith('/projects?project=project%2Fwith+space');
+
+		dispatchShortcut('KeyK');
+		await page
+			.getByRole('dialog', { name: 'Command palette' })
+			.getByRole('combobox', { name: 'Search commands, projects, and tasks' })
+			.fill('Account settings');
+		await userEvent.keyboard('{Enter}');
+		expect(navigate).toHaveBeenLastCalledWith('/settings?project=project%2Fwith+space');
+	});
+
 	it('keeps project commands inactive without a project but leaves help available', async () => {
 		const navigate = vi.fn();
 		render(GlobalShortcuts, { projects: [], currentPath: '/projects', navigate });

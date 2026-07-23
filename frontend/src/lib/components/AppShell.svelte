@@ -6,7 +6,11 @@
 	import { browser } from '$app/environment';
 	import type { Appearance } from '$lib/appearance/theme';
 	import type { Project, ProjectColorTheme } from '$lib/projects/client';
-	import { recordProjectPath, rememberedProjectPath } from '$lib/projects/navigation';
+	import {
+		accountDestinationPath,
+		recordProjectPath,
+		rememberedProjectPath
+	} from '$lib/projects/navigation';
 	import { commandPaletteRequestEvent, quickAddRequestEvent } from '$lib/shortcuts/events';
 	import {
 		ariaShortcut,
@@ -346,7 +350,7 @@
 					</a>
 				{/if}
 				<a
-					href={resolve('/projects')}
+					href={accountDestinationPath('/projects', activeProject?.id)}
 					class:active={currentPath === '/projects'}
 					aria-current={currentPath === '/projects' ? 'page' : undefined}
 					onclick={closeSidebar}
@@ -356,7 +360,7 @@
 					><span>Manage projects</span>
 				</a>
 				<a
-					href={resolve('/settings')}
+					href={accountDestinationPath('/settings', activeProject?.id)}
 					class:active={currentPath === '/settings'}
 					aria-current={currentPath === '/settings' ? 'page' : undefined}
 					onclick={closeSidebar}

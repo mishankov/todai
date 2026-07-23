@@ -7,6 +7,7 @@
 	import { publishSavedAppearance, type Appearance } from '$lib/appearance/theme';
 	import { logout } from '$lib/auth/client';
 	import AppShell from '$lib/components/AppShell.svelte';
+	import { activeProjectFromLocation } from '$lib/projects/navigation';
 	import RealtimeSync from '$lib/realtime/RealtimeSync.svelte';
 	import { updateSettings } from '$lib/settings/client';
 	import GlobalShortcuts from '$lib/shortcuts/GlobalShortcuts.svelte';
@@ -17,18 +18,16 @@
 
 	let { data, children }: LayoutProps = $props();
 	let locationPath = $state(browser ? window.location.pathname : '/');
-	let activeProject = $derived.by(() => {
-		const match = locationPath.match(/^\/projects\/([^/]+)/);
-		if (!match) return undefined;
-		return data.projects.find((project) => project.id === decodeURIComponent(match[1]));
-	});
+	let locationSearch = $state(browser ? window.location.search : '');
+	let activeProject = $derived(
+		activeProjectFromLocation(data.projects, locationPath, locationSearch)
+	);
 
 	afterNavigate(() => {
-		locationPath = window.location.pathname;
+		updateLocation();
 	});
 
 	onMount(() => {
-		const updateLocation = () => (locationPath = window.location.pathname);
 		window.addEventListener('popstate', updateLocation);
 		window.addEventListener(taskNavigationEvent, updateLocation);
 		return () => {
@@ -36,6 +35,11 @@
 			window.removeEventListener(taskNavigationEvent, updateLocation);
 		};
 	});
+
+	function updateLocation() {
+		locationPath = window.location.pathname;
+		locationSearch = window.location.search;
+	}
 
 	async function signOut() {
 		await logout(fetch);

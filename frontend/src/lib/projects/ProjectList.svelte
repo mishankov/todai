@@ -5,9 +5,10 @@
 
 	interface Props {
 		initialProjects: Project[];
+		contextualProjectId?: string;
 	}
 
-	let { initialProjects }: Props = $props();
+	let { initialProjects, contextualProjectId }: Props = $props();
 	let projects = $derived([...initialProjects]);
 	let activeProjects = $derived(projects.filter((project) => project.archivedAt === null));
 	let archivedProjects = $derived(projects.filter((project) => project.archivedAt !== null));
@@ -64,6 +65,7 @@
 	}
 
 	async function archive(project: Project) {
+		const wasContextualProject = project.id === contextualProjectId;
 		busyId = project.id;
 		errorMessage = '';
 		try {
@@ -73,6 +75,7 @@
 			});
 			projects = projects.map((candidate) => (candidate.id === updated.id ? updated : candidate));
 			await refreshProjectLoads();
+			if (wasContextualProject) await goto(resolve('/projects'));
 		} catch {
 			errorMessage = 'The project could not be archived. Please try again.';
 		} finally {

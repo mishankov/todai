@@ -6,7 +6,7 @@
 	import CommandPalette from '$lib/palette/CommandPalette.svelte';
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { listProjectSections } from '$lib/projects/client';
-	import { rememberedProjectPath } from '$lib/projects/navigation';
+	import { accountDestinationPath, rememberedProjectPath } from '$lib/projects/navigation';
 	import type { Task, TaskCreateDraft } from '$lib/tasks/client';
 	import { openTask } from '$lib/tasks/navigation';
 	import { createTaskWithProperties as createTaskRequest } from '$lib/tasks/client';
@@ -118,11 +118,11 @@
 				return;
 			case 'manage-projects':
 				previousFocus = null;
-				await navigate('/projects');
+				await navigate(accountDestinationPath('/projects', activeProject?.id));
 				return;
 			case 'account-settings':
 				previousFocus = null;
-				await navigate('/settings');
+				await navigate(accountDestinationPath('/settings', activeProject?.id));
 				return;
 		}
 

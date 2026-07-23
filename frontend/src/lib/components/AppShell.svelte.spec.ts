@@ -37,6 +37,12 @@ describe('AppShell', () => {
 			.element(page.getByRole('link', { name: 'Tasks' }))
 			.toHaveAttribute('href', '/projects/work-id/tasks');
 		await expect
+			.element(page.getByRole('link', { name: 'Manage projects' }))
+			.toHaveAttribute('href', '/projects?project=work-id');
+		await expect
+			.element(page.getByRole('link', { name: 'Account settings' }))
+			.toHaveAttribute('href', '/settings?project=work-id');
+		await expect
 			.element(
 				page.getByRole('button', {
 					name: /Create task \((Cmd \+ N \/ Cmd \+ Option \+ N|Ctrl \+ N \/ Ctrl \+ Alt \+ N)\)/
@@ -92,6 +98,24 @@ describe('AppShell', () => {
 		await expect
 			.element(page.getByRole('link', { name: 'Account settings' }))
 			.not.toHaveAttribute('aria-current');
+	});
+
+	it('keeps account destinations global when there is no active project', async () => {
+		render(AppShell, {
+			username: 'owner',
+			projects: [testProject()],
+			appearance: 'system',
+			onAppearanceChange: vi.fn(),
+			onLogout: vi.fn(),
+			currentPath: '/projects'
+		});
+
+		await expect
+			.element(page.getByRole('link', { name: 'Manage projects' }))
+			.toHaveAttribute('href', '/projects');
+		await expect
+			.element(page.getByRole('link', { name: 'Account settings' }))
+			.toHaveAttribute('href', '/settings');
 	});
 
 	it('does not remember a task deep link as the project view', async () => {

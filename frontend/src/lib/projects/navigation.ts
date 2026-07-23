@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import type { Project } from './client';
 
 const lastProjectKey = 'todai.last-project-id';
+const projectContextParameter = 'project';
 const projectViewSuffixes = [
 	'',
 	'/overview',
@@ -10,6 +11,41 @@ const projectViewSuffixes = [
 	'/activity',
 	'/settings'
 ] as const;
+
+export type AccountDestination = '/projects' | '/settings';
+
+export function accountDestinationPath(
+	destination: AccountDestination,
+	projectId?: string
+): string {
+	if (!projectId) return destination;
+	const parameters = new URLSearchParams({ [projectContextParameter]: projectId });
+	return `${destination}?${parameters}`;
+}
+
+export function activeProjectFromLocation(
+	projects: readonly Project[],
+	pathname: string,
+	search = ''
+): Project | undefined {
+	const projectId = projectIdFromLocation(pathname, search);
+	return projectId
+		? projects.find((project) => project.id === projectId && project.archivedAt === null)
+		: undefined;
+}
+
+export function projectIdFromLocation(pathname: string, search = ''): string | undefined {
+	const match = pathname.match(/^\/projects\/([^/]+)/);
+	if (match) {
+		try {
+			return decodeURIComponent(match[1]);
+		} catch {
+			return undefined;
+		}
+	}
+	if (pathname !== '/projects' && pathname !== '/settings') return undefined;
+	return new URLSearchParams(search).get(projectContextParameter) || undefined;
+}
 
 export function initialProjectPath(projects: Project[], suffix = ''): string {
 	const rememberedId = browser ? window.localStorage.getItem(lastProjectKey) : null;
