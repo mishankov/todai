@@ -59,7 +59,7 @@ describe("Pi runner", () => {
         error: { code: "pi_runtime_error", retryable: false },
       });
     } finally {
-      runner.close();
+      await runner.close();
       await rm(agentDir, { recursive: true, force: true });
     }
   });

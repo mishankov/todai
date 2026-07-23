@@ -67,6 +67,42 @@ describe("runner CLI", () => {
     ]);
     expect(result.stderr).toContain("invalid_json");
   });
+
+  it("exits cleanly on SIGTERM", async () => {
+    const standalone = process.env.TODAI_RUNNER_TEST_EXECUTABLE?.trim();
+    const executable = standalone || process.execPath;
+    const args = standalone ? [] : ["src/cli/main.ts"];
+    const child = spawn(executable, args, {
+      cwd: componentDirectory,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdoutBuffer = "";
+    const ready = new Promise<void>((resolve, reject) => {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdoutBuffer += chunk;
+        const lines = stdoutBuffer.split("\n");
+        stdoutBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line) continue;
+          const event = JSON.parse(line) as RunnerOutput;
+          if (event.type === "runner.ready") resolve();
+        }
+      });
+      child.once("error", reject);
+    });
+
+    await ready;
+    child.kill("SIGTERM");
+    const [exitCode, signal] = (await once(child, "exit")) as [
+      number | null,
+      NodeJS.Signals | null,
+    ];
+
+    expect(exitCode).toBe(0);
+    expect(signal).toBeNull();
+    expect(stdoutBuffer).toBe("");
+  });
 });
 
 async function runCli(input: string, terminalType: RunnerOutput["type"]) {

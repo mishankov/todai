@@ -37,11 +37,18 @@ process.stdin.on("end", () => {
   }
 });
 
-process.on("SIGTERM", () => {
-  runner.close();
+let shuttingDown = false;
+
+process.on("SIGTERM", () => void shutdown(0));
+process.on("SIGINT", () => void shutdown(0));
+
+async function shutdown(exitCode: number): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
   process.stdin.destroy();
-  process.exitCode = 0;
-});
+  await runner.close();
+  process.exitCode = exitCode;
+}
 
 function acceptLine(line: string): void {
   try {
@@ -63,7 +70,6 @@ function failFraming(error: unknown): void {
       : new FramingError("failed to read JSONL input");
   console.error(`invalid_frame: ${framingError.message}`);
   runner.reject(new ProtocolError("invalid_frame", framingError.message));
-  runner.close();
   process.stdin.pause();
-  process.exitCode = 1;
+  void shutdown(1);
 }

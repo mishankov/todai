@@ -44,8 +44,8 @@ export class Runner {
     if (this.#runtime === "pi") this.#pi.reject(error);
     else this.#fake.reject(error);
   }
-  close(): void {
+  async close(): Promise<void> {
     this.#fake.close();
-    this.#pi.close();
+    await this.#pi.close();
   }
 }

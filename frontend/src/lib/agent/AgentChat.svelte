@@ -64,13 +64,6 @@
 	let messages = $derived(chatState ? visibleAgentMessages(chatState) : []);
 	let activeRun = $derived(chatState ? activeAgentRun(chatState) : null);
 	let visibleTools = $derived(chatState ? recentTools(chatState.tools, activeRun?.id ?? null) : []);
-	let latestRun = $derived(chatState?.runs.at(-1) ?? null);
-	let runError = $derived(
-		latestRun?.status === 'failed'
-			? latestRun.error || 'The assistant could not finish this request.'
-			: ''
-	);
-	let displayedError = $derived(errorMessage || runError);
 	let canSend = $derived(
 		chatState !== null && draft.trim() !== '' && !posting && !stopping && activeRun === null
 	);
@@ -485,8 +478,8 @@
 			{#if reconnecting}
 				<p class="connection-status" role="status">Reconnecting…</p>
 			{/if}
-			{#if displayedError}
-				<p class="error" role="alert">{displayedError}</p>
+			{#if errorMessage}
+				<p class="error" role="alert">{errorMessage}</p>
 			{/if}
 			<form
 				onsubmit={(event) => {

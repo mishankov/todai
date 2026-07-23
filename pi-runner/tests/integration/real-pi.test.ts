@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,7 +87,24 @@ describe.runIf(smokeEnabled)("real Pi smoke", () => {
 
   it("authenticates, streams, calls a Todai tool, and persists valid auth state", async () => {
     const authPath = join(agentDir, "auth.json");
-    const before = await stat(authPath);
+    const beforeText = await readFile(authPath, "utf8");
+    const beforeHash = createHash("sha256").update(beforeText).digest("hex");
+    const auth = JSON.parse(beforeText) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const credential = auth[provider];
+    if (credential === undefined) {
+      throw new Error(`auth.json has no credential for provider ${provider}`);
+    }
+    const expectsRefresh = credential.type === "oauth";
+    if (expectsRefresh) {
+      credential.expires = 0;
+      await writeFile(authPath, `${JSON.stringify(auth, null, 2)}\n`, {
+        mode: 0o600,
+      });
+    }
+    const requestStartedAt = Date.now();
     const events = await runner!.run(
       command(
         "real",
@@ -122,11 +140,25 @@ describe.runIf(smokeEnabled)("real Pi smoke", () => {
         .join(""),
     ).toContain("TODAI_BUN_SMOKE");
 
-    const persisted = JSON.parse(await readFile(authPath, "utf8")) as unknown;
-    expect(persisted).toBeTypeOf("object");
-    expect((await stat(authPath)).mtimeMs).toBeGreaterThanOrEqual(
-      before.mtimeMs,
-    );
+    const persistedText = await readFile(authPath, "utf8");
+    const persisted = JSON.parse(persistedText) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const persistedCredential = persisted[provider];
+    expect(persistedCredential?.type).toBe(credential.type);
+    if (expectsRefresh) {
+      expect(persistedCredential?.access).toBeTypeOf("string");
+      expect(persistedCredential?.refresh).toBeTypeOf("string");
+      expect(persistedCredential?.expires).toBeTypeOf("number");
+      expect(persistedCredential?.expires as number).toBeGreaterThan(
+        requestStartedAt,
+      );
+    } else {
+      expect(createHash("sha256").update(persistedText).digest("hex")).toBe(
+        beforeHash,
+      );
+    }
   }, 120_000);
 
   it("cancels an authenticated tool run and remains ready for clean shutdown", async () => {
@@ -157,6 +189,25 @@ describe.runIf(smokeEnabled)("real Pi smoke", () => {
         event.type === "run.aborted",
     );
     expect(aborted).toMatchObject({ type: "run.aborted", reason: "requested" });
+  }, 120_000);
+
+  it("aborts any remaining work and exits cleanly on SIGTERM", async () => {
+    const run = command(
+      "signal",
+      "smoke-cancel",
+      "Call task_get with taskId smoke-task and wait for its result.",
+    );
+    runner!.write(run);
+    await runner!.waitFor(
+      (event) =>
+        "runId" in event &&
+        event.runId === run.runId &&
+        event.type === "tool.started" &&
+        event.toolName === "task_get",
+    );
+    const exit = await runner!.terminate("SIGTERM");
+    runner = undefined;
+    expect(exit).toEqual({ exitCode: 0, signal: null });
   }, 120_000);
 
   function command(
@@ -190,12 +241,29 @@ class RunnerProcess {
   readonly #waiters = new Set<{
     predicate: (event: RunnerOutput) => boolean;
     resolve: (event: RunnerOutput) => void;
+    reject: (error: Error) => void;
   }>();
+  readonly #exit: Promise<{
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+  }>;
   #stdout = "";
   #stderr = "";
+  #expectedExit = false;
 
   private constructor(child: ChildProcessWithoutNullStreams) {
     this.#child = child;
+    this.#exit = new Promise((resolve) => {
+      child.once("exit", (exitCode, signal) => {
+        resolve({ exitCode, signal });
+        if (this.#expectedExit) return;
+        const error = new Error(
+          `runner exited unexpectedly (${exitCode ?? signal}); stderr: ${this.#stderr}`,
+        );
+        for (const waiter of this.#waiters) waiter.reject(error);
+        this.#waiters.clear();
+      });
+    });
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => this.#accept(chunk));
     child.stderr.setEncoding("utf8");
@@ -211,7 +279,10 @@ class RunnerProcess {
     const processRunner = new RunnerProcess(
       spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"] }),
     );
-    await processRunner.waitFor((event) => event.type === "runner.ready");
+    await processRunner.waitFor(
+      (event) => event.type === "runner.ready",
+      10_000,
+    );
     return processRunner;
   }
 
@@ -234,27 +305,44 @@ class RunnerProcess {
     return this.#events.slice(start);
   }
 
-  waitFor(predicate: (event: RunnerOutput) => boolean): Promise<RunnerOutput> {
+  waitFor(
+    predicate: (event: RunnerOutput) => boolean,
+    timeoutMs = 110_000,
+  ): Promise<RunnerOutput> {
     const existing = this.#events.findLast(predicate);
     if (existing) return Promise.resolve(existing);
     return new Promise((resolve, reject) => {
-      const waiter = { predicate, resolve };
+      const waiter = { predicate, resolve, reject };
       this.#waiters.add(waiter);
       const timeout = setTimeout(() => {
         this.#waiters.delete(waiter);
         reject(new Error(`runner event timed out; stderr: ${this.#stderr}`));
-      }, 110_000);
+      }, timeoutMs);
       waiter.resolve = (event) => {
         clearTimeout(timeout);
         resolve(event);
+      };
+      waiter.reject = (error) => {
+        clearTimeout(timeout);
+        reject(error);
       };
     });
   }
 
   async close(): Promise<void> {
-    this.#child.stdin.end();
+    if (this.#child.exitCode !== null || this.#child.signalCode !== null)
+      return;
+    await this.terminate("SIGTERM");
+  }
+
+  async terminate(signal: NodeJS.Signals): Promise<{
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+  }> {
+    this.#expectedExit = true;
+    this.#child.kill(signal);
     const exit = Promise.race([
-      once(this.#child, "exit"),
+      this.#exit,
       new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("runner did not exit cleanly")),
@@ -263,7 +351,7 @@ class RunnerProcess {
       ),
     ]);
     try {
-      await exit;
+      return await exit;
     } catch (error) {
       this.#child.kill("SIGKILL");
       throw error;

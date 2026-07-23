@@ -66,10 +66,11 @@ export class PiRunner {
     this.#write(event);
   }
 
-  close(): void {
-    void this.#active?.session?.abort();
-    this.#active?.session?.dispose();
+  async close(): Promise<void> {
+    const active = this.#active;
     this.#active = undefined;
+    await active?.session?.abort();
+    active?.session?.dispose();
   }
 
   async #run(command: RunStartCommand): Promise<void> {

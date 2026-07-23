@@ -50,36 +50,6 @@ func TestRuntimeAdaptsDeterministicRunnerEvents(t *testing.T) {
 	}
 }
 
-func TestRuntimeRunsCompiledTypeScriptRunner(t *testing.T) {
-	entry := "../../../pi-runner/dist/cli/main.js"
-	if _, err := os.Stat(entry); errors.Is(err, os.ErrNotExist) {
-		t.Skip("compiled pi-runner is not available")
-	} else if err != nil {
-		t.Fatalf("stat compiled runner: %v", err)
-	}
-	runtime := piruntime.New(piruntime.Config{
-		Executable: "node", Args: []string{entry}, StartupTimeout: 5 * time.Second,
-	})
-	events := make([]agent.RuntimeEvent, 0)
-	request := testRunRequest()
-	request.History = nil
-	err := runtime.Run(context.Background(), request, func(
-		_ context.Context,
-		event agent.RuntimeEvent,
-	) error {
-		events = append(events, event)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if len(events) != 4 || events[0].Type != agent.EventRunStarted ||
-		events[1].Type != agent.EventMessageDelta || events[2].Type != agent.EventHistoryMessage ||
-		events[3].Type != agent.EventRunCompleted {
-		t.Errorf("events = %#v", events)
-	}
-}
-
 func TestRuntimeAcceptsPartialJSONLLines(t *testing.T) {
 	runtime := helperRuntime(t, "partial")
 	events := make([]agent.RuntimeEvent, 0)
@@ -175,12 +145,40 @@ func TestRuntimeRequestsAbortAndPersistsTerminalEvent(t *testing.T) {
 	}
 }
 
+func TestRuntimeTimesOutWaitingForRunnerReady(t *testing.T) {
+	runtime := helperRuntime(t, "startup-timeout")
+
+	err := runtime.Run(
+		context.Background(), testRunRequest(),
+		func(context.Context, agent.RuntimeEvent) error { return nil },
+	)
+	if err == nil || err.Error() != "runner startup timed out" {
+		t.Fatalf("Run() error = %v, want runner startup timed out", err)
+	}
+}
+
+func TestRuntimeReportsUnexpectedRunnerExit(t *testing.T) {
+	runtime := helperRuntime(t, "unexpected-exit")
+
+	err := runtime.Run(
+		context.Background(), testRunRequest(),
+		func(context.Context, agent.RuntimeEvent) error { return nil },
+	)
+	if !errors.Is(err, piruntime.ErrUnexpectedExit) {
+		t.Fatalf("Run() error = %v, want ErrUnexpectedExit", err)
+	}
+}
+
 func TestRuntimeHelperProcess(t *testing.T) {
 	if os.Getenv("TODAI_RUNNER_HELPER") != "1" {
 		return
 	}
 
 	scenario := os.Getenv("TODAI_RUNNER_SCENARIO")
+	if scenario == "startup-timeout" {
+		time.Sleep(10 * time.Second)
+		os.Exit(8)
+	}
 	if scenario == "environment" && os.Getenv("TODAI_DATABASE_URL") != "" {
 		os.Exit(7)
 	}
@@ -212,6 +210,9 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		"protocol": "todai.runner", "version": 4, "type": "run.started",
 		"runId": runID, "sequence": 1, "model": "selected-model", "thinkingEffort": "high",
 	})
+	if scenario == "unexpected-exit" {
+		os.Exit(0)
+	}
 	if scenario == "invalid" {
 		_, _ = fmt.Fprintln(os.Stdout, "this is not JSON")
 		os.Exit(0)
@@ -276,6 +277,10 @@ func TestRuntimeHelperProcess(t *testing.T) {
 
 func helperRuntime(t *testing.T, scenario string) *piruntime.Runtime {
 	t.Helper()
+	startupTimeout := time.Second
+	if scenario == "startup-timeout" {
+		startupTimeout = 50 * time.Millisecond
+	}
 	return piruntime.New(piruntime.Config{
 		Executable: os.Args[0],
 		Args:       []string{"-test.run=TestRuntimeHelperProcess"},
@@ -283,7 +288,7 @@ func helperRuntime(t *testing.T, scenario string) *piruntime.Runtime {
 			"TODAI_RUNNER_HELPER=1",
 			"TODAI_RUNNER_SCENARIO=" + scenario,
 		},
-		StartupTimeout: time.Second,
+		StartupTimeout: startupTimeout,
 		AbortTimeout:   time.Second,
 	})
 }

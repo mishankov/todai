@@ -136,8 +136,17 @@ jobs:
         env:
           TODAI_RUNNER_TEST_EXECUTABLE: ./${{ matrix.executable }}
         run: bun run test:standalone
+      - name: Require real Pi smoke configuration
+        run: |
+          if test -z "${TODAI_PI_SMOKE_AUTH_JSON}"; then
+            echo "::error::TODAI_PI_SMOKE_AUTH_JSON secret is required for the real Pi smoke test"
+            exit 1
+          fi
+          if test -z "${TODAI_PI_PROVIDER}" || test -z "${TODAI_PI_MODEL}"; then
+            echo "::error::TODAI_PI_PROVIDER and TODAI_PI_MODEL repository variables are required for the real Pi smoke test"
+            exit 1
+          fi
       - name: Real Pi standalone smoke test
-        if: env.TODAI_PI_SMOKE_AUTH_JSON != ''
         env:
           TODAI_RUNNER_TEST_EXECUTABLE: ./${{ matrix.executable }}
           TODAI_PI_AGENT_DIR: ${{ runner.temp }}/pi-agent
