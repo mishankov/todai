@@ -285,9 +285,8 @@ describe('TaskEditorModal relationships', () => {
 		const task = testTask({ projectId: 'project with space', id: 'task/id' });
 		const copyLink = vi.fn(async () => {});
 		renderModal({ task, copyLink });
-		const copyButton = page.getByRole('button', { name: 'Copy link' });
 
-		await copyButton.click();
+		await page.getByRole('button', { name: 'Copy link' }).click();
 
 		expect(copyLink).toHaveBeenCalledWith(
 			`${window.location.origin}/projects/project%20with%20space/tasks/task%2Fid`
@@ -295,7 +294,6 @@ describe('TaskEditorModal relationships', () => {
 		await expect
 			.element(page.getByText('Link copied', { exact: true }))
 			.toHaveAttribute('role', 'status');
-		await copyButton.unhover();
 	});
 
 	it('reports clipboard failures without closing the editor', async () => {
@@ -306,9 +304,8 @@ describe('TaskEditorModal relationships', () => {
 				throw new Error('clipboard denied');
 			})
 		});
-		const copyButton = page.getByRole('button', { name: 'Copy link' });
 
-		await copyButton.click();
+		await page.getByRole('button', { name: 'Copy link' }).click();
 
 		await expect
 			.element(page.getByText('The link could not be copied. Please try again.', { exact: true }))
@@ -316,7 +313,6 @@ describe('TaskEditorModal relationships', () => {
 		await expect
 			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
 			.toBeVisible();
-		await copyButton.unhover();
 	});
 
 	it('restores focus to the opener when the modal is removed', async () => {
