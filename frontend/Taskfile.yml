@@ -8,7 +8,7 @@ tasks:
   browsers:
     desc: Install browsers required by component and end-to-end tests
     cmds:
-      - bun x playwright install chromium chromium-headless-shell
+      - bun x --bun playwright install chromium chromium-headless-shell
 
   dev:
     desc: Run the SvelteKit development server

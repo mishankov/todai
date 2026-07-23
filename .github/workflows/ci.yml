@@ -92,7 +92,7 @@ jobs:
           chmod +x "${RUNNER_TEMP}/no-node/node"
           echo "${RUNNER_TEMP}/no-node" >> "${GITHUB_PATH}"
       - run: bun install --frozen-lockfile
-      - run: bun x playwright install --with-deps chromium chromium-headless-shell
+      - run: bun x --bun playwright install --with-deps chromium chromium-headless-shell
       - run: bun run lint
       - run: bun run check
       - run: bun run test:unit --run

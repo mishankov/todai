@@ -5,7 +5,7 @@ runtime prerequisite.
 
 ```shell
 bun install --frozen-lockfile
-bun x playwright install chromium chromium-headless-shell
+bun x --bun playwright install chromium chromium-headless-shell
 bun run dev
 ```
 
