@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
+	import type { Appearance } from '$lib/appearance/theme';
 	import type { Project, ProjectColorTheme } from '$lib/projects/client';
 	import { recordProjectPath, rememberedProjectPath } from '$lib/projects/navigation';
 	import { commandPaletteRequestEvent, quickAddRequestEvent } from '$lib/shortcuts/events';
@@ -15,12 +16,14 @@
 		isApplePlatform,
 		shortcutCommand
 	} from '$lib/shortcuts/registry';
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 
 	interface Props {
 		username: string;
 		projects?: Project[];
 		activeProject?: Project;
+		appearance: Appearance;
+		onAppearanceChange: (appearance: Appearance) => Promise<void>;
 		onLogout: () => Promise<void>;
 		currentPath?: string;
 		children?: Snippet;
@@ -30,12 +33,18 @@
 		username,
 		projects = [],
 		activeProject,
+		appearance,
+		onAppearanceChange,
 		onLogout,
 		currentPath = '/',
 		children
 	}: Props = $props();
 	let signingOut = $state(false);
 	let errorMessage = $state('');
+	let appearanceError = $state('');
+	let appearanceStatus = $state('');
+	let selectedAppearance = $state<Appearance>(untrack(() => appearance));
+	let savingAppearance = $state<Appearance | null>(null);
 	let sidebarOpen = $state(false);
 	let theme = $derived<ProjectColorTheme>(activeProject?.colorTheme ?? 'sage');
 	let projectBase = $derived(activeProject ? `/projects/${activeProject.id}` : '/projects');
@@ -45,9 +54,15 @@
 	let paletteCommand = shortcutCommand('command-palette');
 	let paletteLabel = $derived(formatShortcut(paletteCommand, applePlatform));
 	let quickAddDescription = $derived(formatShortcuts(quickAddCommand, applePlatform).join(' / '));
+	const appearanceOptions: Appearance[] = ['system', 'light', 'dark'];
 
 	$effect(() => {
 		if (browser) applePlatform = isApplePlatform(window.navigator.platform);
+	});
+
+	$effect(() => {
+		const savedAppearance = appearance;
+		untrack(() => (selectedAppearance = savedAppearance));
 	});
 
 	$effect(() => {
@@ -107,6 +122,27 @@
 	function openCommandPalette() {
 		sidebarOpen = false;
 		window.dispatchEvent(new CustomEvent(commandPaletteRequestEvent));
+	}
+
+	async function changeAppearance(nextAppearance: Appearance) {
+		if (savingAppearance || nextAppearance === selectedAppearance) return;
+		savingAppearance = nextAppearance;
+		appearanceError = '';
+		appearanceStatus = '';
+		try {
+			await onAppearanceChange(nextAppearance);
+			selectedAppearance = nextAppearance;
+			appearanceStatus = `Appearance set to ${appearanceLabel(nextAppearance)}.`;
+		} catch (error) {
+			appearanceError =
+				error instanceof Error ? error.message : 'Could not save appearance. Please try again.';
+		} finally {
+			savingAppearance = null;
+		}
+	}
+
+	function appearanceLabel(value: Appearance): string {
+		return value[0].toUpperCase() + value.slice(1);
 	}
 
 	type ProjectViewSuffix = '' | '/overview' | '/today' | '/tasks' | '/activity' | '/settings';
@@ -252,6 +288,26 @@
 		{/if}
 
 		<div class="session">
+			{#if currentPath !== '/settings'}
+				<fieldset class="appearance-switcher" class:saving={savingAppearance !== null}>
+					<legend>Appearance</legend>
+					<div>
+						{#each appearanceOptions as option (option)}
+							<button
+								type="button"
+								aria-pressed={selectedAppearance === option}
+								aria-label={`Use ${option} appearance`}
+								disabled={savingAppearance !== null}
+								onclick={() => void changeAppearance(option)}
+							>
+								{appearanceLabel(option)}
+							</button>
+						{/each}
+					</div>
+				</fieldset>
+				{#if appearanceError}<p class="appearance-error" role="alert">{appearanceError}</p>{/if}
+				{#if appearanceStatus}<p class="sr-only" role="status">{appearanceStatus}</p>{/if}
+			{/if}
 			{#if activeProject}
 				<a
 					href={projectHref(activeProject.id, '/settings')}
@@ -498,6 +554,64 @@
 		margin-top: auto;
 		padding-top: 1.5rem;
 	}
+	.appearance-switcher {
+		display: grid;
+		gap: 0.4rem;
+		margin: 0 0 0.65rem;
+		padding: 0;
+		border: 0;
+	}
+	.appearance-switcher legend {
+		padding: 0 0.3rem;
+		color: var(--color-text-muted);
+		font-size: 0.64rem;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.appearance-switcher > div {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.18rem;
+		padding: 0.2rem;
+		border: 1px solid var(--theme-border);
+		border-radius: 0.55rem;
+		background: var(--theme-canvas);
+	}
+	.appearance-switcher button {
+		min-width: 0;
+		padding: 0.42rem 0.2rem;
+		border: 0;
+		border-radius: 0.35rem;
+		color: var(--color-text-muted);
+		background: transparent;
+		font: inherit;
+		font-size: 0.68rem;
+		font-weight: 700;
+		text-align: center;
+		cursor: pointer;
+	}
+	.appearance-switcher button:hover:not(:disabled) {
+		color: var(--color-text);
+		background: var(--theme-hover);
+	}
+	.appearance-switcher button[aria-pressed='true'] {
+		color: var(--theme-accent);
+		background: var(--theme-accent-soft);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 38%, var(--theme-border));
+	}
+	.appearance-switcher.saving {
+		opacity: 0.62;
+	}
+	.appearance-switcher.saving button {
+		cursor: wait;
+	}
+	.appearance-error {
+		margin: -0.35rem 0.4rem 0.55rem;
+		color: var(--color-error);
+		font-size: 0.7rem;
+		line-height: 1.35;
+	}
 	.session button {
 		width: 100%;
 		cursor: pointer;
@@ -533,6 +647,17 @@
 		margin: 0.6rem 0.5rem 0;
 		color: var(--color-error);
 		font-size: 0.76rem;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	@media (max-width: 48rem) {
 		.shell {

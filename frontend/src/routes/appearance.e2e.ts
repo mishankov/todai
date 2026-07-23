@@ -197,6 +197,7 @@ test('applies system and saved appearance across reloads, projects, and unauthen
 	await page.emulateMedia({ colorScheme: 'dark' });
 	await page.goto('/settings');
 	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'dark');
+	await expect(page.getByRole('group', { name: 'Appearance' })).toHaveCount(0);
 
 	await page.emulateMedia({ colorScheme: 'light' });
 	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'light');
@@ -209,6 +210,31 @@ test('applies system and saved appearance across reloads, projects, and unauthen
 
 	await page.reload();
 	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'dark');
+	await page.getByLabel('Project', { exact: true }).selectOption('project-sage');
+	await expect(page).toHaveURL(/\/projects\/project-sage\/overview$/);
+	const sidebarAppearance = page.getByRole('group', { name: 'Appearance' });
+	await expect(
+		sidebarAppearance.getByRole('button', { name: 'Use dark appearance' })
+	).toHaveAttribute('aria-pressed', 'true');
+
+	await sidebarAppearance.getByRole('button', { name: 'Use light appearance' }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'light');
+	await expect(
+		sidebarAppearance.getByRole('button', { name: 'Use light appearance' })
+	).toHaveAttribute('aria-pressed', 'true');
+
+	await sidebarAppearance.getByRole('button', { name: 'Use system appearance' }).click();
+	await expect(
+		sidebarAppearance.getByRole('button', { name: 'Use system appearance' })
+	).toHaveAttribute('aria-pressed', 'true');
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'dark');
+	await page.emulateMedia({ colorScheme: 'light' });
+	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'light');
+
+	await sidebarAppearance.getByRole('button', { name: 'Use dark appearance' }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'dark');
+
 	for (const project of projects) {
 		const palette = darkProjectPalettes[project.colorTheme];
 		await page.getByLabel('Project', { exact: true }).selectOption(project.id);
@@ -267,6 +293,11 @@ test('applies system and saved appearance across reloads, projects, and unauthen
 	await page.screenshot({ path: 'test-results/appearance-dark-desktop.png', fullPage: true });
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.waitForTimeout(250);
+	await page.getByRole('button', { name: 'Open navigation' }).click();
+	await expect(page.getByRole('complementary', { name: 'Application sidebar' })).toHaveClass(
+		/open/
+	);
+	await page.waitForTimeout(200);
 	await page.screenshot({ path: 'test-results/appearance-dark-mobile.png' });
 	await page.setViewportSize({ width: 1280, height: 720 });
 

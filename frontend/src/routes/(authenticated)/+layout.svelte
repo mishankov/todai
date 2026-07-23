@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AgentChat from '$lib/agent/AgentChat.svelte';
 	import AppearanceController from '$lib/appearance/AppearanceController.svelte';
+	import { publishSavedAppearance, type Appearance } from '$lib/appearance/theme';
 	import { logout } from '$lib/auth/client';
 	import AppShell from '$lib/components/AppShell.svelte';
 	import RealtimeSync from '$lib/realtime/RealtimeSync.svelte';
+	import { updateSettings } from '$lib/settings/client';
 	import GlobalShortcuts from '$lib/shortcuts/GlobalShortcuts.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -20,6 +22,23 @@
 	async function signOut() {
 		await logout(fetch);
 		await goto(resolve('/login'), { invalidateAll: true });
+	}
+
+	async function saveAppearance(appearance: Appearance) {
+		const current = data.settings.settings;
+		const updated = await updateSettings(fetch, {
+			timezone: current.timezone ?? detectedTimezone(),
+			agentModel: current.agentModel,
+			agentThinkingEffort: current.agentThinkingEffort,
+			appearance,
+			version: current.version
+		});
+		publishSavedAppearance(updated.settings.appearance);
+		await invalidateAll();
+	}
+
+	function detectedTimezone(): string {
+		return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 	}
 </script>
 
@@ -36,6 +55,8 @@
 		username={data.user.username}
 		projects={data.projects}
 		{activeProject}
+		appearance={data.settings.settings.appearance}
+		onAppearanceChange={saveAppearance}
 		onLogout={signOut}
 		currentPath={page.url.pathname}
 	>
