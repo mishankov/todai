@@ -575,14 +575,14 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 0.32rem 0.45rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.65rem;
-		background: #fff;
+		background: var(--color-surface);
 		overflow-x: auto;
 	}
 	.composer:focus-within {
-		border-color: var(--theme-accent, #477d56);
-		box-shadow: 0 0 0 0.2rem var(--theme-focus, rgb(71 125 86 / 12%));
+		border-color: var(--theme-accent);
+		box-shadow: 0 0 0 0.2rem var(--theme-focus);
 	}
 	.composer.disabled {
 		opacity: 0.55;
@@ -592,26 +592,26 @@
 		flex: 1;
 		padding: 0.35rem 0.25rem;
 		border: 0;
-		color: #17211a;
+		color: var(--color-text);
 		background: transparent;
 		font: inherit;
 		outline: none;
 	}
 	.title-input::placeholder {
-		color: #85847f;
+		color: var(--color-text-muted);
 	}
 	.chip {
 		display: inline-flex;
 		flex: none;
 		align-items: stretch;
-		border: 1px solid color-mix(in srgb, var(--theme-accent, #2d6540) 28%, #dce3da);
+		border: 1px solid color-mix(in srgb, var(--theme-accent) 28%, var(--theme-border));
 		border-radius: 999px;
-		background: var(--theme-hover, #f3f7f2);
+		background: var(--theme-hover);
 		overflow: hidden;
 	}
 	.chip button {
 		border: 0;
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		background: transparent;
 		font: inherit;
 		font-size: 0.72rem;
@@ -629,7 +629,7 @@
 		padding: 0.25rem 0.45rem 0.25rem 0.24rem;
 	}
 	.chip button:focus-visible {
-		outline: 2px solid var(--theme-accent, #477d56);
+		outline: 2px solid var(--theme-accent);
 		outline-offset: -2px;
 	}
 	.options {
@@ -637,10 +637,10 @@
 		z-index: 120;
 		box-sizing: border-box;
 		padding: 0.35rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.7rem;
-		background: #fff;
-		box-shadow: 0 0.9rem 2.5rem rgb(20 28 21 / 18%);
+		background: var(--color-surface-elevated);
+		box-shadow: var(--shadow-elevated);
 		overflow-y: auto;
 	}
 	.options button {
@@ -652,7 +652,7 @@
 		padding: 0.62rem 0.7rem;
 		border: 0;
 		border-radius: 0.45rem;
-		color: #253028;
+		color: var(--color-text);
 		background: transparent;
 		font: inherit;
 		font-size: 0.82rem;
@@ -661,14 +661,14 @@
 	}
 	.options button.active,
 	.options button:hover {
-		background: var(--theme-hover, #edf4ec);
+		background: var(--theme-hover);
 	}
 	.options small {
-		color: #748078;
+		color: var(--color-text-muted);
 	}
 	.option-group {
 		margin: 0.45rem 0.65rem 0.2rem;
-		color: #748078;
+		color: var(--color-text-muted);
 		font-size: 0.68rem;
 		font-weight: 750;
 		letter-spacing: 0.06em;
@@ -677,7 +677,7 @@
 	.empty {
 		margin: 0;
 		padding: 0.7rem;
-		color: #748078;
+		color: var(--color-text-muted);
 		font-size: 0.8rem;
 	}
 	.native-picker {

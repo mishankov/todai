@@ -798,7 +798,7 @@
 	}
 	.view-header p {
 		margin: 0 0 0.3rem;
-		color: var(--theme-accent, #52705a);
+		color: var(--theme-accent);
 		font-size: 0.68rem;
 		font-weight: 720;
 		letter-spacing: 0.08em;
@@ -812,28 +812,28 @@
 	}
 	.header-actions {
 		gap: 0.8rem;
-		color: #7c817d;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 	}
 	.layout-switch {
 		padding: 0.16rem;
-		border: 1px solid var(--theme-border, #d9e1d7);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.5rem;
-		background: var(--theme-sidebar, #f1f5ef);
+		background: var(--theme-sidebar);
 	}
 	.layout-switch button {
 		padding: 0.38rem 0.6rem;
 		border: 0;
 		border-radius: 0.35rem;
-		color: #687068;
+		color: var(--color-text-secondary);
 		background: transparent;
 		font-size: 0.72rem;
 		font-weight: 700;
 	}
 	.layout-switch button.active {
-		color: var(--theme-accent, #245937);
-		background: #fff;
-		box-shadow: 0 1px 4px color-mix(in srgb, var(--theme-accent, #2d6540) 10%, transparent);
+		color: var(--theme-accent);
+		background: var(--color-surface);
+		box-shadow: 0 1px 4px color-mix(in srgb, var(--theme-accent) 10%, transparent);
 	}
 	.sections {
 		display: grid;
@@ -862,8 +862,8 @@
 	.insertion-marker {
 		position: absolute;
 		border-radius: 999px;
-		background: var(--theme-accent, #4f8a60);
-		box-shadow: 0 0 0 2px var(--theme-canvas, #f8faf7);
+		background: var(--theme-accent-solid, var(--theme-accent));
+		box-shadow: 0 0 0 2px var(--theme-canvas);
 		pointer-events: none;
 		z-index: 3;
 	}
@@ -872,7 +872,7 @@
 		width: 0.5rem;
 		height: 0.5rem;
 		border-radius: 50%;
-		background: var(--theme-accent, #4f8a60);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		content: '';
 	}
 	.section-insertion-marker {
@@ -902,7 +902,7 @@
 		gap: 0.5rem;
 		min-height: 2.25rem;
 		padding-bottom: 0.55rem;
-		border-bottom: 1px solid var(--theme-border, #d9dfd7);
+		border-bottom: 1px solid var(--theme-border);
 	}
 	.section-header > div:first-child {
 		gap: 0.45rem;
@@ -924,7 +924,7 @@
 		white-space: nowrap;
 	}
 	.section-header span {
-		color: #989d98;
+		color: var(--color-text-muted);
 		font-size: 0.7rem;
 	}
 	.section-actions,
@@ -942,7 +942,7 @@
 	.task-actions button {
 		padding: 0.25rem 0.35rem;
 		border: 0;
-		color: #798079;
+		color: var(--color-text-muted);
 		background: transparent;
 		font-size: 0.67rem;
 		cursor: pointer;
@@ -964,7 +964,7 @@
 		gap: 0.7rem;
 		min-width: 0;
 		padding: 0.72rem 0.15rem;
-		border-bottom: 1px solid var(--theme-border, #e6e9e4);
+		border-bottom: 1px solid var(--theme-border);
 		cursor: grab;
 	}
 	.task-card.dragging {
@@ -984,10 +984,10 @@
 		align-items: flex-start;
 		margin-top: 0.55rem;
 		padding: 0.8rem;
-		border: 1px solid var(--theme-border, #dbe2d9);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.65rem;
-		background: #fff;
-		box-shadow: 0 0.25rem 0.8rem color-mix(in srgb, var(--theme-accent, #2d6540) 5%, transparent);
+		background: var(--color-surface);
+		box-shadow: 0 0.25rem 0.8rem color-mix(in srgb, var(--theme-accent) 5%, transparent);
 	}
 	.board-sections .task-card > .task-insertion-marker {
 		top: -0.45rem;
@@ -1006,16 +1006,16 @@
 		width: 1.15rem;
 		height: 1.15rem;
 		padding: 0;
-		border: 1.5px solid #909890;
+		border: 1.5px solid var(--color-border-strong);
 		border-radius: 50%;
-		color: #fff;
+		color: var(--color-on-accent);
 		background: transparent;
 		font-size: 0.68rem;
 		cursor: pointer;
 	}
 	.task-toggle.checked {
-		border-color: var(--theme-accent, #477d56);
-		background: var(--theme-accent, #477d56);
+		border-color: var(--theme-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 	.task-copy {
 		display: grid;
@@ -1039,7 +1039,7 @@
 	}
 	.description {
 		overflow: hidden;
-		color: #7e847f;
+		color: var(--color-text-muted);
 		font-size: 0.72rem;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -1047,16 +1047,18 @@
 	.metadata {
 		display: flex;
 		gap: 0.55rem;
-		color: var(--theme-accent, #477d56);
+		color: var(--theme-accent);
 		font-size: 0.68rem;
 		font-weight: 650;
 	}
 	.metadata .overdue {
-		color: #c13d33;
+		color: var(--color-error);
 	}
-	.priority-3,
+	.priority-3 {
+		color: var(--color-warning);
+	}
 	.priority-4 {
-		color: #b05535;
+		color: var(--color-error);
 	}
 	.task-drop-end {
 		position: relative;
@@ -1109,23 +1111,23 @@
 	}
 	.add-section input:focus,
 	.rename-section input:focus {
-		border-color: color-mix(in srgb, var(--theme-accent, #2d6540) 42%, transparent);
-		background: #fff;
+		border-color: color-mix(in srgb, var(--theme-accent) 42%, transparent);
+		background: var(--color-surface);
 	}
 	.add-section button,
 	.rename-section button {
 		padding: 0.48rem 0.6rem;
 		border: 0;
 		border-radius: 0.4rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		font-size: 0.7rem;
 		font-weight: 700;
 		cursor: pointer;
 	}
 	.rename-section button[type='button'] {
-		color: #687068;
-		background: var(--theme-hover, #edf2eb);
+		color: var(--color-text-secondary);
+		background: var(--theme-hover);
 	}
 	button:disabled {
 		cursor: wait;
@@ -1138,7 +1140,7 @@
 	.board-sections .add-section {
 		min-height: 0;
 		padding: 0.25rem 0.35rem;
-		border: 1px dashed var(--theme-border, #cbd8c9);
+		border: 1px dashed var(--theme-border);
 		border-radius: 0.65rem;
 	}
 	.board-sections .add-section input {
@@ -1148,8 +1150,8 @@
 		margin: 0 0 1rem;
 		padding: 0.7rem 0.8rem;
 		border-radius: 0.5rem;
-		color: #8c2828;
-		background: #fff0ee;
+		color: var(--color-error);
+		background: var(--color-error-soft);
 		font-size: 0.78rem;
 	}
 	.sr-only {

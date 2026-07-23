@@ -22,6 +22,7 @@ func TestServiceReturnsDefaultsAndResolvesSavedAgentPreferences(t *testing.T) {
 	if view.Settings.Version != 0 || view.Settings.Timezone != nil ||
 		view.Settings.AgentModel != "gpt-default" ||
 		view.Settings.AgentThinkingEffort != usersettings.DefaultAgentThinkingEffort ||
+		view.Settings.Appearance != usersettings.AppearanceSystem ||
 		len(view.AvailableAgentModels) != 2 || len(view.AvailableAgentThinkingEfforts) != 7 {
 		t.Errorf("default view = %#v", view)
 	}
@@ -29,7 +30,8 @@ func TestServiceReturnsDefaultsAndResolvesSavedAgentPreferences(t *testing.T) {
 	updated, err := service.Update(
 		context.Background(), execution.UserScope("user-id", "correlation-id"),
 		usersettings.Update{
-			Timezone: "Europe/Moscow", AgentModel: "gpt-fast", AgentThinkingEffort: "high", Version: 0,
+			Timezone: "Europe/Moscow", AgentModel: "gpt-fast", AgentThinkingEffort: "high",
+			Appearance: appearancePointer(usersettings.AppearanceDark), Version: 0,
 		},
 	)
 	if err != nil {
@@ -37,7 +39,8 @@ func TestServiceReturnsDefaultsAndResolvesSavedAgentPreferences(t *testing.T) {
 	}
 	if updated.Settings.Version != 1 || updated.Settings.Timezone == nil ||
 		*updated.Settings.Timezone != "Europe/Moscow" || updated.Settings.AgentModel != "gpt-fast" ||
-		updated.Settings.AgentThinkingEffort != "high" {
+		updated.Settings.AgentThinkingEffort != "high" ||
+		updated.Settings.Appearance != usersettings.AppearanceDark {
 		t.Errorf("updated view = %#v", updated)
 	}
 
@@ -63,6 +66,7 @@ func TestServiceRejectsInvalidSettings(t *testing.T) {
 		{name: "timezone unknown", update: usersettings.Update{Timezone: "Mars/Olympus", AgentModel: "gpt-default"}, want: usersettings.ErrInvalidTimezone},
 		{name: "model unavailable", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-other"}, want: usersettings.ErrInvalidAgentModel},
 		{name: "thinking effort unavailable", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-default", AgentThinkingEffort: "extreme"}, want: usersettings.ErrInvalidAgentThinkingEffort},
+		{name: "appearance unavailable", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-default", AgentThinkingEffort: "medium", Appearance: appearancePointer("sepia")}, want: usersettings.ErrInvalidAppearance},
 		{name: "negative version", update: usersettings.Update{Timezone: "UTC", AgentModel: "gpt-default", Version: -1}, want: usersettings.ErrInvalidVersion},
 	}
 	for _, test := range tests {
@@ -73,6 +77,33 @@ func TestServiceRejectsInvalidSettings(t *testing.T) {
 			)
 			if !errors.Is(err, test.want) {
 				t.Errorf("Update() error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestServiceAcceptsEveryAppearance(t *testing.T) {
+	t.Parallel()
+
+	for _, appearance := range []usersettings.Appearance{
+		usersettings.AppearanceSystem,
+		usersettings.AppearanceLight,
+		usersettings.AppearanceDark,
+	} {
+		t.Run(string(appearance), func(t *testing.T) {
+			t.Parallel()
+			service := usersettings.NewService(
+				&fakeSettingsRepository{}, "gpt-default", []string{"gpt-default"},
+			)
+			view, err := service.Update(
+				context.Background(), execution.UserScope("user-id", "correlation-id"),
+				usersettings.Update{
+					Timezone: "UTC", AgentModel: "gpt-default", AgentThinkingEffort: "medium",
+					Appearance: appearancePointer(appearance), Version: 0,
+				},
+			)
+			if err != nil || view.Settings.Appearance != appearance {
+				t.Errorf("Update() = (%#v, %v)", view, err)
 			}
 		})
 	}
@@ -93,11 +124,22 @@ func (r *fakeSettingsRepository) Update(
 	update usersettings.Update,
 ) (usersettings.Settings, error) {
 	timezone := update.Timezone
+	appearance := usersettings.AppearanceSystem
+	if r.found {
+		appearance = r.settings.Appearance
+	}
+	if update.Appearance != nil {
+		appearance = *update.Appearance
+	}
 	r.settings = usersettings.Settings{
 		UserID: scope.UserID, Timezone: &timezone, AgentModel: update.AgentModel,
-		AgentThinkingEffort: update.AgentThinkingEffort,
-		Version:             update.Version + 1, LastModifiedBy: scope.ModifiedBy(),
+		AgentThinkingEffort: update.AgentThinkingEffort, Appearance: appearance,
+		Version: update.Version + 1, LastModifiedBy: scope.ModifiedBy(),
 	}
 	r.found = true
 	return r.settings, nil
+}
+
+func appearancePointer(appearance usersettings.Appearance) *usersettings.Appearance {
+	return &appearance
 }

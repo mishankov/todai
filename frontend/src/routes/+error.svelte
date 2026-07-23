@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import SystemAppearanceController from '$lib/appearance/SystemAppearanceController.svelte';
 
 	let notFound = $derived(page.status === 404);
 	let heading = $derived(notFound ? 'This page wandered off.' : 'Something went wrong.');
@@ -25,6 +26,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
+<SystemAppearanceController forceSystem />
 <main class="error-shell">
 	<a class="brand" href={resolve('/')} aria-label="Todai home">
 		<span aria-hidden="true">T</span>
@@ -75,18 +77,28 @@
 
 <style>
 	.error-shell {
-		--accent: #2d6540;
-		--accent-soft: #dfeadf;
-		--canvas: #f5f7f3;
-		--border: #dce4d9;
+		--accent: var(--theme-accent);
+		--accent-solid: var(--theme-accent-solid, var(--theme-accent));
+		--accent-soft: var(--theme-accent-soft);
+		--canvas: var(--color-canvas);
+		--border: var(--color-border);
 		position: relative;
 		display: grid;
 		min-height: 100svh;
 		place-items: center;
 		padding: 6.5rem 2rem 2rem;
 		background:
-			radial-gradient(circle at 12% 8%, rgb(87 139 101 / 14%), transparent 32rem),
-			radial-gradient(circle at 88% 92%, rgb(172 130 139 / 12%), transparent 34rem), var(--canvas);
+			radial-gradient(
+				circle at 12% 8%,
+				color-mix(in srgb, var(--accent) 14%, transparent),
+				transparent 32rem
+			),
+			radial-gradient(
+				circle at 88% 92%,
+				color-mix(in srgb, var(--color-error) 10%, transparent),
+				transparent 34rem
+			),
+			var(--canvas);
 		overflow: hidden;
 	}
 	.brand {
@@ -96,7 +108,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.7rem;
-		color: #292927;
+		color: var(--color-text);
 		font-size: 1.1rem;
 		letter-spacing: -0.03em;
 		text-decoration: none;
@@ -107,8 +119,8 @@
 		height: 2.35rem;
 		place-items: center;
 		border-radius: 0.7rem;
-		color: #fff;
-		background: var(--accent);
+		color: var(--color-on-accent);
+		background: var(--accent-solid);
 		font-weight: 800;
 	}
 	.error-card {
@@ -118,8 +130,8 @@
 		min-height: min(38rem, calc(100svh - 8.5rem));
 		border: 1px solid var(--border);
 		border-radius: 1.5rem;
-		background: rgb(255 255 255 / 88%);
-		box-shadow: 0 2rem 6rem rgb(31 54 37 / 11%);
+		background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+		box-shadow: var(--shadow-modal);
 		overflow: hidden;
 		backdrop-filter: blur(18px);
 	}
@@ -140,7 +152,7 @@
 	h1 {
 		max-width: 9ch;
 		margin: 0;
-		color: #292927;
+		color: var(--color-text);
 		font-size: clamp(3rem, 7vw, 5.6rem);
 		letter-spacing: -0.075em;
 		line-height: 0.94;
@@ -148,7 +160,7 @@
 	.description {
 		max-width: 34rem;
 		margin: 1.6rem 0 0;
-		color: #6f746e;
+		color: var(--color-text-secondary);
 		font-size: clamp(1rem, 2vw, 1.18rem);
 		line-height: 1.65;
 	}
@@ -174,32 +186,32 @@
 	}
 	.primary-action {
 		border: 1px solid var(--accent);
-		color: #fff;
-		background: var(--accent);
-		box-shadow: 0 0.65rem 1.5rem rgb(45 101 64 / 17%);
+		color: var(--color-on-accent);
+		background: var(--accent-solid);
+		box-shadow: var(--shadow-small);
 	}
 	.primary-action:hover {
-		background: #245535;
+		background: color-mix(in srgb, var(--accent-solid) 86%, black);
 	}
 	.secondary-action {
 		border: 1px solid var(--border);
-		color: #4f544f;
-		background: #fff;
+		color: var(--color-text-secondary);
+		background: var(--color-surface);
 	}
 	.secondary-action:hover {
-		border-color: #b9cbb9;
-		background: #f8faf7;
+		border-color: var(--color-border-strong);
+		background: var(--color-control);
 	}
 	.primary-action:focus-visible,
 	.secondary-action:focus-visible,
 	.brand:focus-visible {
-		outline: 3px solid rgb(45 101 64 / 18%);
+		outline: 3px solid var(--theme-focus);
 		outline-offset: 3px;
 	}
 	.hint {
 		max-width: 31rem;
 		margin: 1.3rem 0 0;
-		color: #92968f;
+		color: var(--color-text-muted);
 		font-size: 0.78rem;
 		line-height: 1.5;
 	}
@@ -208,9 +220,20 @@
 		min-height: 28rem;
 		border-left: 1px solid var(--border);
 		background:
-			linear-gradient(rgb(255 255 255 / 42%), rgb(255 255 255 / 42%)),
-			repeating-linear-gradient(0deg, transparent 0 31px, rgb(45 101 64 / 5%) 31px 32px),
-			repeating-linear-gradient(90deg, transparent 0 31px, rgb(45 101 64 / 5%) 31px 32px),
+			linear-gradient(
+				color-mix(in srgb, var(--color-surface) 42%, transparent),
+				color-mix(in srgb, var(--color-surface) 42%, transparent)
+			),
+			repeating-linear-gradient(
+				0deg,
+				transparent 0 31px,
+				color-mix(in srgb, var(--accent) 8%, transparent) 31px 32px
+			),
+			repeating-linear-gradient(
+				90deg,
+				transparent 0 31px,
+				color-mix(in srgb, var(--accent) 8%, transparent) 31px 32px
+			),
 			var(--accent-soft);
 		overflow: hidden;
 	}
@@ -218,7 +241,7 @@
 		position: absolute;
 		top: 8%;
 		right: -0.08em;
-		color: rgb(45 101 64 / 9%);
+		color: color-mix(in srgb, var(--accent) 12%, transparent);
 		font-size: clamp(9rem, 23vw, 18rem);
 		font-weight: 900;
 		letter-spacing: -0.12em;
@@ -232,7 +255,7 @@
 	}
 	.route path {
 		fill: none;
-		stroke: rgb(45 101 64 / 42%);
+		stroke: color-mix(in srgb, var(--accent) 55%, transparent);
 		stroke-dasharray: 7 10;
 		stroke-linecap: round;
 		stroke-width: 2;
@@ -243,10 +266,10 @@
 		left: 50%;
 		width: min(18rem, 72%);
 		padding: 1.25rem;
-		border: 1px solid rgb(45 101 64 / 16%);
+		border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
 		border-radius: 1rem;
-		background: rgb(255 255 255 / 91%);
-		box-shadow: 0 1.4rem 3.5rem rgb(35 69 44 / 17%);
+		background: color-mix(in srgb, var(--color-surface) 91%, transparent);
+		box-shadow: var(--shadow-elevated);
 		transform: translateX(-50%) rotate(-3deg);
 	}
 	.task-heading {
@@ -258,7 +281,7 @@
 		width: 1.3rem;
 		height: 1.3rem;
 		flex: none;
-		border: 2px solid #7e9a84;
+		border: 2px solid var(--color-border-strong);
 		border-radius: 50%;
 	}
 	.task-title,
@@ -266,12 +289,12 @@
 		display: block;
 		height: 0.65rem;
 		border-radius: 999px;
-		background: #d7e3d6;
+		background: var(--color-border);
 	}
 	.task-title {
 		width: 58%;
 		height: 0.85rem;
-		background: #9eb8a2;
+		background: color-mix(in srgb, var(--accent) 50%, var(--color-border));
 	}
 	.task-line {
 		width: 56%;
@@ -286,8 +309,8 @@
 		margin-top: 1.15rem;
 		padding: 0.38rem 0.55rem;
 		border-radius: 999px;
-		color: #54715b;
-		background: #edf3eb;
+		color: var(--accent);
+		background: var(--color-hover);
 		font-size: 0.68rem;
 		font-weight: 750;
 	}
@@ -295,10 +318,10 @@
 		position: absolute;
 		width: 0.85rem;
 		height: 0.85rem;
-		border: 3px solid rgb(255 255 255 / 90%);
+		border: 3px solid color-mix(in srgb, var(--color-surface) 90%, transparent);
 		border-radius: 50%;
-		background: var(--accent);
-		box-shadow: 0 0 0 1px rgb(45 101 64 / 22%);
+		background: var(--accent-solid);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 	}
 	.waypoint.start {
 		bottom: 24%;

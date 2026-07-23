@@ -273,12 +273,12 @@
 		top: 50%;
 		right: 0.55rem;
 		padding: 0.24rem 0.42rem;
-		border: 1px solid color-mix(in srgb, var(--theme-accent, #2d6540) 24%, #d7d9d5);
+		border: 1px solid color-mix(in srgb, var(--theme-accent) 24%, var(--color-border));
 		border-bottom-width: 2px;
 		border-radius: 0.35rem;
-		color: var(--theme-accent, #2d6540);
-		background: #fff;
-		box-shadow: 0 0.35rem 1rem rgb(20 28 21 / 14%);
+		color: var(--theme-accent);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-small);
 		content: attr(data-shortcut-hint);
 		font-family: inherit;
 		font-size: 0.64rem;

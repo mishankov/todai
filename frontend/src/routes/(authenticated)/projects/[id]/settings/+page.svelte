@@ -188,7 +188,7 @@
 	.settings-page {
 		width: min(50rem, 100%);
 		margin: 0 auto;
-		color: #292927;
+		color: var(--color-text);
 	}
 	header {
 		margin-bottom: 2.5rem;
@@ -208,7 +208,7 @@
 	}
 	header span,
 	.settings-group p {
-		color: #74746f;
+		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 	}
 	form,
@@ -224,7 +224,7 @@
 		padding: 1.5rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.9rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 	h2 {
 		margin: 0 0 0.4rem;
@@ -247,7 +247,7 @@
 		padding: 0 0.8rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.55rem;
-		color: #292927;
+		color: var(--color-text);
 		background: var(--theme-canvas);
 		font: inherit;
 		font-size: 0.88rem;
@@ -292,27 +292,9 @@
 		font-size: 0.82rem;
 	}
 	.theme-option small {
-		color: #777;
+		color: var(--color-text-muted);
 		font-size: 0.7rem;
 		font-weight: 500;
-	}
-	.theme-sage {
-		--preview-accent: #2d6540;
-	}
-	.theme-ocean {
-		--preview-accent: #28638c;
-	}
-	.theme-plum {
-		--preview-accent: #6b477d;
-	}
-	.theme-sand {
-		--preview-accent: #8a643f;
-	}
-	.theme-rose {
-		--preview-accent: #94505e;
-	}
-	.theme-graphite {
-		--preview-accent: #52565d;
 	}
 	footer {
 		display: flex;
@@ -326,7 +308,7 @@
 		font-size: 0.82rem;
 	}
 	.error {
-		color: #b83f34;
+		color: var(--color-error);
 	}
 	.success {
 		color: var(--theme-accent);
@@ -335,8 +317,8 @@
 		padding: 0.72rem 1rem;
 		border: 0;
 		border-radius: 0.55rem;
-		color: #fff;
-		background: var(--theme-accent);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		font-weight: 750;
 		cursor: pointer;
 	}

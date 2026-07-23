@@ -2,6 +2,7 @@
 	/* The destination was validated as a safe internal path by the page loader. */
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import LoginForm from '$lib/components/LoginForm.svelte';
+	import SystemAppearanceController from '$lib/appearance/SystemAppearanceController.svelte';
 	import { goto } from '$app/navigation';
 	import type { PageProps } from './$types';
 
@@ -17,4 +18,5 @@
 	<meta name="description" content="Sign in to your Todai workspace." />
 </svelte:head>
 
+<SystemAppearanceController forceSystem />
 <LoginForm onAuthenticated={openWorkspace} />

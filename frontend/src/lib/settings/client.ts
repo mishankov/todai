@@ -1,7 +1,10 @@
+import type { Appearance } from '$lib/appearance/theme';
+
 export interface UserSettings {
 	timezone: string | null;
 	agentModel: string;
 	agentThinkingEffort: AgentThinkingEffort;
+	appearance: Appearance;
 	version: number;
 	createdAt: string | null;
 	updatedAt: string | null;
@@ -20,6 +23,7 @@ export interface SettingsUpdate {
 	timezone: string;
 	agentModel: string;
 	agentThinkingEffort: AgentThinkingEffort;
+	appearance: Appearance;
 	version: number;
 }
 
@@ -68,6 +72,13 @@ function normalizeSettingsView(value: unknown): SettingsView {
 	};
 	return {
 		...view,
+		settings: {
+			...view.settings,
+			appearance:
+				view.settings.appearance === 'light' || view.settings.appearance === 'dark'
+					? view.settings.appearance
+					: 'system'
+		},
 		availableAgentModels: view.availableAgentModels ?? [],
 		availableAgentThinkingEfforts: view.availableAgentThinkingEfforts ?? []
 	};

@@ -297,10 +297,10 @@
 		justify-content: space-between;
 		gap: 0.45rem;
 		padding: 0.48rem 0.62rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.65rem;
-		color: #29332c;
-		background: #fff;
+		color: var(--color-text);
+		background: var(--color-surface);
 		font: inherit;
 		font-size: 0.76rem;
 		font-weight: 650;
@@ -320,7 +320,7 @@
 	}
 	.trigger-prefix {
 		flex: none;
-		color: #657269;
+		color: var(--color-text-secondary);
 		font-size: 0.72rem;
 	}
 	.quick-pick-trigger .chevron {
@@ -337,17 +337,17 @@
 		height: 1rem;
 		flex: none;
 		fill: none;
-		stroke: #657269;
+		stroke: currentColor;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 		stroke-width: 1.7;
 	}
 	.quick-pick-trigger:hover:not(:disabled),
 	.quick-pick-trigger:focus-visible {
-		border-color: var(--theme-accent, #477d56);
-		background: var(--theme-hover, #f3f7f2);
+		border-color: var(--theme-accent);
+		background: var(--theme-hover);
 		outline: none;
-		box-shadow: 0 0 0 0.18rem var(--theme-focus, rgb(71 125 86 / 12%));
+		box-shadow: 0 0 0 0.18rem var(--theme-focus);
 	}
 	.quick-pick-trigger:disabled {
 		cursor: not-allowed;
@@ -358,7 +358,7 @@
 		min-height: 2.75rem;
 		padding: 0.45rem 0.68rem;
 		border: 0;
-		border-left: 1px solid var(--theme-border, #dce4da);
+		border-left: 1px solid var(--theme-border);
 		border-radius: 0;
 		background: transparent;
 		font-size: 0.78rem;
@@ -366,8 +366,8 @@
 	}
 	.segment .quick-pick-trigger:hover:not(:disabled),
 	.segment .quick-pick-trigger:focus-visible {
-		border-color: var(--theme-border, #dce4da);
-		background: var(--theme-hover, #f3f7f2);
+		border-color: var(--theme-border);
+		background: var(--theme-hover);
 		box-shadow: none;
 	}
 	.quick-pick-panel {
@@ -376,10 +376,10 @@
 		box-sizing: border-box;
 		overflow: auto;
 		padding: 0.45rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.78rem;
-		background: #fff;
-		box-shadow: 0 1rem 3rem rgb(31 54 38 / 18%);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-elevated);
 	}
 	.search-row {
 		display: block;
@@ -387,24 +387,24 @@
 		top: -0.45rem;
 		z-index: 1;
 		padding: 0.35rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 	.search-row input {
 		box-sizing: border-box;
 		width: 100%;
 		padding: 0.55rem 0.62rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.55rem;
 		font: inherit;
 		outline: none;
 	}
 	.search-row input:focus {
-		border-color: var(--theme-accent, #477d56);
-		box-shadow: 0 0 0 0.16rem var(--theme-focus, rgb(71 125 86 / 12%));
+		border-color: var(--theme-accent);
+		box-shadow: 0 0 0 0.16rem var(--theme-focus);
 	}
 	.group-label {
 		margin: 0.5rem 0.48rem 0.2rem;
-		color: #7d857f;
+		color: var(--color-text-muted);
 		font-size: 0.64rem;
 		font-weight: 750;
 		letter-spacing: 0.07em;
@@ -419,7 +419,7 @@
 		padding: 0.58rem 0.62rem;
 		border: 0;
 		border-radius: 0.55rem;
-		color: #253029;
+		color: var(--color-text);
 		background: transparent;
 		font: inherit;
 		text-align: left;
@@ -428,7 +428,7 @@
 	.quick-pick-option:hover,
 	.quick-pick-option.active,
 	.quick-pick-option:focus-visible {
-		background: var(--theme-hover, #eff5ef);
+		background: var(--theme-hover);
 		outline: none;
 	}
 	.option-copy {
@@ -441,11 +441,11 @@
 		font-weight: 680;
 	}
 	.option-copy small {
-		color: #727a74;
+		color: var(--color-text-secondary);
 		font-size: 0.7rem;
 	}
 	.check {
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		font-weight: 800;
 	}
 	.custom-control {
@@ -456,14 +456,14 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 0.45rem 0.55rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.5rem;
 		font: inherit;
 	}
 	.empty {
 		margin: 0;
 		padding: 1rem;
-		color: #737b75;
+		color: var(--color-text-secondary);
 		font-size: 0.76rem;
 		text-align: center;
 	}
@@ -494,9 +494,9 @@
 	}
 	@media (max-width: 46rem) {
 		.segment .quick-pick-trigger {
-			border: 1px solid var(--theme-border, #ccd6ca);
+			border: 1px solid var(--theme-border);
 			border-radius: 0.7rem;
-			background: #fff;
+			background: var(--color-surface);
 		}
 	}
 </style>

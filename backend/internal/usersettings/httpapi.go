@@ -30,10 +30,11 @@ type settingsHandlers struct {
 }
 
 type updateSettingsRequest struct {
-	Timezone            string `json:"timezone"`
-	AgentModel          string `json:"agentModel"`
-	AgentThinkingEffort string `json:"agentThinkingEffort"`
-	Version             *int64 `json:"version"`
+	Timezone            string      `json:"timezone"`
+	AgentModel          string      `json:"agentModel"`
+	AgentThinkingEffort string      `json:"agentThinkingEffort"`
+	Appearance          *Appearance `json:"appearance"`
+	Version             *int64      `json:"version"`
 }
 
 // NewHTTPModule constructs the user-settings HTTP module.
@@ -87,7 +88,8 @@ func (h settingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := h.service.Update(r.Context(), scope, Update{
 		Timezone: request.Timezone, AgentModel: request.AgentModel,
-		AgentThinkingEffort: request.AgentThinkingEffort, Version: *request.Version,
+		AgentThinkingEffort: request.AgentThinkingEffort, Appearance: request.Appearance,
+		Version: *request.Version,
 	})
 	if err != nil {
 		writeSettingsError(w, r, "update", err)
@@ -99,7 +101,8 @@ func (h settingsHandlers) update(w http.ResponseWriter, r *http.Request) {
 func writeSettingsError(w http.ResponseWriter, r *http.Request, operation string, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidTimezone), errors.Is(err, ErrInvalidAgentModel),
-		errors.Is(err, ErrInvalidAgentThinkingEffort), errors.Is(err, ErrInvalidVersion):
+		errors.Is(err, ErrInvalidAgentThinkingEffort), errors.Is(err, ErrInvalidAppearance),
+		errors.Is(err, ErrInvalidVersion):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrVersionConflict):
 		http.Error(w, err.Error(), http.StatusConflict)

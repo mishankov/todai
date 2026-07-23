@@ -11,6 +11,8 @@ describe('AppShell', () => {
 			username: 'owner',
 			projects: [project, testProject({ id: 'home-id', name: 'Home' })],
 			activeProject: project,
+			appearance: 'system',
+			onAppearanceChange: vi.fn(),
 			onLogout: vi.fn(),
 			currentPath: '/projects/work-id/today'
 		});
@@ -61,6 +63,8 @@ describe('AppShell', () => {
 			username: 'owner',
 			projects: [project],
 			activeProject: project,
+			appearance: 'system',
+			onAppearanceChange: vi.fn(),
 			onLogout: vi.fn(),
 			currentPath: '/projects/work-id/tasks'
 		});
@@ -76,6 +80,8 @@ describe('AppShell', () => {
 			username: 'owner',
 			projects: [project],
 			activeProject: project,
+			appearance: 'system',
+			onAppearanceChange: vi.fn(),
 			onLogout: vi.fn(),
 			currentPath: '/projects/work-id/settings'
 		});
@@ -95,6 +101,8 @@ describe('AppShell', () => {
 			username: 'owner',
 			projects: [project],
 			activeProject: project,
+			appearance: 'system',
+			onAppearanceChange: vi.fn(),
 			onLogout: vi.fn(),
 			currentPath: '/projects/work-id/tasks'
 		});
@@ -105,6 +113,59 @@ describe('AppShell', () => {
 		await view.rerender({ currentPath: '/projects/work-id/tasks/task-id' });
 
 		expect(localStorage.getItem('todai.project.work-id.last-view')).toBe('/projects/work-id/tasks');
+	});
+
+	it('saves appearance from the sidebar and marks the confirmed choice', async () => {
+		const project = testProject({ id: 'work-id' });
+		const onAppearanceChange = vi.fn(async () => undefined);
+		const view = render(AppShell, {
+			username: 'owner',
+			projects: [project],
+			activeProject: project,
+			appearance: 'system',
+			onAppearanceChange,
+			onLogout: vi.fn(),
+			currentPath: '/projects/work-id/tasks'
+		});
+		const switcher = view.getByRole('group', { name: 'Appearance' });
+
+		await expect
+			.element(switcher.getByRole('button', { name: 'Use system appearance' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		(
+			switcher.getByRole('button', { name: 'Use dark appearance' }).element() as HTMLButtonElement
+		).click();
+
+		expect(onAppearanceChange).toHaveBeenCalledWith('dark');
+		await expect.element(view.getByRole('status')).toHaveTextContent('Appearance set to Dark.');
+		await expect
+			.element(switcher.getByRole('button', { name: 'Use dark appearance' }))
+			.toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('keeps the saved appearance selected when the sidebar update fails', async () => {
+		const project = testProject({ id: 'work-id' });
+		const view = render(AppShell, {
+			username: 'owner',
+			projects: [project],
+			activeProject: project,
+			appearance: 'light',
+			onAppearanceChange: vi.fn(async () => {
+				throw new Error('Settings changed elsewhere.');
+			}),
+			onLogout: vi.fn(),
+			currentPath: '/projects/work-id/tasks'
+		});
+		const switcher = view.getByRole('group', { name: 'Appearance' });
+
+		(
+			switcher.getByRole('button', { name: 'Use dark appearance' }).element() as HTMLButtonElement
+		).click();
+
+		await expect.element(view.getByRole('alert')).toHaveTextContent('Settings changed elsewhere.');
+		await expect
+			.element(switcher.getByRole('button', { name: 'Use light appearance' }))
+			.toHaveAttribute('aria-pressed', 'true');
 	});
 });
 

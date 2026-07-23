@@ -356,9 +356,9 @@
 			);
 		min-width: 0;
 		min-height: 2.85rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.75rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 	.property-location {
 		position: relative;
@@ -374,7 +374,7 @@
 		padding: 0.45rem 0.68rem;
 		border: 0;
 		border-radius: 0;
-		color: #29332c;
+		color: var(--color-text);
 		background: transparent;
 		font: inherit;
 		font-size: 0.78rem;
@@ -394,7 +394,7 @@
 		height: 1rem;
 		flex: none;
 		fill: none;
-		stroke: #657269;
+		stroke: currentColor;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 		stroke-width: 1.7;
@@ -405,7 +405,7 @@
 	}
 	.property-trigger:hover,
 	.property-trigger:focus-visible {
-		background: var(--theme-hover, #f3f7f2);
+		background: var(--theme-hover);
 		outline: none;
 	}
 	.location-popover {
@@ -415,10 +415,10 @@
 		box-sizing: border-box;
 		gap: 0.7rem;
 		padding: 0.8rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.75rem;
-		background: #fff;
-		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent, #2d6540) 14%, transparent);
+		background: var(--color-surface);
+		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent) 14%, transparent);
 		overflow-y: auto;
 	}
 	@media (max-width: 46rem) {
@@ -429,9 +429,9 @@
 			background: transparent;
 		}
 		.property-location {
-			border: 1px solid var(--theme-border, #ccd6ca);
+			border: 1px solid var(--theme-border);
 			border-radius: 0.7rem;
-			background: #fff;
+			background: var(--color-surface);
 		}
 	}
 	@media (max-width: 28rem) {

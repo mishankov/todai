@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
+	import type { Appearance } from '$lib/appearance/theme';
 	import type { Project, ProjectColorTheme } from '$lib/projects/client';
 	import { recordProjectPath, rememberedProjectPath } from '$lib/projects/navigation';
 	import { commandPaletteRequestEvent, quickAddRequestEvent } from '$lib/shortcuts/events';
@@ -15,12 +16,14 @@
 		isApplePlatform,
 		shortcutCommand
 	} from '$lib/shortcuts/registry';
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 
 	interface Props {
 		username: string;
 		projects?: Project[];
 		activeProject?: Project;
+		appearance: Appearance;
+		onAppearanceChange: (appearance: Appearance) => Promise<void>;
 		onLogout: () => Promise<void>;
 		currentPath?: string;
 		children?: Snippet;
@@ -30,12 +33,18 @@
 		username,
 		projects = [],
 		activeProject,
+		appearance,
+		onAppearanceChange,
 		onLogout,
 		currentPath = '/',
 		children
 	}: Props = $props();
 	let signingOut = $state(false);
 	let errorMessage = $state('');
+	let appearanceError = $state('');
+	let appearanceStatus = $state('');
+	let selectedAppearance = $state<Appearance>(untrack(() => appearance));
+	let savingAppearance = $state<Appearance | null>(null);
 	let sidebarOpen = $state(false);
 	let theme = $derived<ProjectColorTheme>(activeProject?.colorTheme ?? 'sage');
 	let projectBase = $derived(activeProject ? `/projects/${activeProject.id}` : '/projects');
@@ -45,9 +54,15 @@
 	let paletteCommand = shortcutCommand('command-palette');
 	let paletteLabel = $derived(formatShortcut(paletteCommand, applePlatform));
 	let quickAddDescription = $derived(formatShortcuts(quickAddCommand, applePlatform).join(' / '));
+	const appearanceOptions: Appearance[] = ['system', 'light', 'dark'];
 
 	$effect(() => {
 		if (browser) applePlatform = isApplePlatform(window.navigator.platform);
+	});
+
+	$effect(() => {
+		const savedAppearance = appearance;
+		untrack(() => (selectedAppearance = savedAppearance));
 	});
 
 	$effect(() => {
@@ -107,6 +122,27 @@
 	function openCommandPalette() {
 		sidebarOpen = false;
 		window.dispatchEvent(new CustomEvent(commandPaletteRequestEvent));
+	}
+
+	async function changeAppearance(nextAppearance: Appearance) {
+		if (savingAppearance || nextAppearance === selectedAppearance) return;
+		savingAppearance = nextAppearance;
+		appearanceError = '';
+		appearanceStatus = '';
+		try {
+			await onAppearanceChange(nextAppearance);
+			selectedAppearance = nextAppearance;
+			appearanceStatus = `Appearance set to ${appearanceLabel(nextAppearance)}.`;
+		} catch (error) {
+			appearanceError =
+				error instanceof Error ? error.message : 'Could not save appearance. Please try again.';
+		} finally {
+			savingAppearance = null;
+		}
+	}
+
+	function appearanceLabel(value: Appearance): string {
+		return value[0].toUpperCase() + value.slice(1);
 	}
 
 	type ProjectViewSuffix = '' | '/overview' | '/today' | '/tasks' | '/activity' | '/settings';
@@ -252,39 +288,93 @@
 		{/if}
 
 		<div class="session">
-			{#if activeProject}
+			{#if currentPath !== '/settings'}
+				<fieldset class="appearance-switcher" class:saving={savingAppearance !== null}>
+					<legend>Appearance</legend>
+					<div>
+						{#each appearanceOptions as option (option)}
+							<button
+								type="button"
+								aria-pressed={selectedAppearance === option}
+								aria-label={`Use ${option} appearance`}
+								disabled={savingAppearance !== null}
+								onclick={() => void changeAppearance(option)}
+							>
+								{#if option === 'system'}
+									<svg viewBox="0 0 24 24" aria-hidden="true"
+										><rect x="3" y="4" width="18" height="13" rx="2" /><path
+											d="M8 21h8M12 17v4"
+										/></svg
+									>
+								{:else if option === 'light'}
+									<svg viewBox="0 0 24 24" aria-hidden="true"
+										><circle cx="12" cy="12" r="4" /><path
+											d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+										/></svg
+									>
+								{:else}
+									<svg viewBox="0 0 24 24" aria-hidden="true"
+										><path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3z" /></svg
+									>
+								{/if}
+								<span>{appearanceLabel(option)}</span>
+							</button>
+						{/each}
+					</div>
+				</fieldset>
+				{#if appearanceError}<p class="appearance-error" role="alert">{appearanceError}</p>{/if}
+				{#if appearanceStatus}<p class="sr-only" role="status">{appearanceStatus}</p>{/if}
+			{/if}
+			<nav class="utility-navigation" aria-label="Settings">
+				{#if activeProject}
+					<a
+						href={projectHref(activeProject.id, '/settings')}
+						class:active={isActive('/settings')}
+						aria-current={isActive('/settings') ? 'page' : undefined}
+						aria-keyshortcuts={ariaShortcut(shortcutCommand('project-settings'), applePlatform)}
+						data-shortcut-hint={formatShortcutHint(
+							shortcutCommand('project-settings'),
+							applePlatform
+						)}
+						onclick={closeSidebar}
+					>
+						<svg viewBox="0 0 24 24" aria-hidden="true"
+							><circle cx="12" cy="12" r="3" /><path
+								d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6-.7-2H8.5l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4z"
+							/></svg
+						><span>Project settings</span>
+					</a>
+				{/if}
 				<a
-					href={projectHref(activeProject.id, '/settings')}
-					class:active={isActive('/settings')}
-					aria-current={isActive('/settings') ? 'page' : undefined}
-					aria-keyshortcuts={ariaShortcut(shortcutCommand('project-settings'), applePlatform)}
-					data-shortcut-hint={formatShortcutHint(
-						shortcutCommand('project-settings'),
-						applePlatform
-					)}
+					href={resolve('/projects')}
+					class:active={currentPath === '/projects'}
+					aria-current={currentPath === '/projects' ? 'page' : undefined}
 					onclick={closeSidebar}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><circle cx="12" cy="12" r="3" /><path
-							d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6-.7-2H8.5l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4z"
-						/></svg
-					><span>Project settings</span>
+						><path d="M3 7.5h7l2 2h9v9.5H3zM3 7.5V5h7l2 2.5" /></svg
+					><span>Manage projects</span>
 				</a>
-			{/if}
-			<a
-				href={resolve('/projects')}
-				class:active={currentPath === '/projects'}
-				aria-current={currentPath === '/projects' ? 'page' : undefined}
-				onclick={closeSidebar}><span>Manage projects</span></a
-			>
-			<a
-				href={resolve('/settings')}
-				class:active={currentPath === '/settings'}
-				aria-current={currentPath === '/settings' ? 'page' : undefined}
-				onclick={closeSidebar}><span>Account settings</span></a
-			>
-			<div class="profile"><span class="username">{username}</span></div>
-			<button type="button" disabled={signingOut} onclick={signOut}>Log out</button>
+				<a
+					href={resolve('/settings')}
+					class:active={currentPath === '/settings'}
+					aria-current={currentPath === '/settings' ? 'page' : undefined}
+					onclick={closeSidebar}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></svg
+					><span>Account settings</span>
+				</a>
+			</nav>
+			<div class="profile">
+				<span class="avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
+				<span class="username">{username}</span>
+				<button class="logout" type="button" disabled={signingOut} onclick={signOut}>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10" /></svg
+					><span>{signingOut ? 'Logging out…' : 'Log out'}</span>
+				</button>
+			</div>
 			{#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
 		</div>
 	</aside>
@@ -317,62 +407,10 @@
 
 <style>
 	.shell {
-		--theme-accent: #2d6540;
-		--theme-accent-soft: #dfeadf;
-		--theme-sidebar: #f1f5ef;
-		--theme-canvas: #fbfcfa;
-		--theme-border: #dfe5dc;
-		--theme-hover: #e6ece4;
-		--theme-focus: rgb(45 101 64 / 16%);
 		display: grid;
 		grid-template-columns: 17rem minmax(0, 1fr);
 		min-height: 100vh;
 		background: var(--theme-canvas);
-	}
-	.theme-ocean {
-		--theme-accent: #28638c;
-		--theme-accent-soft: #dceaf3;
-		--theme-sidebar: #eef5f8;
-		--theme-canvas: #fbfdfe;
-		--theme-border: #d8e4ea;
-		--theme-hover: #e3eef3;
-		--theme-focus: rgb(40 99 140 / 16%);
-	}
-	.theme-plum {
-		--theme-accent: #6b477d;
-		--theme-accent-soft: #ebe1ef;
-		--theme-sidebar: #f5f0f6;
-		--theme-canvas: #fdfbfe;
-		--theme-border: #e5dce8;
-		--theme-hover: #eee6f1;
-		--theme-focus: rgb(107 71 125 / 16%);
-	}
-	.theme-sand {
-		--theme-accent: #8a643f;
-		--theme-accent-soft: #eee3d7;
-		--theme-sidebar: #f7f2eb;
-		--theme-canvas: #fefcf9;
-		--theme-border: #e7ddd1;
-		--theme-hover: #efe7dc;
-		--theme-focus: rgb(138 100 63 / 16%);
-	}
-	.theme-rose {
-		--theme-accent: #94505e;
-		--theme-accent-soft: #f1dfe3;
-		--theme-sidebar: #f8f0f2;
-		--theme-canvas: #fefbfc;
-		--theme-border: #eadce0;
-		--theme-hover: #f2e5e8;
-		--theme-focus: rgb(148 80 94 / 16%);
-	}
-	.theme-graphite {
-		--theme-accent: #52565d;
-		--theme-accent-soft: #e3e5e7;
-		--theme-sidebar: #f1f2f3;
-		--theme-canvas: #fcfcfc;
-		--theme-border: #dfe1e3;
-		--theme-hover: #e8e9eb;
-		--theme-focus: rgb(82 86 93 / 16%);
 	}
 	aside {
 		position: sticky;
@@ -396,7 +434,7 @@
 		align-items: center;
 		gap: 0.65rem;
 		padding: 0.25rem 0.4rem;
-		color: #292927;
+		color: var(--color-text);
 		font-weight: 760;
 		letter-spacing: -0.025em;
 		text-decoration: none;
@@ -407,8 +445,8 @@
 		height: 1.75rem;
 		place-items: center;
 		border-radius: 0.5rem;
-		color: #fff;
-		background: var(--theme-accent);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 	.close-sidebar {
 		display: none;
@@ -421,7 +459,7 @@
 	.project-switcher label {
 		margin: 0;
 		padding: 0 0.3rem;
-		color: #74746f;
+		color: var(--color-text-secondary);
 		font-size: 0.68rem;
 		font-weight: 800;
 		letter-spacing: 0.09em;
@@ -433,7 +471,7 @@
 		padding: 0 2rem 0 0.7rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.6rem;
-		color: #292927;
+		color: var(--color-text);
 		background: var(--theme-canvas);
 		font: inherit;
 		font-size: 0.9rem;
@@ -469,7 +507,7 @@
 		padding: 0.58rem 0.7rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.55rem;
-		color: #555650;
+		color: var(--color-text-secondary);
 		background: var(--theme-canvas);
 		font: inherit;
 		font-size: 0.8rem;
@@ -488,7 +526,7 @@
 	}
 	.global-command-palette kbd {
 		margin-left: auto;
-		color: #777873;
+		color: var(--color-text-muted);
 		font-family: inherit;
 		font-size: 0.62rem;
 	}
@@ -500,8 +538,7 @@
 		gap: 0.15rem;
 	}
 	.primary-navigation a,
-	.session a,
-	.session button,
+	.utility-navigation a,
 	.empty-projects {
 		display: flex;
 		align-items: center;
@@ -510,30 +547,29 @@
 		padding: 0.5rem 0.6rem;
 		border: 0;
 		border-radius: 0.38rem;
-		color: #53534f;
+		color: var(--color-text-secondary);
 		background: transparent;
 		font-size: 0.84rem;
 		font-weight: 600;
 		text-decoration: none;
 	}
 	.primary-navigation a,
-	.session a {
+	.utility-navigation a {
 		position: relative;
 	}
 	.primary-navigation a:hover,
-	.session a:hover,
-	.session button:hover:not(:disabled),
+	.utility-navigation a:hover,
 	.empty-projects:hover {
 		background: var(--theme-hover);
 	}
 	.primary-navigation a.active,
-	.session a.active {
+	.utility-navigation a.active {
 		color: var(--theme-accent);
 		background: var(--theme-accent-soft);
 		font-weight: 750;
 	}
 	.primary-navigation svg,
-	.session svg,
+	.utility-navigation svg,
 	.mobile-bar svg,
 	.close-sidebar svg {
 		width: 1.2rem;
@@ -546,30 +582,154 @@
 	}
 	.session {
 		display: grid;
-		gap: 0.1rem;
+		gap: 0.75rem;
 		margin-top: auto;
-		padding-top: 1.5rem;
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--theme-border);
 	}
-	.session button {
-		width: 100%;
+	.appearance-switcher {
+		display: grid;
+		gap: 0.35rem;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+	.appearance-switcher legend {
+		padding: 0 0.2rem;
+		color: var(--color-text-secondary);
+		font-size: 0.68rem;
+		font-weight: 700;
+	}
+	.appearance-switcher > div {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.15rem;
+		padding: 0.18rem;
+		border: 1px solid var(--theme-border);
+		border-radius: 0.65rem;
+		background: var(--theme-control);
+	}
+	.appearance-switcher button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.3rem;
+		min-width: 0;
+		padding: 0.42rem 0.16rem;
+		border: 0;
+		border-radius: 0.46rem;
+		color: var(--color-text-muted);
+		background: transparent;
+		font: inherit;
+		font-size: 0.66rem;
+		font-weight: 700;
+		text-align: center;
 		cursor: pointer;
-		text-align: left;
+		transition:
+			color 120ms ease,
+			background 120ms ease,
+			box-shadow 120ms ease;
 	}
-	.session button:disabled {
+	.appearance-switcher button svg {
+		width: 0.92rem;
+		height: 0.92rem;
+		flex: 0 0 auto;
+		fill: none;
+		stroke: currentColor;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.7;
+	}
+	.appearance-switcher button:hover:not(:disabled) {
+		color: var(--color-text);
+		background: color-mix(in srgb, var(--theme-surface) 72%, transparent);
+	}
+	.appearance-switcher button[aria-pressed='true'] {
+		color: var(--theme-accent);
+		background: var(--theme-surface-elevated);
+		box-shadow:
+			0 1px 2px color-mix(in srgb, var(--color-text) 12%, transparent),
+			inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 25%, var(--theme-border));
+	}
+	.appearance-switcher.saving {
+		opacity: 0.62;
+	}
+	.appearance-switcher.saving button {
 		cursor: wait;
-		opacity: 0.55;
+	}
+	.appearance-error {
+		margin: -0.35rem 0.4rem 0.55rem;
+		color: var(--color-error);
+		font-size: 0.7rem;
+		line-height: 1.35;
+	}
+	.utility-navigation {
+		display: grid;
+		gap: 0.08rem;
 	}
 	.profile {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
 		min-width: 0;
-		padding: 0.65rem 0.6rem 0.2rem;
+		padding: 0.7rem 0.2rem 0;
+		border-top: 1px solid var(--theme-border);
+	}
+	.avatar {
+		display: grid;
+		width: 1.65rem;
+		height: 1.65rem;
+		flex: 0 0 auto;
+		place-items: center;
+		border-radius: 50%;
+		color: var(--theme-accent);
+		background: var(--theme-accent-soft);
+		font-size: 0.68rem;
+		font-weight: 800;
 	}
 	.username {
 		display: block;
+		min-width: 0;
 		overflow: hidden;
-		color: #777;
+		color: var(--color-text-secondary);
 		font-size: 0.74rem;
+		font-weight: 650;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.logout {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		width: auto;
+		margin-left: auto;
+		padding: 0.35rem 0.4rem;
+		border: 0;
+		border-radius: 0.38rem;
+		color: var(--color-text-muted);
+		background: transparent;
+		font: inherit;
+		font-size: 0.68rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.logout:hover:not(:disabled) {
+		color: var(--color-text);
+		background: var(--theme-hover);
+	}
+	.logout:disabled {
+		cursor: wait;
+		opacity: 0.55;
+	}
+	.logout svg {
+		width: 0.95rem;
+		height: 0.95rem;
+		flex: 0 0 auto;
+		fill: none;
+		stroke: currentColor;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.7;
 	}
 	.content {
 		min-width: 0;
@@ -583,8 +743,19 @@
 	}
 	.error {
 		margin: 0.6rem 0.5rem 0;
-		color: #b83f34;
+		color: var(--color-error);
 		font-size: 0.76rem;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	@media (max-width: 48rem) {
 		.shell {
@@ -596,7 +767,7 @@
 			left: 0;
 			width: min(19rem, 86vw);
 			transform: translateX(-102%);
-			box-shadow: 1rem 0 3rem rgb(30 29 27 / 14%);
+			box-shadow: var(--shadow-elevated);
 			transition: transform 160ms ease;
 		}
 		aside.open {
@@ -610,7 +781,7 @@
 			padding: 0;
 			border: 0;
 			border-radius: 0.4rem;
-			color: #66625f;
+			color: var(--color-text-secondary);
 			background: transparent;
 		}
 		.sidebar-backdrop {
@@ -619,7 +790,7 @@
 			inset: 0;
 			display: block;
 			border: 0;
-			background: rgb(23 22 20 / 30%);
+			background: var(--color-overlay);
 			opacity: 0;
 			pointer-events: none;
 			transition: opacity 160ms ease;
@@ -647,7 +818,7 @@
 			padding: 0;
 			border: 0;
 			border-radius: 0.45rem;
-			color: #4e4d49;
+			color: var(--color-text-secondary);
 			background: transparent;
 		}
 		.mobile-bar .brand {

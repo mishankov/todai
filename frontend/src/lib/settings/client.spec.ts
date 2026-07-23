@@ -18,6 +18,7 @@ describe('settings client', () => {
 				timezone: 'Europe/Moscow',
 				agentModel: 'gpt-fast',
 				agentThinkingEffort: 'high',
+				appearance: 'dark',
 				version: 1
 			})
 		).resolves.toEqual(view);
@@ -29,6 +30,7 @@ describe('settings client', () => {
 					timezone: 'Europe/Moscow',
 					agentModel: 'gpt-fast',
 					agentThinkingEffort: 'high',
+					appearance: 'dark',
 					version: 1
 				})
 			})
@@ -44,6 +46,7 @@ describe('settings client', () => {
 				timezone: 'UTC',
 				agentModel: 'gpt-fast',
 				agentThinkingEffort: 'medium',
+				appearance: 'system',
 				version: 1
 			})
 		).rejects.toBeInstanceOf(SettingsConflictError);
@@ -77,6 +80,7 @@ function testSettingsView(): SettingsView {
 			timezone: 'Europe/Moscow',
 			agentModel: 'gpt-fast',
 			agentThinkingEffort: 'high',
+			appearance: 'dark',
 			version: 1,
 			createdAt: '2026-07-18T10:00:00Z',
 			updatedAt: '2026-07-18T10:00:00Z',
