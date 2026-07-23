@@ -39,6 +39,7 @@ export interface TaskUpdate {
 
 export interface TaskCreateDraft {
 	title: string;
+	description?: string | null;
 	projectId: string;
 	sectionId: string | null;
 	priority: number;
@@ -169,21 +170,21 @@ export async function createTaskWithProperties(
 	fetcher: typeof fetch,
 	draft: TaskCreateDraft
 ): Promise<Task> {
-	const created = await createTask(
+	return sendTaskRequest(
 		fetcher,
-		draft.title,
-		draft.projectId,
-		draft.sectionId ?? undefined
+		'/api/tasks',
+		{
+			title: draft.title,
+			description: draft.description ?? null,
+			projectId: draft.projectId,
+			sectionId: draft.sectionId,
+			priority: draft.priority,
+			dueDate: draft.dueDate,
+			dueTime: draft.dueDate ? draft.dueTime : null,
+			dueTimezone: draft.dueDate && draft.dueTime ? draft.dueTimezone : null
+		},
+		'Could not create the task.'
 	);
-	if (draft.priority === 0 && draft.dueDate === null) return created;
-
-	return updateTask(fetcher, created.id, {
-		version: created.version,
-		priority: draft.priority,
-		dueDate: draft.dueDate,
-		dueTime: draft.dueDate ? draft.dueTime : null,
-		dueTimezone: draft.dueDate && draft.dueTime ? draft.dueTimezone : null
-	});
 }
 
 export async function getTaskSubtasks(fetcher: typeof fetch, taskId: string): Promise<Task[]> {

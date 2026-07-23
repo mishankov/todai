@@ -58,6 +58,19 @@ type Nullable[T any] struct {
 	Value *T
 }
 
+// CreateInput contains the complete state accepted when a task is created.
+type CreateInput struct {
+	Title       string
+	Description *string
+	ProjectID   *string
+	SectionID   *string
+	ParentID    *string
+	Priority    int
+	DueDate     *Date
+	DueTime     *TimeOfDay
+	DueTimezone *string
+}
+
 // Update contains the editable fields and the version the caller observed.
 type Update struct {
 	Version     int64

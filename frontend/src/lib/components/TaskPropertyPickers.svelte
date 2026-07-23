@@ -11,7 +11,7 @@
 		timeOptions,
 		type QuickPickItem
 	} from '$lib/tasks/quick-picks';
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import QuickPick from './QuickPick.svelte';
 
 	interface Props {
@@ -44,6 +44,9 @@
 	let recentSectionIds = $state<string[]>([]);
 	let dateReference = $state(new Date());
 	let locationOpen = $state(false);
+	let locationTrigger = $state<HTMLButtonElement>();
+	let locationPopover = $state<HTMLDivElement>();
+	let locationPopoverStyle = $state('');
 	const projectStorageKey = 'todai.quick-picks.recent-projects';
 	const sectionStorageKeyPrefix = 'todai.quick-picks.recent-sections';
 	let currentSections = $derived(
@@ -121,7 +124,37 @@
 			projectStorageKey,
 			projects.map((project) => project.id)
 		);
+		const reposition = () => positionLocationPopover();
+		document.addEventListener('scroll', reposition, true);
+		return () => document.removeEventListener('scroll', reposition, true);
 	});
+
+	async function toggleLocation() {
+		locationOpen = !locationOpen;
+		if (!locationOpen) return;
+		await tick();
+		positionLocationPopover();
+	}
+
+	function positionLocationPopover() {
+		if (!locationOpen || !locationTrigger || !locationPopover) return;
+		const triggerRect = locationTrigger.getBoundingClientRect();
+		const margin = 8;
+		const gap = 6;
+		const width = Math.min(304, window.innerWidth - margin * 2);
+		const left = Math.max(margin, Math.min(triggerRect.left, window.innerWidth - width - margin));
+		const roomBelow = window.innerHeight - triggerRect.bottom - margin;
+		const roomAbove = triggerRect.top - margin;
+		const naturalHeight = Math.min(locationPopover.scrollHeight, 320);
+		const placeAbove = roomBelow < naturalHeight + gap && roomAbove > roomBelow;
+		const availableRoom = placeAbove ? roomAbove : roomBelow;
+		const maxHeight = Math.max(96, Math.min(320, availableRoom - gap));
+		const renderedHeight = Math.min(naturalHeight, maxHeight);
+		const top = placeAbove
+			? Math.max(margin, triggerRect.top - renderedHeight - gap)
+			: Math.min(window.innerHeight - renderedHeight - margin, triggerRect.bottom + gap);
+		locationPopoverStyle = `left:${left}px;top:${top}px;width:${width}px;max-height:${maxHeight}px`;
+	}
 
 	function sectionStorageKey(selectedProjectId: string): string {
 		return `${sectionStorageKeyPrefix}.${selectedProjectId}`;
@@ -177,6 +210,7 @@
 		if (sectionId) {
 			recentSectionIds = rememberRecentId(localStorage, sectionStorageKey(projectId), sectionId);
 		}
+		locationOpen = false;
 	}
 
 	function chooseDate(value: string) {
@@ -206,6 +240,8 @@
 	}
 </script>
 
+<svelte:window onresize={positionLocationPopover} />
+
 <div
 	class="property-bar"
 	role="group"
@@ -222,6 +258,7 @@
 		}}
 	>
 		<button
+			bind:this={locationTrigger}
 			class="property-trigger"
 			type="button"
 			aria-label={`Location: ${locationName}`}
@@ -233,7 +270,7 @@
 					locationOpen = false;
 				}
 			}}
-			onclick={() => (locationOpen = !locationOpen)}
+			onclick={() => void toggleLocation()}
 		>
 			<svg aria-hidden="true" viewBox="0 0 24 24">
 				<path d="M3.5 7.5h6l1.7 2h9.3v9h-17zM3.5 7.5V5h6l1.7 2.5" />
@@ -245,7 +282,13 @@
 		</button>
 
 		{#if locationOpen}
-			<div class="location-popover" role="dialog" aria-label="Task location">
+			<div
+				bind:this={locationPopover}
+				class="location-popover"
+				role="dialog"
+				aria-label="Task location"
+				style={locationPopoverStyle}
+			>
 				<QuickPick
 					label="Project"
 					buttonText={projectName}
@@ -366,18 +409,17 @@
 		outline: none;
 	}
 	.location-popover {
-		position: absolute;
-		z-index: 5;
-		top: calc(100% + 0.45rem);
-		left: 0;
+		position: fixed;
+		z-index: 100;
 		display: grid;
-		width: min(19rem, calc(100vw - 3rem));
+		box-sizing: border-box;
 		gap: 0.7rem;
 		padding: 0.8rem;
 		border: 1px solid var(--theme-border);
 		border-radius: 0.75rem;
 		background: var(--color-surface);
 		box-shadow: 0 0.8rem 2.2rem color-mix(in srgb, var(--theme-accent) 14%, transparent);
+		overflow-y: auto;
 	}
 	@media (max-width: 46rem) {
 		.property-bar {

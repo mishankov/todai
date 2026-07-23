@@ -1,13 +1,9 @@
-<script module lang="ts">
-	let nextTaskQuickAddId = 0;
-	function createTaskQuickAddId(): number {
-		nextTaskQuickAddId += 1;
-		return nextTaskQuickAddId;
-	}
-</script>
-
 <script lang="ts">
+	import type { Project, ProjectSection } from '$lib/projects/client';
 	import type { Task, TaskCreateDraft } from '$lib/tasks/client';
+	import { cleanTaskTitle } from '$lib/tasks/rich-title';
+	import { untrack } from 'svelte';
+	import RichTaskTitle from './RichTaskTitle.svelte';
 
 	interface Props {
 		create: (draft: TaskCreateDraft) => Promise<Task>;
@@ -15,6 +11,9 @@
 		initialProjectId: string;
 		initialSectionId?: string | null;
 		label?: string;
+		projects?: Project[];
+		sections?: ProjectSection[];
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 	}
 
 	let {
@@ -22,30 +21,46 @@
 		oncreated,
 		initialProjectId,
 		initialSectionId = null,
-		label = 'Task title'
+		label = 'Task title',
+		projects = [],
+		sections = [],
+		loadSections
 	}: Props = $props();
 	let title = $state('');
+	let projectId = $state(untrack(() => initialProjectId));
+	let sectionId = $state<string | null>(untrack(() => initialSectionId));
+	let priority = $state(0);
+	let dueDate = $state<string | null>(null);
+	let dueTime = $state<string | null>(null);
+	let dueTimezone = $state<string | null>(null);
 	let creating = $state(false);
 	let errorMessage = $state('');
-	const inputId = `task-quick-add-${createTaskQuickAddId()}`;
+	let locationChipResetKey = $state(0);
 
 	async function submit() {
-		const trimmedTitle = title.trim();
-		if (!trimmedTitle || creating) return;
+		const trimmedTitle = cleanTaskTitle(title);
+		if (!trimmedTitle || !projectId || creating) return;
 		creating = true;
 		errorMessage = '';
 		try {
 			const created = await create({
 				title: trimmedTitle,
-				projectId: initialProjectId,
-				sectionId: initialSectionId,
-				priority: 0,
-				dueDate: null,
-				dueTime: null,
-				dueTimezone: null
+				projectId,
+				sectionId,
+				priority,
+				dueDate,
+				dueTime,
+				dueTimezone
 			});
 			oncreated(created);
 			title = '';
+			projectId = initialProjectId;
+			sectionId = initialSectionId;
+			priority = 0;
+			dueDate = null;
+			dueTime = null;
+			dueTimezone = null;
+			locationChipResetKey += 1;
 		} catch {
 			errorMessage = 'The task could not be created. Please try again.';
 		} finally {
@@ -62,20 +77,26 @@
 	}}
 >
 	<div class="title-row">
-		<label class="sr-only" for={inputId}>{label}</label>
-		<input
-			id={inputId}
-			name="title"
-			placeholder="Add task"
-			autocomplete="off"
-			maxlength="500"
-			bind:value={title}
+		<RichTaskTitle
+			bind:title
+			bind:projectId
+			bind:sectionId
+			bind:priority
+			bind:dueDate
+			bind:dueTime
+			bind:dueTimezone
+			{projects}
+			{sections}
+			{loadSections}
+			{label}
 			disabled={creating}
+			hidePresetLocationChips
+			{locationChipResetKey}
 		/>
 		<button
 			type="submit"
 			aria-label={label.startsWith('Add task') ? label : 'Add task'}
-			disabled={creating || !title.trim()}
+			disabled={creating || !cleanTaskTitle(title) || !projectId}
 		>
 			{creating ? 'Adding…' : 'Add'}
 		</button>
@@ -97,20 +118,6 @@
 		align-items: center;
 		gap: 0.55rem;
 	}
-	.title-row input {
-		min-width: 0;
-		padding: 0.55rem 0.2rem;
-		border: 0;
-		color: var(--color-text);
-		background: transparent;
-		outline: none;
-	}
-	.title-row input::placeholder {
-		color: var(--color-text-muted);
-	}
-	.title-row input:focus::placeholder {
-		color: var(--theme-accent);
-	}
 	.title-row button {
 		padding: 0.5rem 0.75rem;
 		border: 0;
@@ -130,16 +137,5 @@
 		margin: 0.25rem 0 0;
 		color: var(--color-error);
 		font-size: 0.8rem;
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 </style>

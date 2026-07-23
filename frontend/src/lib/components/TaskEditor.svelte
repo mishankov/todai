@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { TaskConflictError, type Task, type TaskUpdate } from '$lib/tasks/client';
+	import { cleanTaskTitle } from '$lib/tasks/rich-title';
 	import TaskPropertyPickers from './TaskPropertyPickers.svelte';
+	import RichTaskTitle from './RichTaskTitle.svelte';
 
 	interface Props {
 		task: Task;
@@ -26,10 +28,10 @@
 	let description = $derived(task.description ?? '');
 	let priority = $derived(task.priority);
 	let projectId = $derived(task.projectId);
-	let sectionId = $derived(task.sectionId ?? '');
-	let dueDate = $derived(task.dueDate ?? '');
-	let dueTime = $derived(task.dueTime ?? '');
-	let dueTimezone = $derived(task.dueTimezone ?? '');
+	let sectionId = $derived(task.sectionId);
+	let dueDate = $derived(task.dueDate);
+	let dueTime = $derived(task.dueTime);
+	let dueTimezone = $derived(task.dueTimezone);
 	let saving = $state(false);
 	let errorMessage = $state('');
 
@@ -39,16 +41,16 @@
 		try {
 			const update: TaskUpdate = {
 				version: task.version,
-				title,
+				title: cleanTaskTitle(title),
 				description: description.trim() || null,
 				priority,
-				dueDate: dueDate || null,
+				dueDate,
 				dueTime: dueDate && dueTime ? dueTime : null,
-				dueTimezone: dueDate && dueTime ? dueTimezone || null : null
+				dueTimezone: dueDate && dueTime ? dueTimezone : null
 			};
 			if (projectId !== task.projectId) update.projectId = projectId;
-			if (sectionId !== (task.sectionId ?? '') || projectId !== task.projectId) {
-				update.sectionId = sectionId || null;
+			if (sectionId !== task.sectionId || projectId !== task.projectId) {
+				update.sectionId = sectionId;
 			}
 			await save(update);
 		} catch (error) {
@@ -69,10 +71,25 @@
 		void submit();
 	}}
 >
-	<label>
+	<div class="field">
 		<span>Title</span>
-		<input bind:value={title} maxlength="500" required />
-	</label>
+		<RichTaskTitle
+			bind:title
+			bind:projectId
+			bind:sectionId
+			bind:priority
+			bind:dueDate
+			bind:dueTime
+			bind:dueTimezone
+			{projects}
+			{sections}
+			{loadSections}
+			label="Title"
+			placeholder="Task title"
+			disabled={saving}
+			showChips={false}
+		/>
+	</div>
 
 	<label>
 		<span>Description</span>
@@ -95,7 +112,7 @@
 
 	<div class="actions">
 		<button class="cancel" type="button" disabled={saving} onclick={cancel}>Cancel</button>
-		<button class="save" type="submit" disabled={saving || !title.trim()}>
+		<button class="save" type="submit" disabled={saving || !cleanTaskTitle(title) || !projectId}>
 			{saving ? 'Saving…' : 'Save changes'}
 		</button>
 	</div>
@@ -120,16 +137,17 @@
 		background: transparent;
 		box-shadow: none;
 	}
-	label {
+	label,
+	.field {
 		display: grid;
 		gap: 0.4rem;
 	}
-	label span {
+	label span,
+	.field > span {
 		color: var(--color-text-secondary);
 		font-size: 0.75rem;
 		font-weight: 700;
 	}
-	input,
 	textarea {
 		box-sizing: border-box;
 		width: 100%;
@@ -140,7 +158,6 @@
 		background: var(--color-surface);
 		outline: none;
 	}
-	input:focus,
 	textarea:focus {
 		border-color: var(--theme-accent);
 		box-shadow: 0 0 0 0.2rem var(--theme-focus);

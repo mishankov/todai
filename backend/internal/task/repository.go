@@ -68,7 +68,18 @@ func (r *Repository) Create(
 	sectionID *string,
 	parentID *string,
 ) (Task, error) {
-	if parentID == nil && (projectID == nil || *projectID == "") {
+	return r.CreateWithProperties(ctx, scope, CreateInput{
+		Title: title, ProjectID: projectID, SectionID: sectionID, ParentID: parentID,
+	})
+}
+
+// CreateWithProperties inserts a task and its final initial properties in one transaction.
+func (r *Repository) CreateWithProperties(
+	ctx context.Context,
+	scope execution.Scope,
+	input CreateInput,
+) (Task, error) {
+	if input.ParentID == nil && (input.ProjectID == nil || *input.ProjectID == "") {
 		return Task{}, ErrProjectRequired
 	}
 	tx, err := r.db.BeginTxx(ctx, nil)
@@ -78,14 +89,14 @@ func (r *Repository) Create(
 	defer func() { _ = tx.Rollback() }()
 
 	var created Task
-	if parentID != nil {
+	if input.ParentID != nil {
 		var parent Task
 		err = tx.GetContext(ctx, &parent, `
 			SELECT `+taskColumns+`
 			FROM tasks
 			WHERE id = $1 AND user_id = $2
 			FOR UPDATE
-		`, *parentID, scope.UserID)
+		`, *input.ParentID, scope.UserID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return Task{}, ErrTaskNotFound
 		}
@@ -97,30 +108,35 @@ func (r *Repository) Create(
 		}
 		err = tx.GetContext(ctx, &created, `
 			INSERT INTO tasks (
-				id, user_id, project_id, section_id, parent_id, title, status, priority,
-				position, version, created_at, updated_at, last_modified_by
+				id, user_id, project_id, section_id, parent_id, title, description, status,
+				priority, due_date, due_time, due_timezone, position, version, created_at,
+				updated_at, last_modified_by
 			)
 			SELECT
 				$1::VARCHAR, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR,
-				$5::VARCHAR, $6::TEXT, 'active', 0,
+				$5::VARCHAR, $6::TEXT, $7::TEXT, 'active', $8::INTEGER,
+				$9::DATE, $10::TIME, $11::VARCHAR,
 				COALESCE(MAX(child.position), 0) + 1024, 1,
-				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $7::VARCHAR
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $12::VARCHAR
 			FROM tasks child
 			WHERE child.user_id = $2::VARCHAR AND child.parent_id = $5::VARCHAR
 			RETURNING `+taskColumns,
 			uuid.NewString(), scope.UserID, parent.ProjectID, parent.SectionID, parent.ID,
-			title, scope.ModifiedBy(),
+			input.Title, input.Description, input.Priority, input.DueDate, input.DueTime,
+			input.DueTimezone, scope.ModifiedBy(),
 		)
 	} else {
 		err = tx.GetContext(ctx, &created, `
 		INSERT INTO tasks (
-			id, user_id, project_id, section_id, title, status, priority, position, version,
-			created_at, updated_at, last_modified_by
+			id, user_id, project_id, section_id, title, description, status, priority,
+			due_date, due_time, due_timezone, position, version, created_at, updated_at,
+			last_modified_by
 		)
 		SELECT
-			$1::VARCHAR, $2::VARCHAR, $4::VARCHAR, $5::VARCHAR, $3::TEXT, 'active', 0,
+			$1::VARCHAR, $2::VARCHAR, $4::VARCHAR, $5::VARCHAR, $3::TEXT, $6::TEXT,
+			'active', $7::INTEGER, $8::DATE, $9::TIME, $10::VARCHAR,
 			COALESCE(MAX(position), 0) + 1024, 1,
-			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $6::VARCHAR
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $11::VARCHAR
 		FROM tasks
 		WHERE user_id = $2::VARCHAR
 			AND project_id IS NOT DISTINCT FROM $4::VARCHAR
@@ -136,18 +152,20 @@ func (r *Repository) Create(
 				WHERE id = $5::VARCHAR AND user_id = $2::VARCHAR AND project_id = $4::VARCHAR
 			))
 		RETURNING `+taskColumns,
-			uuid.NewString(), scope.UserID, title, projectID, sectionID, scope.ModifiedBy(),
+			uuid.NewString(), scope.UserID, input.Title, input.ProjectID, input.SectionID,
+			input.Description, input.Priority, input.DueDate, input.DueTime, input.DueTimezone,
+			scope.ModifiedBy(),
 		)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		if projectID != nil {
+		if input.ProjectID != nil {
 			var projectExists bool
 			if getErr := tx.GetContext(ctx, &projectExists, `
 				SELECT EXISTS (
 					SELECT 1 FROM projects
 					WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
 				)
-			`, *projectID, scope.UserID); getErr != nil {
+			`, *input.ProjectID, scope.UserID); getErr != nil {
 				return Task{}, fmt.Errorf("check task project: %w", getErr)
 			}
 			if !projectExists {
@@ -967,6 +985,7 @@ func taskEventSnapshot(task Task) map[string]any {
 	return map[string]any{
 		"id":          task.ID,
 		"title":       task.Title,
+		"description": task.Description,
 		"status":      task.Status,
 		"projectId":   task.ProjectID,
 		"sectionId":   task.SectionID,
