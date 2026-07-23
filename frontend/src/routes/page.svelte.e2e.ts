@@ -625,9 +625,10 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.keyboard.type(' /Personal');
 	await expect(
 		page
-			.getByRole('listbox', { name: 'section options' })
-			.getByRole('option', { name: personalSectionName })
+			.getByRole('listbox', { name: 'location options' })
+			.getByRole('option', { name: `Personal: ${personalSectionName}` })
 	).toBeVisible();
+	await page.keyboard.press('ArrowDown');
 	await page.keyboard.press('Enter');
 	await expect(
 		quickAdd.getByRole('button', { name: `Location: Personal / ${personalSectionName}` })

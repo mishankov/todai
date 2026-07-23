@@ -21,13 +21,15 @@ describe('rich task title model', () => {
 		}
 	});
 
-	it('filters without case sensitivity across labels and details', () => {
+	it('filters without case sensitivity across labels, details, and groups', () => {
 		const options = [
 			{ id: 'work', label: 'Work planning' },
-			{ id: 'home', label: 'Home', detail: 'Personal' }
+			{ id: 'home', label: 'Home', detail: 'Personal' },
+			{ id: 'inbox', label: 'Inbox', group: 'Office' }
 		];
 		expect(filterTitleOptions(options, 'PLAn')).toEqual([options[0]]);
 		expect(filterTitleOptions(options, 'personal')).toEqual([options[1]]);
+		expect(filterTitleOptions(options, 'office')).toEqual([options[2]]);
 	});
 
 	it('removes the selected token and returns a clean title', () => {

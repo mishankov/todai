@@ -12,6 +12,7 @@ export interface TitleOption {
 	id: string;
 	label: string;
 	detail?: string;
+	group?: string;
 	custom?: 'date' | 'time';
 }
 
@@ -49,7 +50,9 @@ export function filterTitleOptions<T extends TitleOption>(options: T[], query: s
 	const normalized = query.trim().toLocaleLowerCase();
 	if (!normalized) return options;
 	return options.filter((option) =>
-		`${option.label} ${option.detail ?? ''}`.toLocaleLowerCase().includes(normalized)
+		`${option.label} ${option.detail ?? ''} ${option.group ?? ''}`
+			.toLocaleLowerCase()
+			.includes(normalized)
 	);
 }
 

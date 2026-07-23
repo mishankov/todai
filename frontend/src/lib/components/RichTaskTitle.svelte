@@ -27,6 +27,11 @@
 
 	type PickerKind = TitleProperty | 'due-time';
 
+	interface RichTitleOption extends TitleOption {
+		projectId?: string;
+		sectionId?: string | null;
+	}
+
 	interface Props {
 		title: string;
 		projectId: string;
@@ -162,15 +167,29 @@
 		}
 	}
 
-	function buildOptions(kind: PickerKind | null): TitleOption[] {
+	function buildOptions(kind: PickerKind | null): RichTitleOption[] {
 		switch (kind) {
 			case 'project':
 				return projects.map((project) => ({ id: project.id, label: project.name }));
 			case 'section':
-				return [
-					{ id: '__inbox__', label: 'No section (Inbox)' },
-					...currentSections.map((section) => ({ id: section.id, label: section.name }))
-				];
+				return projects.flatMap((project) => [
+					{
+						id: JSON.stringify([project.id, null]),
+						label: 'Inbox',
+						group: project.name,
+						projectId: project.id,
+						sectionId: null
+					},
+					...cachedSections
+						.filter((section) => section.projectId === project.id)
+						.map((section) => ({
+							id: JSON.stringify([project.id, section.id]),
+							label: section.name,
+							group: project.name,
+							projectId: project.id,
+							sectionId: section.id
+						}))
+				]);
 			case 'priority':
 				return [...priorityOptions]
 					.reverse()
@@ -238,8 +257,13 @@
 		if (activeToken) {
 			manualPicker = null;
 			activeIndex = 0;
+			if (activeToken.type === 'section') loadLocationSections();
 			void tick().then(positionPanel);
 		}
+	}
+
+	function loadLocationSections() {
+		for (const project of projects) void ensureSections(project.id);
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -285,7 +309,7 @@
 		announcement = `${filteredOptions[activeIndex].label}, ${activeIndex + 1} of ${filteredOptions.length}.`;
 	}
 
-	async function chooseOption(option: TitleOption) {
+	async function chooseOption(option: RichTitleOption) {
 		if (option.custom) {
 			const control = option.custom === 'date' ? dateInput : timeInput;
 			control?.showPicker?.();
@@ -306,8 +330,15 @@
 			void ensureSections(option.id);
 			closePicker();
 		} else if (kind === 'section') {
-			showLocationChip('section');
-			sectionId = option.id === '__inbox__' ? null : option.id;
+			if (!option.projectId || option.sectionId === undefined) return;
+			showLocationChip('project');
+			projectId = option.projectId;
+			sectionId = option.sectionId;
+			if (option.sectionId === null) {
+				explicitLocationTypes = explicitLocationTypes.filter((type) => type !== 'section');
+			} else {
+				showLocationChip('section');
+			}
 			closePicker();
 		} else if (kind === 'priority') {
 			priority = Number(option.id);
@@ -375,6 +406,7 @@
 		manualPicker = type;
 		activeToken = null;
 		activeIndex = 0;
+		if (type === 'section') loadLocationSections();
 		void tick().then(positionPanel);
 	}
 
@@ -482,17 +514,21 @@
 			id={listboxId}
 			class="options"
 			role="listbox"
-			aria-label={`${pickerKind} options`}
+			aria-label={pickerKind === 'section' ? 'location options' : `${pickerKind} options`}
 			style={panelStyle}
 		>
 			{#if filteredOptions.length === 0}
 				<p class="empty">No matches</p>
 			{:else}
 				{#each filteredOptions as option, index (option.id)}
+					{#if option.group && (index === 0 || filteredOptions[index - 1]?.group !== option.group)}
+						<p class="option-group" role="presentation">{option.group}</p>
+					{/if}
 					<button
 						id={`${listboxId}-${index}`}
 						type="button"
 						role="option"
+						aria-label={option.group ? `${option.group}: ${option.label}` : undefined}
 						aria-selected={index === activeIndex}
 						class:active={index === activeIndex}
 						onmouseenter={() => (activeIndex = index)}
@@ -629,6 +665,14 @@
 	}
 	.options small {
 		color: #748078;
+	}
+	.option-group {
+		margin: 0.45rem 0.65rem 0.2rem;
+		color: #748078;
+		font-size: 0.68rem;
+		font-weight: 750;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 	}
 	.empty {
 		margin: 0;

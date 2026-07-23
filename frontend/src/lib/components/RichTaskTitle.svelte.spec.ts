@@ -75,6 +75,49 @@ describe('RichTaskTitle', () => {
 		await expect.element(input).toHaveFocus();
 	});
 
+	it('groups slash locations by project and selects the project and section together', async () => {
+		const home = testProject({ id: 'home', name: 'Home' });
+		const work = testProject({ id: 'work', name: 'Work' });
+		const chores = testSection({ id: 'chores', projectId: home.id, name: 'Chores' });
+		const planning = testSection({ id: 'planning', projectId: work.id, name: 'Planning' });
+		const loadSections = vi.fn(async (projectId: string) =>
+			projectId === home.id ? [chores] : [planning]
+		);
+		render(RichTaskTitleHarness, {
+			projects: [home, work],
+			loadSections,
+			initialProjectId: home.id,
+			initialSectionId: chores.id
+		});
+		const input = page.getByRole('combobox', { name: 'Task title' });
+
+		await input.fill('Plan release /work');
+		const listbox = page.getByRole('listbox', { name: 'location options' });
+		await expect.poll(() => loadSections).toHaveBeenCalledWith(home.id);
+		await expect.poll(() => loadSections).toHaveBeenCalledWith(work.id);
+		await expect.element(listbox.getByText('Work', { exact: true })).toBeVisible();
+		await expect.element(listbox.getByText('Home', { exact: true })).not.toBeInTheDocument();
+		await expect.element(listbox.getByRole('option', { name: 'Work: Inbox' })).toBeVisible();
+		await listbox.getByRole('option', { name: 'Work: Planning' }).click();
+
+		expect(readDraft()).toMatchObject({
+			title: 'Plan release',
+			projectId: work.id,
+			sectionId: planning.id
+		});
+
+		await input.fill('Plan release /home');
+		await page
+			.getByRole('listbox', { name: 'location options' })
+			.getByRole('option', { name: 'Home: Inbox' })
+			.click();
+		expect(readDraft()).toMatchObject({
+			title: 'Plan release',
+			projectId: home.id,
+			sectionId: null
+		});
+	});
+
 	it('keeps a dismissed trigger literal until the caret moves to another token', async () => {
 		render(RichTaskTitleHarness, { projects: [testProject()] });
 		const input = page.getByRole('combobox', { name: 'Task title' });
