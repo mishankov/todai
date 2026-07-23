@@ -2,6 +2,93 @@ import { expect, test } from '@playwright/test';
 import type { Project } from '$lib/projects/client';
 import type { Appearance } from '$lib/appearance/theme';
 
+const darkProjectPalettes = {
+	sage: {
+		canvas: '#121713',
+		sidebar: '#172019',
+		surface: '#1b241d',
+		elevated: '#222d25',
+		control: '#202a22',
+		border: '#5b7562',
+		borderStrong: '#6e8374',
+		hover: '#243329',
+		selected: '#2b3e31',
+		focus: '#79d392b3',
+		surfaceRgb: 'rgb(27, 36, 29)',
+		hoverRgb: 'rgb(36, 51, 41)'
+	},
+	ocean: {
+		canvas: '#11171b',
+		sidebar: '#151f25',
+		surface: '#19242a',
+		elevated: '#202e36',
+		control: '#1c2930',
+		border: '#5b7380',
+		borderStrong: '#6b7f89',
+		hover: '#21323b',
+		selected: '#29424e',
+		focus: '#79c5f2b3',
+		surfaceRgb: 'rgb(25, 36, 42)',
+		hoverRgb: 'rgb(33, 50, 59)'
+	},
+	plum: {
+		canvas: '#181219',
+		sidebar: '#211923',
+		surface: '#251c28',
+		elevated: '#2d2231',
+		control: '#281e2c',
+		border: '#7a6483',
+		borderStrong: '#8d7595',
+		hover: '#34283a',
+		selected: '#422f4a',
+		focus: '#d0a0e5b3',
+		surfaceRgb: 'rgb(37, 28, 40)',
+		hoverRgb: 'rgb(52, 40, 58)'
+	},
+	sand: {
+		canvas: '#181512',
+		sidebar: '#201c17',
+		surface: '#252019',
+		elevated: '#2e271e',
+		control: '#29231b',
+		border: '#7d6b58',
+		borderStrong: '#8e7a65',
+		hover: '#352e26',
+		selected: '#45392d',
+		focus: '#e3b77cb3',
+		surfaceRgb: 'rgb(37, 32, 25)',
+		hoverRgb: 'rgb(53, 46, 38)'
+	},
+	rose: {
+		canvas: '#191214',
+		sidebar: '#21191c',
+		surface: '#271c20',
+		elevated: '#302228',
+		control: '#2b1e23',
+		border: '#81636c',
+		borderStrong: '#92717b',
+		hover: '#38282e',
+		selected: '#492f37',
+		focus: '#efa2b0b3',
+		surfaceRgb: 'rgb(39, 28, 32)',
+		hoverRgb: 'rgb(56, 40, 46)'
+	},
+	graphite: {
+		canvas: '#151618',
+		sidebar: '#1b1d20',
+		surface: '#212328',
+		elevated: '#292c32',
+		control: '#25282d',
+		border: '#696f7b',
+		borderStrong: '#7a818c',
+		hover: '#2c2f34',
+		selected: '#383c44',
+		focus: '#c1c8d2b3',
+		surfaceRgb: 'rgb(33, 35, 40)',
+		hoverRgb: 'rgb(44, 47, 52)'
+	}
+} satisfies Record<Project['colorTheme'], Record<string, string>>;
+
 test('applies system and saved appearance across reloads, projects, and unauthenticated pages', async ({
 	page
 }) => {
@@ -78,19 +165,21 @@ test('applies system and saved appearance across reloads, projects, and unauthen
 			});
 			return;
 		}
-		if (/^\/api\/views\/projects\/[^/]+\/all$/.test(path)) {
+		const allTasksMatch = path.match(/^\/api\/views\/projects\/([^/]+)\/all$/);
+		if (allTasksMatch) {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify({ tasks: [] })
+				body: JSON.stringify({ tasks: [testTask(allTasksMatch[1])] })
 			});
 			return;
 		}
-		if (/^\/api\/views\/projects\/[^/]+$/.test(path)) {
+		const projectTasksMatch = path.match(/^\/api\/views\/projects\/([^/]+)$/);
+		if (projectTasksMatch) {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify({ tasks: [] })
+				body: JSON.stringify({ tasks: [testTask(projectTasksMatch[1])] })
 			});
 			return;
 		}
@@ -121,12 +210,57 @@ test('applies system and saved appearance across reloads, projects, and unauthen
 	await page.reload();
 	await expect(page.locator('html')).toHaveAttribute('data-appearance', 'dark');
 	for (const project of projects) {
+		const palette = darkProjectPalettes[project.colorTheme];
 		await page.getByLabel('Project', { exact: true }).selectOption(project.id);
 		await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/overview$`));
-		await expect(page.locator('.project-context')).toHaveClass(
-			new RegExp(`theme-${project.colorTheme}`)
-		);
+		const projectContext = page.locator('.project-context');
+		await expect(projectContext).toHaveClass(new RegExp(`theme-${project.colorTheme}`));
 		await expect(page.locator('html')).toHaveAttribute('data-appearance', 'dark');
+		await expect
+			.poll(() =>
+				projectContext.evaluate((element) => {
+					const style = getComputedStyle(element);
+					return {
+						canvas: style.getPropertyValue('--color-canvas').trim(),
+						sidebar: style.getPropertyValue('--color-sidebar').trim(),
+						surface: style.getPropertyValue('--color-surface').trim(),
+						elevated: style.getPropertyValue('--color-surface-elevated').trim(),
+						control: style.getPropertyValue('--color-control').trim(),
+						border: style.getPropertyValue('--color-border').trim(),
+						borderStrong: style.getPropertyValue('--color-border-strong').trim(),
+						hover: style.getPropertyValue('--color-hover').trim(),
+						selected: style.getPropertyValue('--color-selected').trim(),
+						focus: style.getPropertyValue('--color-focus').trim()
+					};
+				})
+			)
+			.toEqual({
+				canvas: palette.canvas,
+				sidebar: palette.sidebar,
+				surface: palette.surface,
+				elevated: palette.elevated,
+				control: palette.control,
+				border: palette.border,
+				borderStrong: palette.borderStrong,
+				hover: palette.hover,
+				selected: palette.selected,
+				focus: palette.focus
+			});
+
+		await page.goto(`/projects/${project.id}/tasks`);
+		await expect(page.locator('.task-card')).toHaveCSS('background-color', palette.surfaceRgb);
+		await expect(page.locator('.task-quick-add .composer')).toHaveCSS(
+			'background-color',
+			palette.surfaceRgb
+		);
+		await expect(page.locator('.task-quick-add button[type="submit"]')).toHaveCSS(
+			'background-color',
+			palette.hoverRgb
+		);
+		await page.screenshot({
+			path: `test-results/appearance-dark-${project.colorTheme}-board.png`,
+			fullPage: true
+		});
 	}
 
 	await page.goto('/projects/project-graphite/settings');
@@ -180,7 +314,7 @@ function testProject(id: string, name: string, colorTheme: Project['colorTheme']
 	return {
 		id,
 		name,
-		layout: 'list',
+		layout: 'board',
 		colorTheme,
 		agentModel: 'gpt-default',
 		agentThinkingEffort: 'medium',
@@ -190,5 +324,29 @@ function testProject(id: string, name: string, colorTheme: Project['colorTheme']
 		createdAt: '2026-07-22T00:00:00Z',
 		updatedAt: '2026-07-22T00:00:00Z',
 		lastModifiedBy: 'user-id'
+	};
+}
+
+function testTask(projectId: string) {
+	return {
+		id: `task-${projectId}`,
+		projectId,
+		sectionId: null,
+		parentId: null,
+		title: 'Palette task',
+		description: null,
+		status: 'active',
+		priority: 1,
+		dueDate: null,
+		dueTime: null,
+		dueTimezone: null,
+		position: 1024,
+		version: 1,
+		completedAt: null,
+		createdAt: '2026-07-22T00:00:00Z',
+		updatedAt: '2026-07-22T00:00:00Z',
+		lastModifiedBy: 'user-id',
+		subtaskCount: 0,
+		completedSubtaskCount: 0
 	};
 }
