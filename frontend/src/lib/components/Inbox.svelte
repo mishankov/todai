@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Task, TaskCreateDraft, TaskSummary } from '$lib/tasks/client';
-	import type { Project } from '$lib/projects/client';
+	import type { Project, ProjectSection } from '$lib/projects/client';
 	import TaskView from './TaskView.svelte';
 
 	interface Props {
@@ -10,6 +10,8 @@
 		reopen: (taskId: string, version: number) => Promise<Task>;
 		remove: (taskId: string, version: number) => Promise<void>;
 		projects?: Project[];
+		sections?: ProjectSection[];
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		currentProjectId?: string;
 		openTask?: (task: Task) => void;
 	}
@@ -21,6 +23,8 @@
 		reopen,
 		remove,
 		projects = [],
+		sections = [],
+		loadSections,
 		currentProjectId,
 		openTask
 	}: Props = $props();
@@ -33,6 +37,8 @@
 	{reopen}
 	{remove}
 	{projects}
+	{sections}
+	{loadSections}
 	{currentProjectId}
 	{openTask}
 	currentSectionId={null}

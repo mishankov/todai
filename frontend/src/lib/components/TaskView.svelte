@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project } from '$lib/projects/client';
+	import type { Project, ProjectSection } from '$lib/projects/client';
 	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
 	import type { Task, TaskCreateDraft, TaskSummary } from '$lib/tasks/client';
 	import { openTask as navigateToTask } from '$lib/tasks/navigation';
@@ -18,6 +18,8 @@
 		emptyMessage: string;
 		listLabel: string;
 		projects?: Project[];
+		sections?: ProjectSection[];
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		currentProjectId?: string | null;
 		currentSectionId?: string | null;
 		openTask?: (task: Task) => void;
@@ -44,6 +46,8 @@
 		emptyMessage,
 		listLabel,
 		projects = [],
+		sections = [],
+		loadSections,
 		currentProjectId,
 		currentSectionId,
 		openTask = navigateToTask
@@ -268,9 +272,19 @@
 	{#if create}
 		<TaskQuickAdd
 			{create}
-			oncreated={(created) => (tasks = [...tasks, summaryFromTask(created)])}
+			oncreated={(created) => {
+				const remainsInView =
+					(currentProjectId === undefined || created.projectId === currentProjectId) &&
+					(currentSectionId === undefined || created.sectionId === currentSectionId);
+				if (remainsInView) {
+					tasks = [...tasks, summaryFromTask(created)];
+				}
+			}}
 			initialProjectId={currentProjectId ?? projects[0]?.id ?? ''}
 			initialSectionId={currentSectionId ?? null}
+			{projects}
+			{sections}
+			{loadSections}
 		/>
 	{/if}
 

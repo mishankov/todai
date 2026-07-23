@@ -89,6 +89,63 @@ func TestCreateCanTargetProjectSection(t *testing.T) {
 	}
 }
 
+func TestCreateWithPropertiesValidatesAndNormalizesCompleteState(t *testing.T) {
+	t.Parallel()
+
+	projectID := "project-id"
+	description := "Complete draft"
+	dueDate := task.Date("2026-07-23")
+	dueTime := task.TimeOfDay("09:30")
+	timezone := " Europe/Moscow "
+	repository := &fakeRepository{}
+	created, err := task.NewService(repository).CreateWithProperties(
+		context.Background(), testScope(), task.CreateInput{
+			Title: "  Plan sprint  ", Description: &description, ProjectID: &projectID,
+			Priority: 4, DueDate: &dueDate, DueTime: &dueTime, DueTimezone: &timezone,
+		},
+	)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if created.Title != "Plan sprint" || created.Description == nil ||
+		*created.Description != description || created.Priority != 4 ||
+		created.DueDate == nil || *created.DueDate != dueDate ||
+		created.DueTime == nil || *created.DueTime != dueTime ||
+		created.DueTimezone == nil || *created.DueTimezone != "Europe/Moscow" {
+		t.Errorf("created task = %#v", created)
+	}
+}
+
+func TestCreateWithPropertiesAppliesUpdateValidation(t *testing.T) {
+	t.Parallel()
+
+	projectID := "project-id"
+	dueTime := task.TimeOfDay("09:30")
+	invalidDate := task.Date("tomorrow")
+	longDescription := strings.Repeat("d", 10_001)
+	tests := []struct {
+		name  string
+		input task.CreateInput
+		want  error
+	}{
+		{name: "priority", input: task.CreateInput{Title: "Task", ProjectID: &projectID, Priority: 5}, want: task.ErrInvalidPriority},
+		{name: "date", input: task.CreateInput{Title: "Task", ProjectID: &projectID, DueDate: &invalidDate}, want: task.ErrInvalidDueDate},
+		{name: "time without date", input: task.CreateInput{Title: "Task", ProjectID: &projectID, DueTime: &dueTime}, want: task.ErrDueDateRequired},
+		{name: "description", input: task.CreateInput{Title: "Task", Description: &longDescription, ProjectID: &projectID}, want: task.ErrDescriptionTooLong},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := task.NewService(&fakeRepository{}).CreateWithProperties(
+				context.Background(), testScope(), test.input,
+			)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
 func TestCreateRejectsSectionWithoutProject(t *testing.T) {
 	t.Parallel()
 
@@ -566,6 +623,7 @@ type fakeRepository struct {
 	reorder               task.Reorder
 	mutationCalled        bool
 	commentBody           string
+	createInput           task.CreateInput
 }
 
 func (r *fakeRepository) Create(
@@ -576,13 +634,26 @@ func (r *fakeRepository) Create(
 	sectionID *string,
 	parentID *string,
 ) (task.Task, error) {
+	return r.CreateWithProperties(context.Background(), scope, task.CreateInput{
+		Title: title, ProjectID: projectID, SectionID: sectionID, ParentID: parentID,
+	})
+}
+
+func (r *fakeRepository) CreateWithProperties(
+	_ context.Context,
+	scope execution.Scope,
+	input task.CreateInput,
+) (task.Task, error) {
 	r.createScope = scope
-	r.createProjectID = projectID
-	r.createSectionID = sectionID
-	r.createParentID = parentID
+	r.createInput = input
+	r.createProjectID = input.ProjectID
+	r.createSectionID = input.SectionID
+	r.createParentID = input.ParentID
 	return task.Task{
-		ID: "task-id", UserID: scope.UserID, ProjectID: projectID, SectionID: sectionID, ParentID: parentID,
-		Title: title, Status: task.StatusActive,
+		ID: "task-id", UserID: scope.UserID, ProjectID: input.ProjectID,
+		SectionID: input.SectionID, ParentID: input.ParentID, Title: input.Title,
+		Description: input.Description, Status: task.StatusActive, Priority: input.Priority,
+		DueDate: input.DueDate, DueTime: input.DueTime, DueTimezone: input.DueTimezone,
 	}, nil
 }
 

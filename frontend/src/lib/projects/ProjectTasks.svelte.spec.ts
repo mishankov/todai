@@ -54,7 +54,7 @@ describe('ProjectTasks', () => {
 
 		await expect.element(page.getByText(task.title, { exact: true })).toBeVisible();
 		await expect
-			.element(page.getByRole('textbox', { name: 'Add task to No section' }))
+			.element(page.getByRole('combobox', { name: 'Add task to No section' }))
 			.toBeVisible();
 		await expect.element(page.getByRole('heading', { name: 'No section' })).not.toBeInTheDocument();
 	});
@@ -118,7 +118,13 @@ describe('ProjectTasks', () => {
 		const create = vi.fn(async () => created);
 		renderProjectTasks({ sections: [section], create });
 
-		await page.getByRole('textbox', { name: 'Add task to Doing' }).fill('Ship the change');
+		await expect
+			.element(page.getByRole('button', { name: 'project: Work. Open picker' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'section: Doing. Open picker' }))
+			.not.toBeInTheDocument();
+		await page.getByRole('combobox', { name: 'Add task to Doing' }).fill('Ship the change');
 		await page.getByRole('button', { name: 'Add task to Doing' }).click();
 
 		expect(create).toHaveBeenCalledWith(
@@ -325,7 +331,7 @@ describe('ProjectTasks', () => {
 		await expect.element(source).toHaveAttribute('data-dragging', 'true');
 		const marker = target.element().querySelector('[data-insertion-marker="task"]');
 		const quickAdd = destination
-			.getByRole('textbox', { name: 'Add task to Later' })
+			.getByRole('combobox', { name: 'Add task to Later' })
 			.element()
 			.closest('form');
 		expect(marker).toBeInstanceOf(HTMLElement);
@@ -440,9 +446,11 @@ function renderProjectTasks(options: RenderOptions = {}) {
 	const project = options.project ?? testProject();
 	return render(ProjectTasks, {
 		project,
+		projects: [project],
 		initialSections: options.sections ?? [],
 		initialTasks: options.tasks ?? [],
 		create: options.create ?? vi.fn(),
+		loadSections: vi.fn(async () => options.sections ?? []),
 		complete: options.complete ?? vi.fn(),
 		reopen: vi.fn(),
 		openTask: options.openTask,

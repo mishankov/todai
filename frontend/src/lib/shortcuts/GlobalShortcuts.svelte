@@ -7,12 +7,9 @@
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { listProjectSections } from '$lib/projects/client';
 	import { rememberedProjectPath } from '$lib/projects/navigation';
-	import type { Task, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft } from '$lib/tasks/client';
 	import { openTask } from '$lib/tasks/navigation';
-	import {
-		createTask as createTaskRequest,
-		updateTask as updateTaskRequest
-	} from '$lib/tasks/client';
+	import { createTaskWithProperties as createTaskRequest } from '$lib/tasks/client';
 	import { onMount, tick } from 'svelte';
 	import { commandPaletteRequestEvent, quickAddRequestEvent, requestChatToggle } from './events';
 	import QuickAddDialog from './QuickAddDialog.svelte';
@@ -32,8 +29,7 @@
 		navigate?: (href: string) => void | Promise<void>;
 		refresh?: () => void | Promise<void>;
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
-		createTask?: (title: string, projectId: string, sectionId: string | null) => Promise<Task>;
-		updateTask?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
+		createTask?: (draft: TaskCreateDraft) => Promise<Task>;
 	}
 
 	let {
@@ -43,9 +39,7 @@
 		navigate = (href) => goto(href),
 		refresh = () => invalidateAll(),
 		loadSections = (projectId) => listProjectSections(fetch, projectId),
-		createTask = (title, projectId, sectionId) =>
-			createTaskRequest(fetch, title, projectId, sectionId ?? undefined),
-		updateTask = (taskId, changes) => updateTaskRequest(fetch, taskId, changes)
+		createTask = (draft) => createTaskRequest(fetch, draft)
 	}: Props = $props();
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
 	let quickAddOpen = $state(false);
@@ -263,7 +257,6 @@
 		{focusRequest}
 		{loadSections}
 		{createTask}
-		{updateTask}
 		close={closeQuickAdd}
 		saved={taskSaved}
 	/>

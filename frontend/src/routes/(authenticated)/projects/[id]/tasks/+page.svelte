@@ -3,6 +3,7 @@
 	import {
 		createProjectSection,
 		deleteProjectSection,
+		listProjectSections,
 		reorderProjectSection,
 		type Project,
 		type ProjectLayout,
@@ -26,6 +27,9 @@
 
 	function create(draft: TaskCreateDraft): Promise<Task> {
 		return createTaskWithProperties(fetch, draft);
+	}
+	function loadSections(projectId: string) {
+		return listProjectSections(fetch, projectId);
 	}
 	function complete(taskId: string, version: number): Promise<Task> {
 		return completeTask(fetch, taskId, version);
@@ -74,9 +78,11 @@
 {#key data.project.id}
 	<ProjectTasks
 		project={data.project}
+		projects={data.projects}
 		initialSections={data.sections}
 		initialTasks={data.tasks}
 		{create}
+		{loadSections}
 		{complete}
 		{reopen}
 		{remove}

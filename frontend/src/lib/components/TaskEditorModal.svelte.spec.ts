@@ -23,8 +23,12 @@ describe('TaskEditorModal relationships', () => {
 		const location = page.getByRole('button', { name: 'Location: Работа / Задачи' });
 		await expect.element(location).toBeVisible();
 		await location.click();
-		await expect.element(page.getByRole('button', { name: 'Project: Работа' })).toBeVisible();
-		await expect.element(page.getByRole('button', { name: 'Section: Задачи' })).toBeVisible();
+		await expect
+			.element(page.getByRole('button', { name: 'Project: Работа', exact: true }))
+			.toBeVisible();
+		await expect
+			.element(page.getByRole('button', { name: 'Section: Задачи', exact: true }))
+			.toBeVisible();
 		await location.click();
 		await expect.element(page.getByRole('button', { name: 'Priority: None' })).toBeVisible();
 		await expect.element(page.getByRole('button', { name: 'Due date: No date' })).toBeVisible();
@@ -318,7 +322,7 @@ describe('TaskEditorModal relationships', () => {
 		opener.focus();
 		const view = renderModal({ task: testTask({ title: 'Focus task' }) });
 
-		await expect.element(page.getByRole('textbox', { name: 'Title' })).toHaveFocus();
+		await expect.element(page.getByRole('combobox', { name: 'Title' })).toHaveFocus();
 		view.unmount();
 		await Promise.resolve();
 

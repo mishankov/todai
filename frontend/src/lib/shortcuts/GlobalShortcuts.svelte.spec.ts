@@ -1,4 +1,4 @@
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { Project, ProjectSection } from '$lib/projects/client';
@@ -12,27 +12,17 @@ describe('GlobalShortcuts', () => {
 		const project = testProject();
 		const section = testSection();
 		const created = testTask();
-		const updated = testTask({
-			priority: 3,
-			dueDate: '2026-07-22',
-			dueTime: '09:30',
-			dueTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-			sectionId: section.id,
-			version: 2
-		});
 		const createTask = vi.fn(async () => created);
-		const updateTask = vi.fn(async () => updated);
 		const refresh = vi.fn(async () => {});
 
 		render(GlobalShortcuts, {
 			activeProject: project,
 			projects: [project],
-			currentPath: `/projects/${project.id}`,
+			currentPath: `/projects/${project.id}/sections/${section.id}`,
 			navigate: vi.fn(),
 			refresh,
 			loadSections: vi.fn(async () => [section]),
-			createTask,
-			updateTask
+			createTask
 		});
 
 		dispatchShortcut('KeyN', true);
@@ -48,22 +38,46 @@ describe('GlobalShortcuts', () => {
 			document.querySelectorAll('[role="dialog"][aria-labelledby="quick-add-title"]')
 		).toHaveLength(1);
 
-		await dialog.getByLabelText('Title').fill('Plan the release');
-		await dialog.getByLabelText('Section').selectOptions(section.id);
-		await dialog.getByLabelText('Priority').selectOptions('3');
-		await dialog.getByLabelText('Due date').fill('2026-07-22');
-		await dialog.getByLabelText('Due time').fill('09:30');
+		await expect
+			.element(dialog.getByRole('button', { name: /^project: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^section: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		const title = dialog.getByLabelText('Title');
+		await title.fill('Plan the release !hi');
+		await userEvent.keyboard('{Enter}');
+		await expect.element(title).toHaveValue('Plan the release');
+		await expect
+			.element(dialog.getByRole('button', { name: 'Priority: High', exact: true }))
+			.toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: 'priority: High. Open picker' }))
+			.not.toBeInTheDocument();
+		await dialog.getByRole('button', { name: /^Location:/ }).click();
+		const locationPopover = dialog.getByRole('dialog', { name: 'Task location' });
+		await expect.element(locationPopover).toBeVisible();
+		expect(getComputedStyle(locationPopover.element()).position).toBe('fixed');
+		expect(locationPopover.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+			window.innerHeight
+		);
+		await dialog.getByRole('button', { name: /^Section:/ }).click();
+		await page.getByRole('option', { name: section.name }).click();
+		await dialog.getByRole('button', { name: 'Due date: No date' }).click();
+		await page.getByRole('option', { name: /^Tomorrow/ }).click();
+		await dialog.getByRole('button', { name: /^Due time:/ }).click();
+		await page.getByRole('option', { name: /^Morning/ }).click();
 		await dialog.getByRole('button', { name: 'Create task' }).click();
 
-		expect(createTask).toHaveBeenCalledWith('Plan the release', project.id, section.id);
-		expect(updateTask).toHaveBeenCalledWith(
-			created.id,
+		expect(createTask).toHaveBeenCalledWith(
 			expect.objectContaining({
-				version: created.version,
+				title: 'Plan the release',
+				projectId: project.id,
+				sectionId: section.id,
 				priority: 3,
-				dueDate: '2026-07-22',
-				dueTime: '09:30',
-				sectionId: section.id
+				dueDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+				dueTime: '09:00',
+				dueTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
 			})
 		);
 		await expect.element(dialog).not.toBeInTheDocument();

@@ -8,9 +8,11 @@
 
 	interface Props {
 		project: Project;
+		projects: Project[];
 		initialSections: ProjectSection[];
 		initialTasks: TaskSummary[];
 		create: (draft: TaskCreateDraft) => Promise<Task>;
+		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
 		openTask?: (task: Task) => void;
@@ -52,9 +54,11 @@
 
 	let {
 		project,
+		projects,
 		initialSections,
 		initialTasks,
 		create,
+		loadSections,
 		complete,
 		reopen,
 		openTask = navigateToTask,
@@ -713,14 +717,20 @@
 				{#if !group.completed}
 					<TaskQuickAdd
 						{create}
-						oncreated={(created) =>
-							(tasks = [
-								...tasks.filter((item) => item.id !== created.id),
-								summaryFromTask(created)
-							])}
+						oncreated={(created) => {
+							if (created.projectId === currentProject.id) {
+								tasks = [
+									...tasks.filter((item) => item.id !== created.id),
+									summaryFromTask(created)
+								];
+							}
+						}}
 						initialProjectId={currentProject.id}
 						initialSectionId={group.section?.id ?? null}
 						label={`Add task to ${group.name}`}
+						{projects}
+						{sections}
+						{loadSections}
 					/>
 				{/if}
 			</section>

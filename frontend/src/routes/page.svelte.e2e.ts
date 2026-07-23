@@ -13,6 +13,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	let comments: TaskComment[] = [];
 	let projects: Project[] = [];
 	let sections: ProjectSection[] = [];
+	let taskCreatePayloads: Record<string, unknown>[] = [];
 	let inboxLoads = 0;
 	let realtimeEventReady = false;
 	let realtimeEventDelivered = false;
@@ -250,13 +251,19 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	});
 	await page.route('**/api/tasks', async (route) => {
 		const request = route.request().postDataJSON();
+		taskCreatePayloads = [...taskCreatePayloads, request];
 		const parent = tasks.find((item) => item.id === request.parentId);
 		const created = testTask({
 			id: `task-${tasks.length + 1}`,
 			title: request.title,
 			projectId: parent?.projectId ?? request.projectId,
 			sectionId: parent?.sectionId ?? request.sectionId ?? null,
-			parentId: parent?.id ?? null
+			parentId: parent?.id ?? null,
+			description: request.description ?? null,
+			priority: request.priority ?? 0,
+			dueDate: request.dueDate ?? null,
+			dueTime: request.dueTime ?? null,
+			dueTimezone: request.dueTimezone ?? null
 		});
 		tasks = [...tasks, created];
 		await route.fulfill({
@@ -535,7 +542,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	const addSection = page.getByRole('group', { name: 'Add or move section' });
 	await page.getByLabel('Section name').fill('Planning');
 	await addSection.getByRole('button', { name: 'Add', exact: true }).click();
-	await page.getByRole('textbox', { name: 'Add task to Planning' }).fill('Plan sprint');
+	await page.getByRole('combobox', { name: 'Add task to Planning' }).fill('Plan sprint');
 	await page.getByRole('button', { name: 'Add task to Planning' }).click();
 	await page.getByLabel('Section name').fill('Later');
 	await addSection.getByRole('button', { name: 'Add', exact: true }).click();
@@ -587,7 +594,7 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.getByRole('button', { name: 'Edit Plan sprint' }).click();
 	const sprintDialog = page.getByRole('dialog', { name: 'Edit task: Plan sprint' });
 	await sprintDialog.getByRole('button', { name: /^Location:/ }).click();
-	await sprintDialog.getByRole('button', { name: 'Project: Work' }).click();
+	await sprintDialog.getByRole('button', { name: 'Project: Work', exact: true }).click();
 	await sprintDialog.getByRole('option', { name: 'Personal' }).click();
 	await sprintDialog.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByText('Plan sprint')).toHaveCount(0);
@@ -633,6 +640,11 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.keyboard.press('Escape');
 	await expect(page).toHaveURL(/\/projects\/project-1\/tasks$/);
 
+	const personalSectionName = 'Personal plans';
+	const personalSectionForm = page.getByRole('group', { name: 'Add or move section' });
+	await page.getByLabel('Section name').fill(personalSectionName);
+	await personalSectionForm.getByRole('button', { name: 'Add', exact: true }).click();
+
 	const todayLink = page.getByRole('link', { name: 'Today' });
 	await page.keyboard.down(primaryModifier);
 	await expect
@@ -649,10 +661,55 @@ test('supports login, Inbox, project Tasks, Today, and logout', async ({ page })
 	await page.keyboard.press(`${primaryModifier}+Alt+N`);
 	const quickAdd = page.getByRole('dialog', { name: 'Create a task' });
 	await expect(quickAdd).toBeVisible();
-	await quickAdd.getByLabel('Title').fill('Created with the keyboard');
-	await quickAdd.getByLabel('Due date').fill(todayDate());
-	await quickAdd.getByRole('button', { name: 'Create task' }).click();
+	const richTitle = quickAdd.getByRole('combobox', { name: 'Title' });
+	await richTitle.fill('Created with the keyboard #Per');
+	await expect(
+		page.getByRole('listbox', { name: 'project options' }).getByRole('option', { name: 'Personal' })
+	).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(richTitle).toHaveValue('Created with the keyboard');
+	await expect(
+		quickAdd.getByRole('button', { name: 'Location: Personal / No section (Inbox)' })
+	).toBeVisible();
+	await page.keyboard.type(' /Personal');
+	await expect(
+		page
+			.getByRole('listbox', { name: 'location options' })
+			.getByRole('option', { name: `Personal: ${personalSectionName}` })
+	).toBeVisible();
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('Enter');
+	await expect(
+		quickAdd.getByRole('button', { name: `Location: Personal / ${personalSectionName}` })
+	).toBeVisible();
+	await page.keyboard.type(' !High');
+	await expect(
+		page.getByRole('listbox', { name: 'priority options' }).getByRole('option', { name: 'High' })
+	).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(quickAdd.getByRole('button', { name: 'Priority: High' })).toBeVisible();
+	await page.keyboard.type(' @Today');
+	await expect(
+		page.getByRole('listbox', { name: 'due options' }).getByRole('option', { name: /^Today/ })
+	).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(
+		page
+			.getByRole('listbox', { name: 'due-time options' })
+			.getByRole('option', { name: /^Morning/ })
+	).toBeVisible();
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
 	await expect(quickAdd).toHaveCount(0);
+	const richPayload = taskCreatePayloads.at(-1)!;
+	expect(richPayload).toMatchObject({
+		title: 'Created with the keyboard',
+		projectId: 'project-1',
+		sectionId: sections.find((item) => item.name === personalSectionName)?.id,
+		priority: 3,
+		dueDate: todayDate(),
+		dueTime: '09:00'
+	});
 
 	await page.keyboard.press(`${primaryModifier}+3`);
 	await expect(page).toHaveURL(/\/today$/);
