@@ -12,3 +12,4 @@ frontend/test-results/
 pi-runner/node_modules/
 pi-runner/dist/
 pi-runner/coverage/
+pi-runner/.*.bun-build

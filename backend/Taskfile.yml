@@ -4,7 +4,7 @@ tasks:
   dev:
     desc: Run the Go backend
     cmds:
-      - go run ./cmd/todai run
+      - TODAI_RUNNER_EXECUTABLE=../pi-runner/dist/pi-runner go run ./cmd/todai run
 
   migrate:
     desc: Apply all registered PostgreSQL migrations

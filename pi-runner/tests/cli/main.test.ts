@@ -70,7 +70,7 @@ describe("runner CLI", () => {
 });
 
 async function runCli(input: string, terminalType: RunnerOutput["type"]) {
-  const standalone = process.env.TODAI_RUNNER_EXECUTABLE?.trim();
+  const standalone = process.env.TODAI_RUNNER_TEST_EXECUTABLE?.trim();
   const executable = standalone || process.execPath;
   const args = standalone ? [] : ["src/cli/main.ts"];
   const child = spawn(executable, args, {

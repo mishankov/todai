@@ -92,6 +92,29 @@ describe('AgentChat', () => {
 		await expect.element(page.getByRole('button', { name: 'Stopping…' })).toBeDisabled();
 	});
 
+	it('shows the latest terminal run failure and allows another message', async () => {
+		const api = testAPI({
+			getSession: vi.fn().mockResolvedValue(
+				testConversation({
+					messages: [userMessage()],
+					runs: [
+						testRun({
+							status: 'failed',
+							error: 'Runner startup timed out.',
+							completedAt: '2026-07-18T10:00:02Z'
+						})
+					]
+				})
+			)
+		});
+
+		render(AgentChat, { api, storage: testStorage('session-id') });
+		await page.getByRole('button', { name: 'Open assistant' }).click();
+
+		await expect.element(page.getByRole('alert')).toHaveTextContent('Runner startup timed out.');
+		await expect.element(page.getByLabelText('Message the assistant')).toBeEnabled();
+	});
+
 	it('loads lazily and keeps the conversation when reopened', async () => {
 		const api = testAPI();
 

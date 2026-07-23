@@ -134,12 +134,12 @@ jobs:
       - run: bun run ${{ matrix.build }}
       - name: Standalone protocol smoke test
         env:
-          TODAI_RUNNER_EXECUTABLE: ./${{ matrix.executable }}
+          TODAI_RUNNER_TEST_EXECUTABLE: ./${{ matrix.executable }}
         run: bun run test:standalone
       - name: Real Pi standalone smoke test
         if: env.TODAI_PI_SMOKE_AUTH_JSON != ''
         env:
-          TODAI_RUNNER_EXECUTABLE: ./${{ matrix.executable }}
+          TODAI_RUNNER_TEST_EXECUTABLE: ./${{ matrix.executable }}
           TODAI_PI_AGENT_DIR: ${{ runner.temp }}/pi-agent
           TODAI_PI_SMOKE: "1"
         run: |
