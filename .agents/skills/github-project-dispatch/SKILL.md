@@ -1,11 +1,11 @@
 ---
 name: github-project-dispatch
-description: 'Dispatch GitHub Project work into separate Codex tasks: implementation issues from "Ready for agent" and requirements work for issues or draft items from "Need requirements". Use when the user asks to start, assign, fan out, or create one Codex task per eligible Project card, especially in mishankov''s todai project 8. Do not implement cards or write requirements in the dispatcher; delegate each card to its dedicated task.'
+description: 'Dispatch GitHub Project work into separate Codex tasks: implementation issues from "Ready for agent" and requirements work from "Need requirements". Use when the user asks to start, assign, fan out, or create one Codex task per eligible Project card, especially in mishankov''s todai project 8. Do not implement cards or write requirements in the dispatcher; delegate each card to its dedicated task.'
 ---
 
 # GitHub Project Dispatch
 
-Create one user-visible Codex task per eligible GitHub Project card. Treat the Project status as the claim lock. Leave implementation to `$github-project-worker`; let dedicated requirements tasks refine issues or draft items and submit them for requirements review.
+Create one user-visible Codex task per eligible GitHub Project card. Treat the Project status as the claim lock. Leave implementation to `$github-project-worker`; let dedicated requirements tasks refine eligible cards and submit them for requirements review.
 
 ## Defaults
 
@@ -29,7 +29,7 @@ Discover project, field, option, and item node IDs at runtime. Never rely on cop
 3. Read the Project and its fields with `gh project view` and `gh project field-list`. Verify the exact `Status`, `Ready for agent`, `Need requirements`, `In Progress`, and `Requirements review` names before mutating anything.
 4. List all items with `gh project item-list <number> --owner <owner> --limit 100 --format json`. Partition eligible items into:
    - issue cards whose current status is exactly `Ready for agent`;
-   - task cards whose current status is exactly `Need requirements`, whether the card contains a repository issue or a project draft.
+   - cards whose current status is exactly `Need requirements`.
 5. Resolve the Codex saved project with the thread-management project-list tool. Match the repository or local checkout; do not create projectless coding tasks.
 6. Process eligible implementation issues one at a time:
    - Re-read the card immediately before claiming it. Skip it if it is no longer `Ready for agent`.
@@ -42,10 +42,10 @@ Discover project, field, option, and item node IDs at runtime. Never rely on cop
    - Re-read the card immediately before claiming it. Skip it if it is no longer `Need requirements`.
    - Set only that item's `Status` field to `In Progress` with `gh project item-edit`. This claim prevents duplicate requirements tasks.
    - Create a separate Codex task associated with the saved project. A coding worktree is not required because this task must not implement the card.
-   - Put the requirements worker prompt below into the new task and substitute all placeholders, including the content-specific reference and body update command.
+   - Put the requirements worker prompt below into the new task and substitute all placeholders, including the card reference and body update command.
    - If task creation fails synchronously, return the item to `Need requirements` and report the error.
    - When a thread ID is available, title it `[Requirements] <item-title>`.
-8. Report created, skipped, and failed cards. Include the issue URL for repository issues and the Project URL plus item title for drafts. Emit the app's created-thread directive for every successfully created thread or queued worktree.
+8. Report created, skipped, and failed cards. Include a direct card reference when available; otherwise include the Project URL and item title. Emit the app's created-thread directive for every successfully created thread or queued worktree.
 
 Do not implement cards, write requirements, wait for workers to finish, or perform worker-owned status transitions in the dispatcher task.
 
@@ -75,21 +75,21 @@ Develop requirements for exactly this GitHub Project card:
 - Title: <item-title>
 - Repository for context: <owner/repo>
 
-The dispatcher claimed the card by moving it from Need requirements to In Progress. Work only on requirements for this card; do not implement it. Preserve its content type: keep an existing repository issue as that same issue, and do not convert a project draft to a repository issue.
+The dispatcher claimed the card by moving it from Need requirements to In Progress. Work only on requirements for this card; do not implement it. Update the existing card in place.
 
 Inspect the card body, the repository, and relevant linked context before writing. Produce requirements that are specific enough for a later implementation agent, including the goal and context, scope, relevant constraints, acceptance criteria, and explicit out-of-scope decisions when useful. Preserve useful facts from the original body.
 
-If a material product or behavior choice cannot be inferred safely, ask the user focused clarification questions in this task. Keep the Project item In Progress while any blocking question remains. When the requirements are complete and no blocking questions remain, update the card body with `<body-update-command>` and move only this item's Status to Requirements review. For a repository issue, use `gh issue edit <issue-number> --repo <owner/repo> --body-file <file>`. For a project draft, use `gh project item-edit --id <project-item-id> --body <requirements>`. Discover the Project, Status field, and option node IDs at runtime; never copy node IDs from the prompt. Verify the updated body and final status before reporting completion.
+If a material product or behavior choice cannot be inferred safely, ask the user focused clarification questions in this task. Keep the Project item In Progress while any blocking question remains. When the requirements are complete and no blocking questions remain, update the card body with `<body-update-command>` and move only this item's Status to Requirements review. Use the card's available GitHub editing command: `gh issue edit <issue-number> --repo <owner/repo> --body-file <file>` when it has an issue number, otherwise `gh project item-edit --id <project-item-id> --body <requirements>`. Discover the Project, Status field, and option node IDs at runtime; never copy node IDs from the prompt. Verify the updated body and final status before reporting completion.
 
-For every future clarification or requirements-editing turn in this task, continue this same workflow. Never move the item to Requirements review merely because a draft was produced; move it only when it is ready for the user to review.
+For every future clarification or requirements-editing turn in this task, continue this same workflow. Never move the item to Requirements review merely because requirements text was produced; move it only when it is ready for the user to review.
 ```
 
 ## Safety and idempotency
 
 - Use status, not titles or labels, as the eligibility gate.
 - Never create a second task for an item already in `In Progress`, `Requirements review`, `Review`, or `Done`.
-- Treat `Need requirements` as the requirements eligibility gate, not the card's issue-versus-draft content type. Send both repository issues and project drafts to dedicated requirements tasks, never to `$github-project-worker`.
+- Treat `Need requirements` as the complete requirements eligibility gate. Do not filter eligible cards by content type. Send every eligible card to a dedicated requirements task, never to `$github-project-worker`.
 - Never dispatch `Backlog`, pull-request, redacted, or other ineligible cards without explicit user direction.
 - Never change the status of one item because another item's task creation failed.
 - Keep a claimed item `In Progress` once its Codex task is successfully created; its dedicated worker owns subsequent transitions.
-- Requirements workers may edit only their assigned issue or draft title/body and Project status. They must not implement code or alter unrelated items.
+- Requirements workers may edit only their assigned card's title/body and Project status. They must not implement code or alter unrelated items.
