@@ -4,6 +4,30 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<meta name="theme-color" content="#f5f7f3" />
+		<script>
+			(() => {
+				const authenticatedPath =
+					/^(\/(projects(?:\/|$)|today(?:\/|$)|activity(?:\/|$)|settings(?:\/|$))|\/$)/.test(
+						location.pathname
+					);
+				let cached = null;
+				try {
+					cached = authenticatedPath ? localStorage.getItem('todai:appearance') : null;
+				} catch {
+					// Storage can be disabled; the server preference will still be applied after loading.
+				}
+				const preference =
+					cached === 'light' || cached === 'dark' || cached === 'system' ? cached : 'system';
+				const dark =
+					preference === 'dark' ||
+					(preference === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+				if (authenticatedPath)
+					document.documentElement.dataset.appearance = dark ? 'dark' : 'light';
+				document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+				document.querySelector('meta[name="theme-color"]').content = dark ? '#121512' : '#f5f7f3';
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

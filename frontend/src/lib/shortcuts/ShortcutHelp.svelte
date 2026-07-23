@@ -81,16 +81,16 @@
 		display: grid;
 		place-items: center;
 		padding: 1rem;
-		background: rgb(24 25 23 / 45%);
+		background: var(--color-overlay);
 		backdrop-filter: blur(2px);
 	}
 	.dialog {
 		width: min(38rem, 100%);
 		max-height: min(46rem, calc(100vh - 2rem));
-		border: 1px solid var(--theme-border, #dfe5dc);
+		border: 1px solid var(--theme-border);
 		border-radius: 1rem;
-		background: #fff;
-		box-shadow: 0 1.5rem 5rem rgb(20 28 21 / 24%);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-modal);
 		overflow: auto;
 	}
 	header {
@@ -101,8 +101,8 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1.15rem 1.25rem;
-		border-bottom: 1px solid var(--theme-border, #dfe5dc);
-		background: var(--theme-canvas, #fbfcfa);
+		border-bottom: 1px solid var(--theme-border);
+		background: var(--theme-canvas);
 	}
 	header p,
 	h2 {
@@ -110,7 +110,7 @@
 	}
 	header p {
 		margin-bottom: 0.3rem;
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 		font-size: 0.68rem;
 		font-weight: 800;
 		letter-spacing: 0.1em;
@@ -128,7 +128,7 @@
 		cursor: pointer;
 	}
 	header button:hover {
-		background: var(--theme-hover, #e6ece4);
+		background: var(--theme-hover);
 	}
 	ul {
 		margin: 0;
@@ -141,7 +141,7 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 0.75rem 0;
-		border-bottom: 1px solid var(--theme-border, #dfe5dc);
+		border-bottom: 1px solid var(--theme-border);
 	}
 	li:last-child {
 		border-bottom: 0;
@@ -160,17 +160,17 @@
 	}
 	small,
 	footer {
-		color: #777772;
+		color: var(--color-text-muted);
 		font-size: 0.72rem;
 	}
 	kbd {
 		flex: none;
 		min-width: 5rem;
 		padding: 0.38rem 0.55rem;
-		border: 1px solid #d7d9d5;
+		border: 1px solid var(--color-border);
 		border-bottom-width: 2px;
 		border-radius: 0.4rem;
-		background: #f4f5f3;
+		background: var(--color-control);
 		font-family: inherit;
 		font-size: 0.72rem;
 		font-weight: 750;
@@ -178,7 +178,7 @@
 	}
 	footer {
 		padding: 0.9rem 1.25rem;
-		border-top: 1px solid var(--theme-border, #dfe5dc);
-		background: var(--theme-canvas, #fbfcfa);
+		border-top: 1px solid var(--theme-border);
+		background: var(--theme-canvas);
 	}
 </style>

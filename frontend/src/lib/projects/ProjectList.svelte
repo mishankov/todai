@@ -199,7 +199,7 @@
 	}
 	header p {
 		margin: 0 0 0.4rem;
-		color: var(--theme-accent, #52705a);
+		color: var(--theme-accent);
 		font-size: 0.72rem;
 		font-weight: 750;
 		letter-spacing: 0.12em;
@@ -207,12 +207,12 @@
 	}
 	h1 {
 		margin: 0;
-		color: #17211a;
+		color: var(--color-text);
 		font-size: clamp(2rem, 6vw, 3.4rem);
 		letter-spacing: -0.055em;
 	}
 	header span {
-		color: #6c756f;
+		color: var(--color-text-secondary);
 		font-size: 0.8rem;
 		font-weight: 650;
 	}
@@ -228,24 +228,24 @@
 		min-width: 0;
 		flex: 1;
 		padding: 0.8rem 0.9rem;
-		border: 1px solid var(--theme-border, #ccd6ca);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.7rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 	button {
 		padding: 0.65rem 0.8rem;
-		border: 1px solid var(--theme-border, #c8d3c7);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.65rem;
-		color: var(--theme-accent, #31523a);
-		background: #fff;
+		color: var(--theme-accent);
+		background: var(--color-surface);
 		font-weight: 700;
 		cursor: pointer;
 	}
 	.create button,
 	.rename button[type='submit'] {
-		border-color: var(--theme-accent, #2d6540);
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		border-color: var(--theme-accent);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 	button:disabled {
 		cursor: wait;
@@ -263,18 +263,18 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1rem 1.1rem;
-		border: 1px solid var(--theme-border, #dbe3d9);
+		border: 1px solid var(--theme-border);
 		border-radius: 0.85rem;
-		background: rgb(255 255 255 / 72%);
+		background: color-mix(in srgb, var(--color-surface) 86%, transparent);
 	}
 	li > a {
 		flex: 1;
-		color: #203126;
+		color: var(--color-text);
 		font-weight: 750;
 		text-decoration: none;
 	}
 	li > a:hover {
-		color: var(--theme-accent, #2d6540);
+		color: var(--theme-accent);
 	}
 	.actions {
 		display: flex;
@@ -287,26 +287,26 @@
 		display: grid;
 		gap: 0.3rem;
 		padding: 4rem 1rem;
-		color: #6b756e;
+		color: var(--color-text-secondary);
 		text-align: center;
 	}
 	.empty strong {
-		color: #33443a;
+		color: var(--color-text);
 	}
 	.archived {
 		margin-top: 2.5rem;
 	}
 	.archived h2 {
-		color: #526058;
+		color: var(--color-text-secondary);
 		font-size: 0.8rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
 	}
 	.archived li > span {
-		color: #657169;
+		color: var(--color-text-secondary);
 	}
 	.error {
-		color: #8c2828;
+		color: var(--color-error);
 		font-size: 0.84rem;
 	}
 	.sr-only {

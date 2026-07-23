@@ -87,16 +87,21 @@
 		place-items: center;
 		padding: 1.5rem;
 		background:
-			radial-gradient(circle at 15% 15%, rgb(112 171 126 / 18%), transparent 34rem), #f5f7f3;
+			radial-gradient(
+				circle at 15% 15%,
+				color-mix(in srgb, var(--theme-accent) 18%, transparent),
+				transparent 34rem
+			),
+			var(--color-canvas);
 	}
 
 	.login-card {
 		width: min(27rem, 100%);
 		padding: clamp(1.75rem, 6vw, 3rem);
-		border: 1px solid #dce3da;
+		border: 1px solid var(--color-border);
 		border-radius: 1.5rem;
-		background: rgb(255 255 255 / 92%);
-		box-shadow: 0 1.5rem 5rem rgb(24 56 34 / 10%);
+		background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+		box-shadow: var(--shadow-modal);
 	}
 
 	.brand {
@@ -113,8 +118,8 @@
 		height: 2rem;
 		place-items: center;
 		border-radius: 0.65rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 	}
 
 	.intro {
@@ -123,7 +128,7 @@
 
 	.eyebrow {
 		margin: 0 0 0.65rem;
-		color: #477153;
+		color: var(--theme-accent);
 		font-size: 0.76rem;
 		font-weight: 750;
 		letter-spacing: 0.12em;
@@ -139,7 +144,7 @@
 
 	.intro > p:last-child {
 		margin: 1rem 0 0;
-		color: #667069;
+		color: var(--color-text-secondary);
 	}
 
 	form {
@@ -156,10 +161,10 @@
 	input {
 		width: 100%;
 		padding: 0.85rem 0.95rem;
-		border: 1px solid #cbd5ca;
+		border: 1px solid var(--color-border);
 		border-radius: 0.75rem;
-		color: #17211a;
-		background: #fff;
+		color: var(--color-text);
+		background: var(--color-surface);
 		outline: none;
 		transition:
 			border-color 120ms ease,
@@ -167,8 +172,8 @@
 	}
 
 	input:focus {
-		border-color: var(--theme-accent, #477d56);
-		box-shadow: 0 0 0 0.2rem rgb(71 125 86 / 14%);
+		border-color: var(--theme-accent);
+		box-shadow: 0 0 0 0.2rem var(--theme-focus);
 	}
 
 	button {
@@ -176,14 +181,14 @@
 		padding: 0.9rem 1rem;
 		border: 0;
 		border-radius: 0.75rem;
-		color: #fff;
-		background: var(--theme-accent, #2d6540);
+		color: var(--color-on-accent);
+		background: var(--theme-accent-solid, var(--theme-accent));
 		font-weight: 750;
 		cursor: pointer;
 	}
 
 	button:hover:not(:disabled) {
-		background: #245535;
+		background: color-mix(in srgb, var(--theme-accent-solid, var(--theme-accent)) 86%, black);
 	}
 
 	button:disabled {
@@ -195,8 +200,8 @@
 		margin: 0.5rem 0 0;
 		padding: 0.75rem 0.85rem;
 		border-radius: 0.65rem;
-		color: #8c2828;
-		background: #fff0ef;
+		color: var(--color-error);
+		background: var(--color-error-soft);
 		font-size: 0.85rem;
 		line-height: 1.45;
 	}

@@ -3,12 +3,22 @@ package usersettings
 
 import "time"
 
+// Appearance controls how authenticated Todai surfaces choose a color scheme.
+type Appearance string
+
+const (
+	AppearanceSystem Appearance = "system"
+	AppearanceLight  Appearance = "light"
+	AppearanceDark   Appearance = "dark"
+)
+
 // Settings contains the preferences that affect product and agent behavior.
 type Settings struct {
 	UserID              string     `db:"user_id" json:"-"`
 	Timezone            *string    `db:"timezone" json:"timezone"`
 	AgentModel          string     `db:"agent_model" json:"agentModel"`
 	AgentThinkingEffort string     `db:"agent_thinking_effort" json:"agentThinkingEffort"`
+	Appearance          Appearance `db:"appearance" json:"appearance"`
 	Version             int64      `db:"version" json:"version"`
 	CreatedAt           *time.Time `db:"created_at" json:"createdAt"`
 	UpdatedAt           *time.Time `db:"updated_at" json:"updatedAt"`
@@ -20,6 +30,7 @@ type Update struct {
 	Timezone            string
 	AgentModel          string
 	AgentThinkingEffort string
+	Appearance          *Appearance
 	Version             int64
 }
 
