@@ -78,6 +78,10 @@ export function validPostLoginRedirect(value: unknown): value is string {
 }
 
 export function openTask(task: Task): void {
+	openTaskRoute({ projectId: task.projectId, taskId: task.id });
+}
+
+export function openTaskRoute(route: TaskRoute): void {
 	if (!browser) return;
 	const currentRoute = parseTaskPath(window.location.pathname);
 	const existingReturn = page.state.taskModal?.returnTo;
@@ -85,9 +89,9 @@ export function openTask(task: Task): void {
 		? existingReturn
 		: validTaskReturnLocation(currentLocation())
 			? currentLocation()
-			: defaultTaskReturnPath(task.projectId);
+			: defaultTaskReturnPath(route.projectId);
 	const state: App.PageState = { ...page.state, taskModal: { returnTo } };
-	const path = canonicalTaskPath(task.projectId, task.id);
+	const path = canonicalTaskPath(route.projectId, route.taskId);
 	if (currentRoute) replaceState(path, state);
 	else pushState(path, state);
 	window.dispatchEvent(new CustomEvent(taskNavigationEvent));

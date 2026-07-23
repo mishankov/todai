@@ -177,6 +177,52 @@ describe('AgentChat', () => {
 			root.style.removeProperty('--theme-border');
 		}
 	});
+
+	it('renders assistant task mentions as deep links and opens them with task navigation', async () => {
+		const openTaskLink = vi.fn();
+		render(AgentChat, {
+			api: testAPI({
+				getSession: vi.fn().mockResolvedValue(
+					testConversation({
+						messages: [
+							assistantMessage('Open [Plan tomorrow](/projects/project-id/tasks/task-id) next.')
+						]
+					})
+				)
+			}),
+			storage: testStorage('session-id'),
+			openTaskLink
+		});
+		await page.getByRole('button', { name: 'Open assistant' }).click();
+
+		const link = page.getByRole('link', { name: 'Plan tomorrow' });
+		await expect.element(link).toHaveAttribute('href', '/projects/project-id/tasks/task-id');
+		await link.click();
+
+		expect(openTaskLink).toHaveBeenCalledWith({
+			projectId: 'project-id',
+			taskId: 'task-id'
+		});
+	});
+
+	it('does not turn arbitrary assistant markdown into links', async () => {
+		render(AgentChat, {
+			api: testAPI({
+				getSession: vi.fn().mockResolvedValue(
+					testConversation({
+						messages: [assistantMessage('[Untrusted](https://example.com/task)')]
+					})
+				)
+			}),
+			storage: testStorage('session-id')
+		});
+		await page.getByRole('button', { name: 'Open assistant' }).click();
+
+		await expect
+			.element(page.getByText('[Untrusted](https://example.com/task)', { exact: true }))
+			.toBeVisible();
+		expect(document.querySelector('.message-content a')).toBeNull();
+	});
 });
 
 function controllableStream() {

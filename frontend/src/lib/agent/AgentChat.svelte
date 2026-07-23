@@ -1,6 +1,8 @@
 <script lang="ts">
+	/* eslint-disable svelte/no-navigation-without-resolve */
 	import { onMount, tick } from 'svelte';
 	import { chatToggleRequestEvent } from '$lib/shortcuts/events';
+	import { openTaskRoute, parseTaskPath, type TaskRoute } from '$lib/tasks/navigation';
 	import {
 		ariaShortcut,
 		formatShortcut,
@@ -23,14 +25,21 @@
 		type AgentChatState,
 		type AgentToolActivity
 	} from './state';
+	import { parseAgentTaskLinks } from './task-links';
 
 	interface Props {
 		projectId?: string;
 		api?: AgentAPI;
 		storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+		openTaskLink?: (route: TaskRoute) => void;
 	}
 
-	let { projectId = '', api = createAgentAPI(fetch, projectId), storage }: Props = $props();
+	let {
+		projectId = '',
+		api = createAgentAPI(fetch, projectId),
+		storage,
+		openTaskLink = openTaskRoute
+	}: Props = $props();
 	let chatState = $state<AgentChatState | null>(null);
 	let open = $state(false);
 	let initialized = $state(false);
@@ -257,6 +266,22 @@
 		void sendMessage();
 	}
 
+	function handleTaskLinkClick(event: MouseEvent, href: string) {
+		if (
+			event.defaultPrevented ||
+			event.button !== 0 ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey
+		)
+			return;
+		const route = parseTaskPath(href);
+		if (!route) return;
+		event.preventDefault();
+		openTaskLink(route);
+	}
+
 	async function scrollConversation() {
 		await tick();
 		if (conversationLog) conversationLog.scrollTop = conversationLog.scrollHeight;
@@ -407,7 +432,19 @@
 					{#each messages as message (message.id)}
 						<article class:from-user={message.role === 'user'} class="message">
 							<p class="message-role">{message.role === 'user' ? 'You' : 'Assistant'}</p>
-							<p class="message-content">{message.content}</p>
+							<p class="message-content">
+								{#each message.role === 'assistant' ? parseAgentTaskLinks(message.content) : [{ text: message.content }] as segment, segmentIndex (segmentIndex)}
+									{#if segment.href}
+										<a
+											href={segment.href}
+											onclick={(event) => handleTaskLinkClick(event, segment.href!)}
+											>{segment.text}</a
+										>
+									{:else}
+										{segment.text}
+									{/if}
+								{/each}
+							</p>
 						</article>
 					{/each}
 				</div>
@@ -675,6 +712,20 @@
 		line-height: 1.62;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	.message-content a {
+		color: var(--theme-accent);
+		font-weight: 650;
+		text-decoration-thickness: 0.08em;
+		text-underline-offset: 0.14em;
+	}
+	.message-content a:hover {
+		text-decoration-thickness: 0.13em;
+	}
+	.message-content a:focus-visible {
+		border-radius: 0.15rem;
+		outline: 2px solid color-mix(in srgb, var(--theme-accent) 45%, transparent);
+		outline-offset: 2px;
 	}
 	.empty-state,
 	.loading-state {
