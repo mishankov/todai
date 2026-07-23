@@ -94,6 +94,27 @@ describe('AppShell', () => {
 			.not.toHaveAttribute('aria-current');
 	});
 
+	it('does not remember a task deep link as the project view', async () => {
+		const project = testProject({ id: 'work-id' });
+		localStorage.removeItem('todai.project.work-id.last-view');
+		const view = render(AppShell, {
+			username: 'owner',
+			projects: [project],
+			activeProject: project,
+			appearance: 'system',
+			onAppearanceChange: vi.fn(),
+			onLogout: vi.fn(),
+			currentPath: '/projects/work-id/tasks'
+		});
+		await expect
+			.poll(() => localStorage.getItem('todai.project.work-id.last-view'))
+			.toBe('/projects/work-id/tasks');
+
+		await view.rerender({ currentPath: '/projects/work-id/tasks/task-id' });
+
+		expect(localStorage.getItem('todai.project.work-id.last-view')).toBe('/projects/work-id/tasks');
+	});
+
 	it('saves appearance from the sidebar and marks the confirmed choice', async () => {
 		const project = testProject({ id: 'work-id' });
 		const onAppearanceChange = vi.fn(async () => undefined);

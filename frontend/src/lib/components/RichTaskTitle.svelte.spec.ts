@@ -58,7 +58,16 @@ describe('RichTaskTitle', () => {
 		await userEvent.keyboard('{Enter}');
 		await userEvent.keyboard(' @tom');
 		await userEvent.keyboard('{Enter}');
-		await expect.element(page.getByRole('option', { name: /^Morning/ })).toBeVisible();
+		const morning = page.getByRole('option', { name: /^Morning/ });
+		await expect.element(morning).toBeVisible();
+		for (
+			let attempts = 0;
+			attempts < 4 && morning.element().ariaSelected !== 'true';
+			attempts += 1
+		) {
+			await userEvent.keyboard('{ArrowUp}');
+		}
+		await expect.element(morning).toHaveAttribute('aria-selected', 'true');
 		await userEvent.keyboard('{Enter}');
 
 		const draft = readDraft();

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
 	import AgentChat from '$lib/agent/AgentChat.svelte';
 	import AppearanceController from '$lib/appearance/AppearanceController.svelte';
 	import { publishSavedAppearance, type Appearance } from '$lib/appearance/theme';
@@ -10,13 +10,31 @@
 	import RealtimeSync from '$lib/realtime/RealtimeSync.svelte';
 	import { updateSettings } from '$lib/settings/client';
 	import GlobalShortcuts from '$lib/shortcuts/GlobalShortcuts.svelte';
+	import TaskRouteModal from '$lib/tasks/TaskRouteModal.svelte';
+	import { taskNavigationEvent } from '$lib/tasks/navigation';
+	import { onMount } from 'svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
+	let locationPath = $state(browser ? window.location.pathname : '/');
 	let activeProject = $derived.by(() => {
-		const match = page.url.pathname.match(/^\/projects\/([^/]+)/);
+		const match = locationPath.match(/^\/projects\/([^/]+)/);
 		if (!match) return undefined;
 		return data.projects.find((project) => project.id === decodeURIComponent(match[1]));
+	});
+
+	afterNavigate(() => {
+		locationPath = window.location.pathname;
+	});
+
+	onMount(() => {
+		const updateLocation = () => (locationPath = window.location.pathname);
+		window.addEventListener('popstate', updateLocation);
+		window.addEventListener(taskNavigationEvent, updateLocation);
+		return () => {
+			window.removeEventListener('popstate', updateLocation);
+			window.removeEventListener(taskNavigationEvent, updateLocation);
+		};
 	});
 
 	async function signOut() {
@@ -58,12 +76,13 @@
 		appearance={data.settings.settings.appearance}
 		onAppearanceChange={saveAppearance}
 		onLogout={signOut}
-		currentPath={page.url.pathname}
+		currentPath={locationPath}
 	>
 		{@render children()}
 	</AppShell>
 
-	<GlobalShortcuts {activeProject} projects={data.projects} currentPath={page.url.pathname} />
+	<GlobalShortcuts {activeProject} projects={data.projects} currentPath={locationPath} />
+	<TaskRouteModal projects={data.projects} />
 	<RealtimeSync />
 
 	{#if activeProject}

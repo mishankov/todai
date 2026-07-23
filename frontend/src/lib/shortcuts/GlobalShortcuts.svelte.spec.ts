@@ -22,8 +22,7 @@ describe('GlobalShortcuts', () => {
 			navigate: vi.fn(),
 			refresh,
 			loadSections: vi.fn(async () => [section]),
-			createTask,
-			updateTask: vi.fn()
+			createTask
 		});
 
 		dispatchShortcut('KeyN', true);

@@ -117,6 +117,9 @@ describe("Pi runner history", () => {
 
     expect(output.find((event) => event.type === "run.failed")).toBeUndefined();
     expect(harness.systemPrompt).toContain("Europe/Moscow");
+    expect(harness.systemPrompt).toContain(
+      "/projects/<URL-encoded-projectId>/tasks/<URL-encoded-taskId>",
+    );
     expect(harness.thinkingLevel).toBe("high");
     expect(harness.prompt).toBe(
       '<todai-context>{"type":"task","taskId":"11111111-1111-4111-8111-111111111111","action":"decompose"}</todai-context>\n\nMove them',

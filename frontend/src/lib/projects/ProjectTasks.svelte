@@ -1,8 +1,8 @@
 <script lang="ts">
-	import TaskEditorModal from '$lib/components/TaskEditorModal.svelte';
 	import TaskQuickAdd from '$lib/components/TaskQuickAdd.svelte';
 	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
-	import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft, TaskSummary } from '$lib/tasks/client';
+	import { openTask as navigateToTask } from '$lib/tasks/navigation';
 	import { untrack } from 'svelte';
 	import type { Project, ProjectLayout, ProjectSection } from './client';
 
@@ -15,7 +15,7 @@
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
-		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
+		openTask?: (task: Task, sections?: ProjectSection[]) => void;
 		remove: (taskId: string, version: number) => Promise<void>;
 		reorder: (
 			taskId: string,
@@ -61,7 +61,7 @@
 		loadSections,
 		complete,
 		reopen,
-		update,
+		openTask = navigateToTask,
 		remove,
 		reorder,
 		changeLayout,
@@ -78,7 +78,6 @@
 	let creatingSection = $state(false);
 	let editingSectionId = $state<string | null>(null);
 	let editingSectionName = $state('');
-	let editingTaskId = $state<string | null>(null);
 	let busyTaskIds = $state<string[]>([]);
 	let busySectionIds = $state<string[]>([]);
 	let changingLayout = $state(false);
@@ -93,7 +92,6 @@
 			(group) => currentProject.layout === 'list' || !group.completed
 		)
 	);
-	let editingTask = $derived(tasks.find((item) => item.id === editingTaskId));
 
 	$effect(() => {
 		const nextProject = project;
@@ -103,9 +101,6 @@
 			currentProject = nextProject;
 			sections = [...nextSections];
 			tasks = [...nextTasks];
-			if (editingTaskId !== null && !nextTasks.some((item) => item.id === editingTaskId)) {
-				editingTaskId = null;
-			}
 			if (editingSectionId !== null && !nextSections.some((item) => item.id === editingSectionId)) {
 				editingSectionId = null;
 			}
@@ -227,19 +222,8 @@
 		}
 	}
 
-	async function saveTask(item: TaskSummary, changes: TaskUpdate) {
-		const updated = await update(item.id, changes);
-		tasks =
-			updated.projectId === currentProject.id
-				? tasks.map((candidate) =>
-						candidate.id === updated.id ? { ...candidate, ...updated } : candidate
-					)
-				: tasks.filter((candidate) => candidate.id !== updated.id);
-		editingTaskId = null;
-	}
-
 	function openTaskEditor(item: TaskSummary) {
-		editingTaskId = item.id;
+		openTask(item, sections);
 	}
 
 	function summaryFromTask(task: Task): TaskSummary {
@@ -784,17 +768,6 @@
 		</section>
 	</div>
 </section>
-
-{#if editingTask}
-	<TaskEditorModal
-		task={editingTask}
-		{projects}
-		{sections}
-		{loadSections}
-		save={(changes) => saveTask(editingTask, changes)}
-		close={() => (editingTaskId = null)}
-	/>
-{/if}
 
 <style>
 	.project-task-view {

@@ -7,9 +7,7 @@
 		deleteTask,
 		reopenTask,
 		type Task,
-		type TaskCreateDraft,
-		type TaskUpdate,
-		updateTask
+		type TaskCreateDraft
 	} from '$lib/tasks/client';
 	import type { PageProps } from './$types';
 
@@ -34,10 +32,6 @@
 	function remove(taskId: string, version: number): Promise<void> {
 		return deleteTask(fetch, taskId, version);
 	}
-
-	function update(taskId: string, changes: TaskUpdate): Promise<Task> {
-		return updateTask(fetch, taskId, changes);
-	}
 </script>
 
 <svelte:head>
@@ -53,6 +47,5 @@
 	{create}
 	{complete}
 	{reopen}
-	{update}
 	{remove}
 />

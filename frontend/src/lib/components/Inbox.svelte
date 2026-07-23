@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft, TaskSummary } from '$lib/tasks/client';
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import TaskView from './TaskView.svelte';
 
@@ -8,12 +8,12 @@
 		create: (draft: TaskCreateDraft) => Promise<Task>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
-		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 		remove: (taskId: string, version: number) => Promise<void>;
 		projects?: Project[];
 		sections?: ProjectSection[];
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		currentProjectId?: string;
+		openTask?: (task: Task) => void;
 	}
 
 	let {
@@ -21,12 +21,12 @@
 		create,
 		complete,
 		reopen,
-		update,
 		remove,
 		projects = [],
 		sections = [],
 		loadSections,
-		currentProjectId
+		currentProjectId,
+		openTask
 	}: Props = $props();
 </script>
 
@@ -35,12 +35,12 @@
 	{create}
 	{complete}
 	{reopen}
-	{update}
 	{remove}
 	{projects}
 	{sections}
 	{loadSections}
 	{currentProjectId}
+	{openTask}
 	currentSectionId={null}
 	eyebrow="Project"
 	heading="Inbox"

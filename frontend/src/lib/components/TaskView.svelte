@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import SubtaskProgress from '$lib/tasks/SubtaskProgress.svelte';
-	import type { Task, TaskCreateDraft, TaskSummary, TaskUpdate } from '$lib/tasks/client';
-	import TaskEditorModal from './TaskEditorModal.svelte';
+	import type { Task, TaskCreateDraft, TaskSummary } from '$lib/tasks/client';
+	import { openTask as navigateToTask } from '$lib/tasks/navigation';
 	import TaskQuickAdd from './TaskQuickAdd.svelte';
 
 	interface Props {
@@ -10,7 +10,6 @@
 		create?: (draft: TaskCreateDraft) => Promise<Task>;
 		complete: (taskId: string, version: number) => Promise<Task>;
 		reopen: (taskId: string, version: number) => Promise<Task>;
-		update: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 		remove: (taskId: string, version: number) => Promise<void>;
 		eyebrow: string;
 		heading: string;
@@ -23,6 +22,7 @@
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		currentProjectId?: string | null;
 		currentSectionId?: string | null;
+		openTask?: (task: Task) => void;
 	}
 
 	interface TaskGroup {
@@ -38,7 +38,6 @@
 		create,
 		complete,
 		reopen,
-		update,
 		remove,
 		eyebrow,
 		heading,
@@ -50,16 +49,15 @@
 		sections = [],
 		loadSections,
 		currentProjectId,
-		currentSectionId
+		currentSectionId,
+		openTask = navigateToTask
 	}: Props = $props();
 	let tasks = $derived([...initialTasks]);
 	let busyTaskIds = $state<string[]>([]);
 	let errorMessage = $state('');
-	let editingTaskId = $state<string | null>(null);
 	let activeTasks = $derived(tasks.filter((item) => item.status === 'active'));
 	let completedTasks = $derived(tasks.filter((item) => item.status === 'completed'));
 	let taskGroups = $derived(buildTaskGroups(activeTasks, completedTasks));
-	let editingTask = $derived(tasks.find((item) => item.id === editingTaskId));
 
 	async function changeStatus(item: TaskSummary) {
 		const previousItem = item;
@@ -109,21 +107,8 @@
 		}
 	}
 
-	async function saveItem(item: TaskSummary, changes: TaskUpdate) {
-		const updated = await update(item.id, changes);
-		const remainsInView =
-			(currentProjectId === undefined || updated.projectId === currentProjectId) &&
-			(currentSectionId === undefined || updated.sectionId === currentSectionId);
-		tasks = remainsInView
-			? tasks.map((candidate) =>
-					candidate.id === updated.id ? { ...candidate, ...updated } : candidate
-				)
-			: tasks.filter((candidate) => candidate.id !== updated.id);
-		editingTaskId = null;
-	}
-
 	function openTaskEditor(item: TaskSummary) {
-		editingTaskId = item.id;
+		openTask(item);
 	}
 
 	function dueTime(item: TaskSummary): string {
@@ -397,17 +382,6 @@
 		{/if}
 	</div>
 </section>
-
-{#if editingTask}
-	<TaskEditorModal
-		task={editingTask}
-		{projects}
-		{sections}
-		{loadSections}
-		save={(changes) => saveItem(editingTask, changes)}
-		close={() => (editingTaskId = null)}
-	/>
-{/if}
 
 <style>
 	.task-view {

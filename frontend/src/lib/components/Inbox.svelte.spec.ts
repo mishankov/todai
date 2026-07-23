@@ -14,7 +14,6 @@ describe('Inbox', () => {
 			create,
 			complete: vi.fn(),
 			reopen: vi.fn(),
-			update: vi.fn(),
 			remove: vi.fn()
 		});
 
@@ -53,7 +52,6 @@ describe('Inbox', () => {
 			create: vi.fn(),
 			complete,
 			reopen,
-			update: vi.fn(),
 			remove
 		});
 
@@ -83,7 +81,6 @@ describe('Inbox', () => {
 			create: vi.fn(),
 			complete: vi.fn(() => completeRequest.promise),
 			reopen: vi.fn(),
-			update: vi.fn(),
 			remove: vi.fn(() => removeRequest.promise)
 		});
 
@@ -106,7 +103,6 @@ describe('Inbox', () => {
 				throw new Error('complete failed');
 			}),
 			reopen: vi.fn(),
-			update: vi.fn(),
 			remove: vi.fn(async () => {
 				throw new Error('delete failed');
 			})
@@ -127,22 +123,21 @@ describe('Inbox', () => {
 		await expect.element(page.getByText('Keep this task')).toBeVisible();
 	});
 
-	it('opens task editing in the shared modal', async () => {
+	it('opens a task through its canonical route', async () => {
 		const task = testTask({ title: 'Draft plan' });
+		const openTask = vi.fn();
 		render(Inbox, {
 			initialTasks: [task],
 			create: vi.fn(),
 			complete: vi.fn(),
 			reopen: vi.fn(),
-			update: vi.fn(),
-			remove: vi.fn()
+			remove: vi.fn(),
+			openTask
 		});
 
 		await page.getByRole('button', { name: `Open ${task.title}` }).click();
 
-		await expect
-			.element(page.getByRole('dialog', { name: `Edit task: ${task.title}` }))
-			.toHaveAttribute('aria-modal', 'true');
+		expect(openTask).toHaveBeenCalledWith(task);
 	});
 
 	it('shows direct subtask progress on the collapsed task card', async () => {
@@ -156,77 +151,11 @@ describe('Inbox', () => {
 			create: vi.fn(),
 			complete: vi.fn(),
 			reopen: vi.fn(),
-			update: vi.fn(),
 			remove: vi.fn()
 		});
 
 		await expect.element(page.getByLabelText('1 of 3 subtasks completed')).toBeVisible();
 		await expect.element(page.getByText('1/3', { exact: true })).toBeVisible();
-	});
-
-	it('edits task fields with the observed version', async () => {
-		const active = testTask({ title: 'Draft plan' });
-		const updated = testTask({
-			...active,
-			title: 'Publish plan',
-			description: 'Share with the team',
-			priority: 3,
-			version: 2
-		});
-		const update = vi.fn(async () => updated);
-		render(Inbox, {
-			initialTasks: [active],
-			create: vi.fn(),
-			complete: vi.fn(),
-			reopen: vi.fn(),
-			update,
-			remove: vi.fn()
-		});
-
-		await page.getByRole('button', { name: 'Edit Draft plan' }).click();
-		const dialog = page.getByRole('dialog', { name: 'Edit task: Draft plan' });
-		await dialog.getByLabelText('Title', { exact: true }).fill('Publish plan');
-		await dialog.getByLabelText('Description').fill('Share with the team');
-		await dialog.getByRole('button', { name: 'Priority: None' }).click();
-		await dialog.getByRole('option', { name: 'High' }).click();
-		await dialog.getByRole('button', { name: /^Due date:/ }).click();
-		await dialog.getByLabelText('Choose date…').fill('2026-07-20');
-		await dialog.getByRole('button', { name: 'Save changes' }).click();
-
-		expect(update).toHaveBeenCalledWith(
-			active.id,
-			expect.objectContaining({
-				version: active.version,
-				title: 'Publish plan',
-				description: 'Share with the team',
-				priority: 3,
-				dueDate: '2026-07-20',
-				dueTime: null,
-				dueTimezone: null
-			})
-		);
-		await expect.element(page.getByText('Publish plan')).toBeVisible();
-	});
-
-	it('removes a task after it is assigned to a section', async () => {
-		const active = testTask({ title: 'Sort this task' });
-		const update = vi.fn(async () =>
-			testTask({ ...active, sectionId: 'section-id', version: active.version + 1 })
-		);
-		render(Inbox, {
-			initialTasks: [active],
-			currentProjectId: active.projectId,
-			create: vi.fn(),
-			complete: vi.fn(),
-			reopen: vi.fn(),
-			update,
-			remove: vi.fn()
-		});
-
-		await page.getByRole('button', { name: 'Edit Sort this task' }).click();
-		await page.getByRole('button', { name: 'Save changes' }).click();
-
-		await expect.element(page.getByText('Inbox clear.')).toBeVisible();
 	});
 
 	it('groups tasks by their planned date', async () => {
@@ -250,7 +179,6 @@ describe('Inbox', () => {
 			create: vi.fn(),
 			complete: vi.fn(),
 			reopen: vi.fn(),
-			update: vi.fn(),
 			remove: vi.fn()
 		});
 

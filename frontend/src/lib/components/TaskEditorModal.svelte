@@ -3,6 +3,7 @@
 	import { decomposeTaskWithAgent } from '$lib/agent/decompose';
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { subscribeActivityEvents } from '$lib/realtime/events';
+	import { canonicalTaskUrl } from '$lib/tasks/navigation';
 	import {
 		completeTask as requestCompleteTask,
 		createTaskComment as requestCreateComment,
@@ -35,6 +36,7 @@
 		removeComment?: (commentId: string, version: number) => Promise<void>;
 		decomposeTask?: (task: Task) => Promise<void>;
 		removeSubtask?: (taskId: string, version: number) => Promise<void>;
+		copyLink?: (url: string) => Promise<void>;
 	}
 
 	let {
@@ -53,7 +55,8 @@
 		removeComment = (commentId, version) =>
 			requestDeleteComment(fetch, task.id, commentId, version),
 		decomposeTask = decomposeTaskWithAgent,
-		removeSubtask = (taskId, version) => requestDeleteTask(fetch, taskId, version)
+		removeSubtask = (taskId, version) => requestDeleteTask(fetch, taskId, version),
+		copyLink = (url) => navigator.clipboard.writeText(url)
 	}: Props = $props();
 
 	let dialog: HTMLElement;
@@ -72,7 +75,10 @@
 	let decompositionError = $state('');
 	let decompositionStatus = $state('');
 	let decomposing = $state(false);
+	let copyStatus = $state('');
+	let copyError = $state('');
 	let reloadTimer: number | undefined;
+	let copyStatusTimer: number | undefined;
 	let subtaskLoadVersion = 0;
 	let commentLoadVersion = 0;
 	let completedSubtasks = $derived(subtasks.filter((item) => item.status === 'completed').length);
@@ -89,12 +95,26 @@
 		return () => {
 			unsubscribe();
 			if (reloadTimer !== undefined) window.clearTimeout(reloadTimer);
+			if (copyStatusTimer !== undefined) window.clearTimeout(copyStatusTimer);
 			document.documentElement.style.overflow = previousOverflow;
 			queueMicrotask(() => {
 				if (previouslyFocused?.isConnected) previouslyFocused.focus();
 			});
 		};
 	});
+
+	async function copyCanonicalLink() {
+		copyStatus = '';
+		copyError = '';
+		if (copyStatusTimer !== undefined) window.clearTimeout(copyStatusTimer);
+		try {
+			await copyLink(canonicalTaskUrl(task, window.location.origin));
+			copyStatus = 'Link copied';
+			copyStatusTimer = window.setTimeout(() => (copyStatus = ''), 2400);
+		} catch {
+			copyError = 'The link could not be copied. Please try again.';
+		}
+	}
 
 	async function refreshRelatedData(showLoading = false) {
 		await Promise.all([refreshSubtasks(showLoading), refreshComments(showLoading)]);
@@ -307,8 +327,16 @@
 				<p>Task details</p>
 				<h2>{task.title}</h2>
 			</div>
-			<button class="close" type="button" aria-label="Close task editor" onclick={close}>×</button>
+			<div class="header-actions">
+				<button class="copy-link" type="button" onclick={() => void copyCanonicalLink()}
+					>Copy link</button
+				>
+				{#if copyStatus}<span class="copy-status" role="status">{copyStatus}</span>{/if}
+				<button class="close" type="button" aria-label="Close task editor" onclick={close}>×</button
+				>
+			</div>
 		</header>
+		{#if copyError}<p class="copy-error" role="alert">{copyError}</p>{/if}
 
 		<div class="modal-content">
 			<div class="details-column">
@@ -527,6 +555,46 @@
 		line-height: 1.3;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+	}
+
+	.copy-link {
+		padding: 0.45rem 0.65rem;
+		border: 1px solid var(--theme-border);
+		border-radius: 0.5rem;
+		color: var(--theme-accent);
+		background: var(--color-control);
+		font: inherit;
+		font-size: 0.74rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.copy-link:hover,
+	.copy-link:focus-visible {
+		background: var(--theme-hover);
+		outline: none;
+	}
+
+	.copy-status {
+		color: var(--theme-accent);
+		font-size: 0.72rem;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+
+	.copy-error {
+		margin: 0;
+		padding: 0.65rem 1.25rem;
+		border-bottom: 1px solid var(--theme-border);
+		color: var(--color-error);
+		background: var(--color-error-soft);
+		font-size: 0.8rem;
 	}
 
 	.close {

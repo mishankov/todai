@@ -3,8 +3,8 @@
 	import {
 		createProjectSection,
 		deleteProjectSection,
-		reorderProjectSection,
 		listProjectSections,
+		reorderProjectSection,
 		type Project,
 		type ProjectLayout,
 		type ProjectSection,
@@ -19,9 +19,7 @@
 		reorderTask,
 		type Task,
 		type TaskCreateDraft,
-		type TaskSummary,
-		type TaskUpdate,
-		updateTask
+		type TaskSummary
 	} from '$lib/tasks/client';
 	import type { PageProps } from './$types';
 
@@ -38,9 +36,6 @@
 	}
 	function reopen(taskId: string, version: number): Promise<Task> {
 		return reopenTask(fetch, taskId, version);
-	}
-	function update(taskId: string, changes: TaskUpdate): Promise<Task> {
-		return updateTask(fetch, taskId, changes);
 	}
 	function remove(taskId: string, version: number): Promise<void> {
 		return deleteTask(fetch, taskId, version);
@@ -90,7 +85,6 @@
 		{loadSections}
 		{complete}
 		{reopen}
-		{update}
 		{remove}
 		{reorder}
 		{changeLayout}

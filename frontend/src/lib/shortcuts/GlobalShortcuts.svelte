@@ -3,16 +3,13 @@
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import { browser } from '$app/environment';
 	import { goto, invalidateAll } from '$app/navigation';
-	import TaskEditorModal from '$lib/components/TaskEditorModal.svelte';
 	import CommandPalette from '$lib/palette/CommandPalette.svelte';
 	import type { Project, ProjectSection } from '$lib/projects/client';
 	import { listProjectSections } from '$lib/projects/client';
 	import { rememberedProjectPath } from '$lib/projects/navigation';
-	import type { Task, TaskCreateDraft, TaskUpdate } from '$lib/tasks/client';
-	import {
-		createTaskWithProperties as createTaskRequest,
-		updateTask as updateTaskRequest
-	} from '$lib/tasks/client';
+	import type { Task, TaskCreateDraft } from '$lib/tasks/client';
+	import { openTask } from '$lib/tasks/navigation';
+	import { createTaskWithProperties as createTaskRequest } from '$lib/tasks/client';
 	import { onMount, tick } from 'svelte';
 	import { commandPaletteRequestEvent, quickAddRequestEvent, requestChatToggle } from './events';
 	import QuickAddDialog from './QuickAddDialog.svelte';
@@ -33,7 +30,6 @@
 		refresh?: () => void | Promise<void>;
 		loadSections?: (projectId: string) => Promise<ProjectSection[]>;
 		createTask?: (draft: TaskCreateDraft) => Promise<Task>;
-		updateTask?: (taskId: string, changes: TaskUpdate) => Promise<Task>;
 	}
 
 	let {
@@ -43,15 +39,12 @@
 		navigate = (href) => goto(href),
 		refresh = () => invalidateAll(),
 		loadSections = (projectId) => listProjectSections(fetch, projectId),
-		createTask = (draft) => createTaskRequest(fetch, draft),
-		updateTask = (taskId, changes) => updateTaskRequest(fetch, taskId, changes)
+		createTask = (draft) => createTaskRequest(fetch, draft)
 	}: Props = $props();
 	let applePlatform = $state(browser && isApplePlatform(window.navigator.platform));
 	let quickAddOpen = $state(false);
 	let helpOpen = $state(false);
 	let paletteOpen = $state(false);
-	let editingTask = $state<Task | undefined>();
-	let editingSections = $state<ProjectSection[] | undefined>();
 	let focusRequest = $state(0);
 	let previousFocus: HTMLElement | null = null;
 
@@ -220,22 +213,9 @@
 		await navigate(rememberedProjectPath(project.id));
 	}
 
-	function openTaskFromPalette(task: Task, sections?: ProjectSection[]) {
-		editingSections = sections;
-		editingTask = task;
-	}
-
-	async function savePaletteTask(changes: TaskUpdate) {
-		if (!editingTask) return;
-		await updateTask(editingTask.id, changes);
-		editingTask = undefined;
-		await refresh();
+	async function openTaskFromPalette(task: Task) {
 		await restoreFocus();
-	}
-
-	function closePaletteTask() {
-		editingTask = undefined;
-		void restoreFocus();
+		openTask(task);
 	}
 
 	let quickAddLabel = $derived(
@@ -284,17 +264,6 @@
 
 {#if helpOpen}
 	<ShortcutHelp {applePlatform} close={closeHelp} />
-{/if}
-
-{#if editingTask}
-	<TaskEditorModal
-		task={editingTask}
-		{projects}
-		sections={editingSections}
-		{loadSections}
-		save={savePaletteTask}
-		close={closePaletteTask}
-	/>
 {/if}
 
 <style>
