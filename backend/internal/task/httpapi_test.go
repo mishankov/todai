@@ -128,6 +128,34 @@ func TestAuthenticatedUserCanCreateProjectInboxTask(t *testing.T) {
 	}
 }
 
+func TestCreateAcceptsCompleteTaskState(t *testing.T) {
+	t.Parallel()
+
+	handler := testAPI(&auth.User{ID: "user-id", Username: "owner"})
+	response := serveJSON(
+		t, handler, http.MethodPost, "/tasks",
+		map[string]any{
+			"title": "Plan sprint", "description": "Draft plan", "projectId": "project-id",
+			"sectionId": "section-id", "priority": 4, "dueDate": "2026-07-23",
+			"dueTime": "09:30", "dueTimezone": "Europe/Moscow",
+		},
+		authenticatedCookie(),
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create task status = %d, want %d: %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	var created task.Task
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created task: %v", err)
+	}
+	if created.Description == nil || *created.Description != "Draft plan" || created.Priority != 4 ||
+		created.DueDate == nil || *created.DueDate != task.Date("2026-07-23") ||
+		created.DueTime == nil || *created.DueTime != task.TimeOfDay("09:30") ||
+		created.DueTimezone == nil || *created.DueTimezone != "Europe/Moscow" {
+		t.Errorf("created task = %#v", created)
+	}
+}
+
 func TestTopLevelTaskRequiresProject(t *testing.T) {
 	t.Parallel()
 
@@ -526,6 +554,20 @@ func (fakeTaskService) Create(
 	}, nil
 }
 
+func (fakeTaskService) CreateWithProperties(
+	_ context.Context,
+	scope execution.Scope,
+	input task.CreateInput,
+) (task.Task, error) {
+	return task.Task{
+		ID: "task-id", ProjectID: input.ProjectID, SectionID: input.SectionID,
+		ParentID: input.ParentID, Title: input.Title, Description: input.Description,
+		Status: task.StatusActive, Priority: input.Priority, DueDate: input.DueDate,
+		DueTime: input.DueTime, DueTimezone: input.DueTimezone, Version: 1,
+		LastModifiedBy: scope.ModifiedBy(),
+	}, nil
+}
+
 func (fakeTaskService) CreateSubtask(
 	_ context.Context, scope execution.Scope, title string, parentID string,
 ) (task.Task, error) {
@@ -684,6 +726,15 @@ func (s *scopeRecordingTaskService) Create(
 ) (task.Task, error) {
 	s.scopes <- scope
 	return s.fakeTaskService.Create(ctx, scope, title, projectID, sectionID)
+}
+
+func (s *scopeRecordingTaskService) CreateWithProperties(
+	ctx context.Context,
+	scope execution.Scope,
+	input task.CreateInput,
+) (task.Task, error) {
+	s.scopes <- scope
+	return s.fakeTaskService.CreateWithProperties(ctx, scope, input)
 }
 
 type versionRecordingTaskService struct {

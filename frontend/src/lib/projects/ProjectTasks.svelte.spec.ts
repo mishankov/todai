@@ -54,7 +54,7 @@ describe('ProjectTasks', () => {
 
 		await expect.element(page.getByText(task.title, { exact: true })).toBeVisible();
 		await expect
-			.element(page.getByRole('textbox', { name: 'Add task to No section' }))
+			.element(page.getByRole('combobox', { name: 'Add task to No section' }))
 			.toBeVisible();
 		await expect.element(page.getByRole('heading', { name: 'No section' })).not.toBeInTheDocument();
 	});
@@ -118,7 +118,13 @@ describe('ProjectTasks', () => {
 		const create = vi.fn(async () => created);
 		renderProjectTasks({ sections: [section], create });
 
-		await page.getByRole('textbox', { name: 'Add task to Doing' }).fill('Ship the change');
+		await expect
+			.element(page.getByRole('button', { name: 'project: Work. Open picker' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'section: Doing. Open picker' }))
+			.not.toBeInTheDocument();
+		await page.getByRole('combobox', { name: 'Add task to Doing' }).fill('Ship the change');
 		await page.getByRole('button', { name: 'Add task to Doing' }).click();
 
 		expect(create).toHaveBeenCalledWith(
@@ -145,26 +151,61 @@ describe('ProjectTasks', () => {
 	});
 
 	it('opens task editing as an accessible modal with the existing values', async () => {
+		const section = testSection({ id: 'doing', name: 'Doing' });
 		const task = testTask({
 			title: 'Draft proposal',
 			description: 'Share with the team',
+			sectionId: section.id,
 			priority: 3,
 			dueDate: '2026-07-20',
 			dueTime: '14:30'
 		});
-		renderProjectTasks({ tasks: [task] });
+		renderProjectTasks({ sections: [section], tasks: [task] });
 
 		await page.getByRole('button', { name: `Open ${task.title}` }).click();
 
 		const dialog = page.getByRole('dialog', { name: `Edit task: ${task.title}` });
 		await expect.element(dialog).toHaveAttribute('aria-modal', 'true');
-		await expect.element(dialog.getByRole('textbox', { name: 'Title' })).toHaveValue(task.title);
+		await expect.element(dialog.getByRole('combobox', { name: 'Title' })).toHaveValue(task.title);
 		await expect
 			.element(dialog.getByRole('textbox', { name: 'Description' }))
 			.toHaveValue(task.description ?? '');
-		await expect.element(dialog.getByRole('button', { name: 'Priority: High' })).toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: 'Priority: High', exact: true }))
+			.toBeVisible();
 		await expect.element(dialog.getByRole('button', { name: /^Due date:/ })).toBeVisible();
 		await expect.element(dialog.getByRole('button', { name: /^Due time:/ })).toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: /^project: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^section: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^priority: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(dialog.getByRole('button', { name: /^due: .*\. Open picker$/ }))
+			.not.toBeInTheDocument();
+	});
+
+	it('applies title autocomplete in the full editor without showing property pills', async () => {
+		const task = testTask({ title: 'Draft proposal' });
+		renderProjectTasks({ tasks: [task] });
+
+		await page.getByRole('button', { name: `Open ${task.title}` }).click();
+		const dialog = page.getByRole('dialog', { name: `Edit task: ${task.title}` });
+		const title = dialog.getByRole('combobox', { name: 'Title' });
+		await title.fill(`${task.title} !hi`);
+		await userEvent.keyboard('{Enter}');
+
+		await expect.element(title).toHaveValue(task.title);
+		await expect
+			.element(dialog.getByRole('button', { name: 'Priority: High', exact: true }))
+			.toBeVisible();
+		await expect
+			.element(dialog.getByRole('button', { name: 'priority: High. Open picker' }))
+			.not.toBeInTheDocument();
 	});
 
 	it('closes task editing with Escape without updating the task', async () => {
@@ -369,7 +410,7 @@ describe('ProjectTasks', () => {
 		await expect.element(source).toHaveAttribute('data-dragging', 'true');
 		const marker = target.element().querySelector('[data-insertion-marker="task"]');
 		const quickAdd = destination
-			.getByRole('textbox', { name: 'Add task to Later' })
+			.getByRole('combobox', { name: 'Add task to Later' })
 			.element()
 			.closest('form');
 		expect(marker).toBeInstanceOf(HTMLElement);

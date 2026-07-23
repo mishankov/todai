@@ -733,14 +733,20 @@
 				{#if !group.completed}
 					<TaskQuickAdd
 						{create}
-						oncreated={(created) =>
-							(tasks = [
-								...tasks.filter((item) => item.id !== created.id),
-								summaryFromTask(created)
-							])}
+						oncreated={(created) => {
+							if (created.projectId === currentProject.id) {
+								tasks = [
+									...tasks.filter((item) => item.id !== created.id),
+									summaryFromTask(created)
+								];
+							}
+						}}
 						initialProjectId={currentProject.id}
 						initialSectionId={group.section?.id ?? null}
 						label={`Add task to ${group.name}`}
+						{projects}
+						{sections}
+						{loadSections}
 					/>
 				{/if}
 			</section>

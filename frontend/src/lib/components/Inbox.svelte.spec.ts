@@ -10,6 +10,7 @@ describe('Inbox', () => {
 		const create = vi.fn(async () => created);
 		render(Inbox, {
 			initialTasks: [],
+			currentProjectId: created.projectId,
 			create,
 			complete: vi.fn(),
 			reopen: vi.fn(),
