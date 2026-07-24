@@ -26,7 +26,8 @@ docker run --rm --entrypoint sh "$BACKEND_IMAGE" -ec '
 docker run --rm --entrypoint sh "$FRONTEND_IMAGE" -ec '
   test "$(id -u)" -ne 0
   test "$(node --version)" = "v22.22.0"
-  test -f /opt/todai/frontend/server.mjs
+  test ! -e /opt/todai/frontend/server.mjs
+  test -f /opt/todai/frontend/build/index.js
   test -f /opt/todai/frontend/build/handler.js
   test ! -d /opt/todai/frontend/node_modules
   ! command -v npm
@@ -63,4 +64,8 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
   "http://${frontend_address}/a-page-that-does-not-exist")" = "404"
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "http://${frontend_address}/api")" = "502"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
   "http://${frontend_address}/internal/tools")" = "404"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "http://${frontend_address}/internal/tools/task_get")" = "404"

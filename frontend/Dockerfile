@@ -30,14 +30,15 @@ RUN apk add --no-cache ca-certificates libstdc++ \
     && chown -R todai-web:todai-web /opt/todai
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=frontend-build --chown=todai-web:todai-web /src/frontend/build /opt/todai/frontend/build
-COPY --chown=todai-web:todai-web frontend/server.mjs /opt/todai/frontend/server.mjs
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8080 \
+    BODY_SIZE_LIMIT=Infinity \
+    SHUTDOWN_TIMEOUT=25 \
     TODAI_BACKEND_URL=http://backend:8080
 WORKDIR /opt/todai/frontend
 USER todai-web
 EXPOSE 8080
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/usr/local/bin/node", "/opt/todai/frontend/server.mjs"]
+ENTRYPOINT ["/usr/local/bin/node", "/opt/todai/frontend/build/index.js"]
