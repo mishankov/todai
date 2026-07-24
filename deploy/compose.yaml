@@ -1,89 +1,54 @@
 name: todai
 
-x-backend-environment: &backend-environment
-  TODAI_ENVIRONMENT: production
-  TODAI_DATABASE_URL: postgres://${TODAI_POSTGRES_USER:?set TODAI_POSTGRES_USER}:${TODAI_POSTGRES_PASSWORD:?set TODAI_POSTGRES_PASSWORD}@postgres:5432/${TODAI_POSTGRES_DB:-todai}?sslmode=disable
-  TODAI_HTTP_PORT: "8080"
-  TODAI_SESSION_COOKIE_NAME: ${TODAI_SESSION_COOKIE_NAME:-todai_session}
-  TODAI_LOG_FORMAT: json
-  TODAI_RUNNER_EXECUTABLE: /usr/local/bin/node
-  TODAI_RUNNER_ENTRY: /opt/todai/pi-runner/dist/cli/main.js
-  TODAI_RUNNER_STARTUP_TIMEOUT: ${TODAI_RUNNER_STARTUP_TIMEOUT:-5s}
-  TODAI_RUNNER_RUN_TIMEOUT: ${TODAI_RUNNER_RUN_TIMEOUT:-2m}
-  TODAI_RUNNER_ABORT_TIMEOUT: ${TODAI_RUNNER_ABORT_TIMEOUT:-2s}
-  TODAI_RUNNER_MAX_LINE_BYTES: ${TODAI_RUNNER_MAX_LINE_BYTES:-1048576}
-  TODAI_AGENT_RUNTIME: ${TODAI_AGENT_RUNTIME:-fake}
-  TODAI_INTERNAL_API_URL: ${TODAI_INTERNAL_API_URL:-http://127.0.0.1:8080}
-  TODAI_AGENT_TOKEN_TTL: ${TODAI_AGENT_TOKEN_TTL:-15m}
-  TODAI_PI_AGENT_DIR: /var/lib/todai/pi-agent
-  TODAI_PI_PROVIDER: ${TODAI_PI_PROVIDER:-}
-  TODAI_PI_MODEL: ${TODAI_PI_MODEL:-}
-  TODAI_PI_MODELS: ${TODAI_PI_MODELS:-}
-
-x-backend-service: &backend-service
-  image: ${TODAI_BACKEND_IMAGE:-ghcr.io/mishankov/todai-backend}:${TODAI_VERSION:?set TODAI_VERSION}
-  environment: *backend-environment
-  volumes:
-    - pi-agent-data:/var/lib/todai/pi-agent
-  networks:
-    - todai-private
-  init: true
-  stop_grace_period: 30s
-  logging:
-    driver: json-file
-    options:
-      max-size: 10m
-      max-file: "5"
-
 services:
   postgres:
     image: postgres:17.7-alpine3.23@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
     environment:
-      POSTGRES_DB: ${TODAI_POSTGRES_DB:-todai}
-      POSTGRES_USER: ${TODAI_POSTGRES_USER:?set TODAI_POSTGRES_USER}
+      POSTGRES_DB: todai
+      POSTGRES_USER: todai_app
       POSTGRES_PASSWORD: ${TODAI_POSTGRES_PASSWORD:?set TODAI_POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    networks:
-      - todai-private
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
-      test:
-        ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      test: ["CMD-SHELL", "pg_isready -U todai_app -d todai"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "5"
 
   migrate:
-    <<: *backend-service
+    image: ${TODAI_BACKEND_IMAGE:-ghcr.io/mishankov/todai-backend}:${TODAI_VERSION:?set TODAI_VERSION}
     command: ["migrate"]
+    environment:
+      TODAI_DATABASE_URL: postgres://todai_app:${TODAI_POSTGRES_PASSWORD}@postgres:5432/todai?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   backend:
-    <<: *backend-service
-    command: ["run"]
+    image: ${TODAI_BACKEND_IMAGE:-ghcr.io/mishankov/todai-backend}:${TODAI_VERSION:?set TODAI_VERSION}
+    environment:
+      TODAI_DATABASE_URL: postgres://todai_app:${TODAI_POSTGRES_PASSWORD}@postgres:5432/todai?sslmode=disable
+      TODAI_AGENT_RUNTIME: ${TODAI_AGENT_RUNTIME:-fake}
+      TODAI_PI_PROVIDER: ${TODAI_PI_PROVIDER:-}
+      TODAI_PI_MODEL: ${TODAI_PI_MODEL:-}
+      TODAI_PI_MODELS: ${TODAI_PI_MODELS:-}
+    volumes:
+      - pi-agent-data:/var/lib/todai/pi-agent
     depends_on:
-      postgres:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    init: true
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
+    stop_grace_period: 30s
     healthcheck:
-      test:
-        ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -91,12 +56,8 @@ services:
 
   frontend:
     image: ${TODAI_FRONTEND_IMAGE:-ghcr.io/mishankov/todai-frontend}:${TODAI_VERSION:?set TODAI_VERSION}
-    environment:
-      TODAI_BACKEND_URL: ${TODAI_BACKEND_URL:-http://backend:8080}
     ports:
       - "${TODAI_PUBLISHED_HTTP_PORT:-8080}:8080"
-    networks:
-      - todai-private
     depends_on:
       backend:
         condition: service_healthy
@@ -106,20 +67,11 @@ services:
       - /tmp:size=32m,mode=1777
     stop_grace_period: 30s
     healthcheck:
-      test:
-        ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 5s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "5"
-
-networks:
-  todai-private:
 
 volumes:
   postgres-data:

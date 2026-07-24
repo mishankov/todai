@@ -36,17 +36,22 @@ sed -i "s/^TODAI_VERSION=.*/TODAI_VERSION=${release}/" .env
 sed -i "s/^TODAI_POSTGRES_PASSWORD=.*/TODAI_POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
 ```
 
-Review `.env`. `TODAI_VERSION`, `TODAI_POSTGRES_USER`, and `TODAI_POSTGRES_PASSWORD` are required.
-Production startup rejects the development database username or password `todai`. Keep the generated
-database password URL-safe because Compose constructs `TODAI_DATABASE_URL` from it and the private
-service name `postgres`.
+That is the complete default configuration: an immutable image version and a generated database
+password. The database name (`todai`), database user (`todai_app`), service addresses, cookie name,
+timeouts, and internal paths already have installation-safe defaults. Keep the generated password
+URL-safe because Compose uses it in the private database URL.
 
-Pull the selected images, start PostgreSQL, run migrations, and create the single user:
+Pull and start the stack. Compose waits for PostgreSQL, runs migrations, and starts the application
+only after the migration succeeds:
 
 ```sh
 docker compose pull
-docker compose up -d postgres
-docker compose run --rm migrate
+docker compose up -d --wait
+```
+
+Create the single user:
+
+```sh
 docker compose run --rm backend bootstrap-user --username admin
 ```
 
@@ -59,15 +64,14 @@ secret_file=/secure/path/todai-initial-password
 docker compose run --rm -T backend bootstrap-user --username admin --password-stdin < "$secret_file"
 ```
 
-Start the application and wait for all health checks:
+Verify the default installation:
 
 ```sh
-docker compose up -d --wait
-published_port="$(sed -n 's/^TODAI_PUBLISHED_HTTP_PORT=//p' .env)"
-curl --fail "http://127.0.0.1:${published_port:-8080}/health"
+curl --fail http://127.0.0.1:8080/health
 docker compose ps
 ```
 
+Use the configured port instead of `8080` if `TODAI_PUBLISHED_HTTP_PORT` was changed.
 The frontend is the only service with a published port. PostgreSQL, the backend, and
 `/internal/tools` remain private. A migration failure prevents the backend and frontend from becoming
 ready.
@@ -80,13 +84,13 @@ ready.
 TODAI_AGENT_RUNTIME=pi
 TODAI_PI_PROVIDER=provider-name
 TODAI_PI_MODEL=model-name
-TODAI_PI_MODELS=model-name,another-allowed-model
 ```
 
-The model must appear in `TODAI_PI_MODELS`. Production fails fast if the Pi agent directory, provider,
-or model is missing. The container uses `/var/lib/todai/pi-agent`, backed by the `pi-agent-data` named
-volume. Provision an existing Pi `auth.json` without placing it in Compose YAML, an image layer, or
-the command line:
+The selectable model list defaults to `TODAI_PI_MODEL`. Set `TODAI_PI_MODELS` only when more than one
+model should be available. Production fails fast if the Pi agent directory, provider, or model is
+missing. The container uses `/var/lib/todai/pi-agent`, backed by the `pi-agent-data` named volume.
+Provision an existing Pi `auth.json` without placing it in Compose YAML, an image layer, or the
+command line:
 
 ```sh
 auth_file=/secure/path/auth.json
@@ -98,31 +102,25 @@ docker compose up -d --wait backend frontend
 The non-root backend user owns this volume and can update token-refresh state. Restrict access to the
 deployment directory and source credential file.
 
-## Runtime configuration
+## Installation settings
 
-| Variable                       | Default                 | Meaning                                              |
-| ------------------------------ | ----------------------- | ---------------------------------------------------- |
-| `TODAI_VERSION`                | required                | One coherent frontend/backend image tag              |
-| `TODAI_PUBLISHED_HTTP_PORT`    | `8080`                  | Only host-published port                             |
-| `TODAI_POSTGRES_DB`            | `todai`                 | Internal database name                               |
-| `TODAI_POSTGRES_USER`          | required                | Non-development database user                        |
-| `TODAI_POSTGRES_PASSWORD`      | required                | URL-safe non-development database password           |
-| `TODAI_SESSION_COOKIE_NAME`    | `todai_session`         | Browser session cookie name                          |
-| `TODAI_BACKEND_URL`            | `http://backend:8080`   | Frontend proxy upstream on the Compose network       |
-| `TODAI_INTERNAL_API_URL`       | `http://127.0.0.1:8080` | Runner-only tool API in the shared backend container |
-| `TODAI_AGENT_RUNTIME`          | `fake`                  | `fake` for diagnostics or `pi` for real agents       |
-| `TODAI_RUNNER_STARTUP_TIMEOUT` | `5s`                    | Runner ready-event deadline                          |
-| `TODAI_RUNNER_RUN_TIMEOUT`     | `2m`                    | Maximum agent run duration                           |
-| `TODAI_RUNNER_ABORT_TIMEOUT`   | `2s`                    | Graceful runner abort deadline                       |
-| `TODAI_RUNNER_MAX_LINE_BYTES`  | `1048576`               | Maximum JSONL protocol record                        |
-| `TODAI_AGENT_TOKEN_TTL`        | `15m`                   | Short-lived internal tool token lifetime             |
-| `TODAI_PI_PROVIDER`            | required for `pi`       | Pi provider identifier                               |
-| `TODAI_PI_MODEL`               | required for `pi`       | Default Pi model                                     |
-| `TODAI_PI_MODELS`              | selected Pi model       | Comma-separated user-selectable model allow-list     |
+| Variable                    | Default           | Meaning                                        |
+| --------------------------- | ----------------- | ---------------------------------------------- |
+| `TODAI_VERSION`             | required          | One coherent frontend/backend image tag        |
+| `TODAI_POSTGRES_PASSWORD`   | required          | URL-safe database password                     |
+| `TODAI_PUBLISHED_HTTP_PORT` | `8080`            | Only host-published port                       |
+| `TODAI_AGENT_RUNTIME`       | `fake`            | `fake` for diagnostics or `pi` for real runs   |
+| `TODAI_PI_PROVIDER`         | required for `pi` | Pi provider identifier                         |
+| `TODAI_PI_MODEL`            | required for `pi` | Default and initially allowed model            |
+| `TODAI_PI_MODELS`           | selected Pi model | Optional comma-separated selectable model list |
 
-The image fixes `TODAI_RUNNER_EXECUTABLE=/usr/local/bin/node`,
-`TODAI_RUNNER_ENTRY=/opt/todai/pi-runner/dist/cli/main.js`, and
-`TODAI_PI_AGENT_DIR=/var/lib/todai/pi-agent`. Change neither path on the host.
+Internal settings are intentionally absent from the default `.env`. The images and Compose file use
+`todai_session` for the cookie, `http://backend:8080` for the frontend proxy,
+`http://127.0.0.1:8080` for runner tools, `5s`/`2m`/`2s` for runner startup/run/abort timeouts,
+`1048576` bytes for runner records, and `15m` for agent tokens. The backend image also fixes the
+bundled Node executable, runner entry point, and Pi data directory. Unusual installations can change
+these with a separate Compose override without making the default installation carry that
+complexity.
 
 ## Logs and diagnosis
 
@@ -151,9 +149,10 @@ Check both container and application readiness:
 docker compose ps
 docker compose exec -T postgres sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 docker compose exec -T backend wget -q -O - http://127.0.0.1:8080/health
-published_port="$(sed -n 's/^TODAI_PUBLISHED_HTTP_PORT=//p' .env)"
-curl --fail "http://127.0.0.1:${published_port:-8080}/health"
+curl --fail http://127.0.0.1:8080/health
 ```
+
+Use the configured published port for the final command if it differs from `8080`.
 
 ## Stop, restart, and persistence
 
@@ -190,7 +189,7 @@ second backup first:
 restore_file=/secure/backups/todai-YYYYMMDDTHHMMSSZ.dump
 test -s "$restore_file"
 docker compose stop frontend backend
-# DESTRUCTIVE: the next command replaces TODAI_POSTGRES_DB.
+# DESTRUCTIVE: the next command replaces the `todai` database.
 docker compose exec -T postgres sh -c \
   'dropdb --if-exists -U "$POSTGRES_USER" "$POSTGRES_DB" &&
    createdb -U "$POSTGRES_USER" "$POSTGRES_DB" &&
@@ -209,14 +208,12 @@ make a pre-upgrade backup. Then set the new immutable version in `.env` and run:
 
 ```sh
 docker compose pull
-docker compose stop frontend backend
-docker compose run --rm migrate
 docker compose up -d --wait
 docker compose ps
 ```
 
-The explicit migration must succeed before the upgraded backend starts. Compose also keeps migration
-as a readiness dependency, so a failed migration cannot produce a healthy frontend.
+Compose runs the selected version's migration before replacing the backend. A failed migration
+cannot produce a healthy frontend.
 
 ## Rollback
 
@@ -225,8 +222,6 @@ tag in `.env`:
 
 ```sh
 docker compose pull
-docker compose stop frontend backend
-docker compose run --rm migrate
 docker compose up -d --wait
 ```
 

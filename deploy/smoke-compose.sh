@@ -6,15 +6,7 @@ set -euo pipefail
 
 export TODAI_VERSION="${TODAI_VERSION:-smoke}"
 export TODAI_PUBLISHED_HTTP_PORT="${TODAI_SMOKE_PORT:-18080}"
-export TODAI_POSTGRES_DB=todai
-export TODAI_POSTGRES_USER=todai_smoke_app
 export TODAI_POSTGRES_PASSWORD=smoke_database_password
-export TODAI_AGENT_RUNTIME=fake
-export TODAI_BACKEND_URL=http://backend:8080
-export TODAI_INTERNAL_API_URL=http://127.0.0.1:8080
-export TODAI_PI_PROVIDER=
-export TODAI_PI_MODEL=
-export TODAI_PI_MODELS=
 
 compose_project="todai-smoke-${RANDOM}-${RANDOM}"
 compose=(docker compose --project-name "$compose_project" --file deploy/compose.yaml)
