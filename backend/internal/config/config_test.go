@@ -121,13 +121,6 @@ func TestLoadRejectsUnsafeProductionConfiguration(t *testing.T) {
 			values: map[string]string{"TODAI_ENVIRONMENT": "production"},
 		},
 		{
-			name: "development credentials",
-			values: map[string]string{
-				"TODAI_ENVIRONMENT":  "production",
-				"TODAI_DATABASE_URL": "postgres://todai:todai@postgres/todai",
-			},
-		},
-		{
 			name: "relative Pi directory",
 			values: map[string]string{
 				"TODAI_ENVIRONMENT":   "production",

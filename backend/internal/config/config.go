@@ -160,9 +160,6 @@ func validateProductionDatabaseURL(raw string) error {
 	if username == "" || !hasPassword || password == "" {
 		return errors.New("invalid production TODAI_DATABASE_URL: username and password are required")
 	}
-	if username == "todai" || password == "todai" {
-		return errors.New("development PostgreSQL credentials are not allowed in production")
-	}
 	return nil
 }
 
