@@ -91,7 +91,7 @@ func (r *Runtime) Run(
 
 	processDone := make(chan error, 1)
 	go func() { processDone <- command.Wait() }()
-	go logRunnerStderr(ctx, stderr)
+	go logRunnerStderr(ctx, stderr, request.RunID)
 
 	records := scanRecords(stdout, r.config.MaximumLine)
 	ready, err := waitForReady(ctx, records, r.config.StartupTimeout)
@@ -391,13 +391,27 @@ func writeEnvelope(writer io.Writer, value envelope) error {
 	return nil
 }
 
-func logRunnerStderr(ctx context.Context, reader io.Reader) {
+func logRunnerStderr(ctx context.Context, reader io.Reader, runID string) {
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
-		log.InfoContext(ctx, "runner output", "message", scanner.Text())
+		log.InfoContext(
+			ctx,
+			"runner output",
+			"subsystem", "pi-runner",
+			"run_id", runID,
+			"stream", "stderr",
+			"message", scanner.Text(),
+		)
 	}
 	if err := scanner.Err(); err != nil {
-		log.ErrorContext(ctx, "read runner stderr", "error", err)
+		log.ErrorContext(
+			ctx,
+			"read runner stderr",
+			"subsystem", "pi-runner",
+			"run_id", runID,
+			"stream", "stderr",
+			"error", err,
+		)
 	}
 }
 
